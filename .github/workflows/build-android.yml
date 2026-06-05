@@ -1,0 +1,120 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-android:
+    name: Build Neon Asphalt Rush APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GODOT_VERSION: 4.4.1
+      GODOT_STATUS: stable
+      EXPORT_PRESET: Android APK
+      APK_PATH: build/neon-asphalt-rush.apk
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java for Android export
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Download Godot editor and Android export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          GODOT_BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}"
+          curl -L --retry 5 --retry-delay 3 -o godot.zip "${GODOT_BASE}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64.zip"
+          curl -L --retry 5 --retry-delay 3 -o export_templates.tpz "${GODOT_BASE}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_export_templates.tpz"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" godot
+          chmod +x godot
+          mkdir -p "${HOME}/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
+          unzip -q export_templates.tpz -d export_templates
+          cp export_templates/templates/* "${HOME}/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/"
+
+      - name: Configure Godot Android export safely inside runner home
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build "${HOME}/.config/godot"
+          keytool -genkeypair \
+            -v \
+            -keystore build/debug.keystore \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          cat > "${HOME}/.config/godot/editor_settings-4.tres" <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_HOME}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/debug_keystore = "${GITHUB_WORKSPACE}/build/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+
+      - name: Import project once
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./godot --headless --path "${GITHUB_WORKSPACE}" --import
+
+      - name: Export APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          ./godot --headless --path "${GITHUB_WORKSPACE}" --export-debug "${EXPORT_PRESET}" "${APK_PATH}"
+          test -f "${APK_PATH}"
+          ls -lh "${APK_PATH}"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-asphalt-rush-apk
+          path: build/neon-asphalt-rush.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release with APK
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.sha }}
+          name: Neon Asphalt Rush APK ${{ github.sha }}
+          body: |
+            Automatic Android APK build for Neon Asphalt Rush.
+
+            Download `neon-asphalt-rush.apk` from the assets below, or use the workflow artifact from the Actions run.
+          files: build/neon-asphalt-rush.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
