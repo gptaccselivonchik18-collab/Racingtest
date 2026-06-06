@@ -14,4 +14,10 @@ boot_splash/show_image=false
 
 [autoload]
 
-GameState="*res://scripts
+GameState="*res://scripts/GameState.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window
