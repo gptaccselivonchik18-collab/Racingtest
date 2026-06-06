@@ -1,23 +1,18 @@
-; Engine configuration file.
-; Safe Android build settings for Neon Asphalt Rush.
-
 config_version=5
 
 [application]
-
 config/name="Neon Asphalt Rush"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "Mobile")
 config/icon="res://icon.svg"
-boot_splash/bg_color=Color(0.01, 0.012, 0.02, 1)
 boot_splash/show_image=false
 
 [autoload]
-
 GameState="*res://scripts/GameState.gd"
 
 [display]
-
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/
