@@ -1,22 +1,8 @@
 extends Node
 
-var car: Node3D
-var sp := 0.0
-var ui: Label
-
-func _ready() -> void:
+func _ready():
 	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
-	Engine.max_fps = 60
-	menu()
-
-func wipe() -> void:
-	for c in get_children():
-		c.queue_free()
-
-func menu() -> void:
-	wipe()
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(root)
-	var bg := ColorRect.new()
-	bg.color = Color(0.01,0.015,
+	var c:=Control.new();c.set_anchors_preset(Control.PRESET_FULL_RECT);add_child(c)
+	var l:=Label.new();l.text="NEON ASPHALT RUSH\nSTART OK\nOrientation fixed";l.position=Vector2(60,80);l.size=Vector2(1160,260);l.add_theme_font_size_override("font_size",46);c.add_child(l)
+	var b:=Button.new();b.text="PLAY TEST";b.position=Vector2(500,390);b.size=Vector2(280,90);c.add_child(b)
+	b
