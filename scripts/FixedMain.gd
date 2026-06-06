@@ -1,20 +1,24 @@
 extends Node
 
-var root_ui: Control
+var ui: Control
 var world: Node3D
 var car: Node3D
-var camera: Camera3D
+var cam: Camera3D
 var hud: Control
-var screen := "menu"
-var selected_track := "city_night"
-var selected_car := "street_starter"
+var mode := "menu"
+var car_id := "street_starter"
+var track_id := "city_night"
 var speed := 0.0
-var steer := 0.0
 var nitro := 100.0
-var race_time := 0.0
-var drift_score := 0
+var time := 0.0
 var score := 0
-var max_speed := 0.0
-var cp_index := 0
-var checkpoints: Array[Vector3] = []
-var touch := {"left":false,"right":false,"gas":false,"brake":false,"
+var drift_score := 0
+var max_kmh := 0.0
+var cp_i := 0
+var cps: Array[Vector3] = []
+var touch_left := false
+var touch_right := false
+var touch_gas := false
+var touch_brake := false
+var touch_drift := false
+var touch_n
