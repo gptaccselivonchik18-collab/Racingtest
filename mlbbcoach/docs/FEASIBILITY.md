@@ -22,7 +22,7 @@ Apple сообщает, что для нового ScreenCaptureKit broadcast ex
 
 ## Сборка и установка
 
-[GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) перечисляет стандартный `macos-26` и preview `xcode-27`. Начальный проект успешно собран на macos-26. Текущая версия использует xcode-27 для iOS SDK 27, а macos-26 для Swift Package и интеграционных тестов Vision. Фактическая версия toolchain публикуется в логах каждого workflow. На runner macOS 27 OCR возвращал Foundation._GenericObjCError.nilError; те же интеграционные проверки успешно выполняются на стабильном macOS 26. Это наблюдение о CI, а не доказательство сбоя OCR на iPhone.
+[GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) перечисляет стандартный `macos-26` и preview `xcode-27`. Начальный проект успешно собран на macos-26. Текущая версия использует xcode-27 для iOS SDK 27, а стабильный macos-15 для Swift Package и интеграционных тестов Vision. Ранее тесты успешно выполнялись на macos-26; тестовый runner заменён после длительной очереди, проверки сохранены. Фактическая версия toolchain публикуется в логах каждого workflow. На runner macOS 27 OCR возвращал Foundation._GenericObjCError.nilError; те же интеграционные проверки успешно выполняются на стабильном macOS 26. Это наблюдение о CI, а не доказательство сбоя OCR на iPhone.
 
 Unsigned archive/IPA — промежуточный пакет для внешней подписи. [Sideloadly](https://sideloadly.io/) заявляет установку со свободной учётной записью Apple и семидневное действие бесплатной подписи. Установку этой версии приложения на iPhone Air никто ещё не тестировал. Платные API, секреты и обязательные расширения в исходники не добавлены.
 
