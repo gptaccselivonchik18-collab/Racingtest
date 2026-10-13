@@ -45,7 +45,7 @@ struct BrainView: View {
                 }
             }.padding()
         }.navigationTitle("ИИ-мозг")
-        .sheet(item: $teaching) { message in NavigationStack { MemoryEditor(initialText: "Исправление ответа тренера:\n\(message.text)\n\nПравильное решение: ") } }
+        .sheet(item: $teaching) { message in NavigationStack { MemoryEditor(initialText: "Исправление ответа тренера:\n\(message.text)\n\nПравильное решение: ", initialKind: "Исправление") } }
         .onDisappear { request?.cancel() }
     }
     private func rate(_ message: ChatEntry, _ value: Int) {

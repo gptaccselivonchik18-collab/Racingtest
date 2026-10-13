@@ -31,7 +31,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         let minimumInterval = process.isLowPowerModeEnabled || process.thermalState == .serious ? 5.0 : 2.0
         guard enabled, started - lastFrame >= minimumInterval, process.thermalState != .critical else { lock.unlock(); return }
         lastFrame = started
-        let region = roi, callback = handler
+        let region = roi, callback = handler, previous = previousHP
         lock.unlock()
         guard CMSampleBufferIsValid(sample), let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         autoreleasepool {
@@ -40,14 +40,14 @@ final class LiveFrameProcessor: @unchecked Sendable {
             do {
                 let evidence = try VisionEngine.recognize(image, at: started, hpRegion: region)
                 var tips: [TacticalAdvice] = []
-                if let hp = evidence.health, let previous = previousHP, abs(hp.fraction - previous.fraction) < 0.12 {
+                if let hp = evidence.health, let previous, started - previous.time <= 10, abs(hp.fraction - previous.fraction) < 0.12 {
                     tips = TacticalDecisionEngine.evaluate(health: hp, at: started)
                 }
-                previousHP = evidence.health
-                lock.lock(); let stillEnabled = enabled; lock.unlock()
+                lock.lock(); previousHP = evidence.health; let stillEnabled = enabled; lock.unlock()
                 if stillEnabled { callback?(LiveEvidence(image: image, text: evidence.text, advice: tips, processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             } catch {
-                previousHP = nil
+                lock.lock(); previousHP = nil; let stillEnabled = enabled; lock.unlock()
+                if stillEnabled { callback?(LiveEvidence(image: image, text: "Ошибка Vision: \(error.localizedDescription)", advice: [], processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             }
         }
     }
@@ -60,6 +60,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private(set) var latestText = ""
     private(set) var latestImage: CGImage?
     private(set) var processingMS = 0.0
+    private(set) var lastUpdate: Date?
     var healthRegion: HUDRegion?
     @ObservationIgnored private var stream: SCStream?
     @ObservationIgnored private var starting = false
@@ -84,7 +85,8 @@ final class LiveFrameProcessor: @unchecked Sendable {
     }
     private func receive(_ evidence: LiveEvidence) {
         guard active else { return }
-        latestText = evidence.text; latestImage = evidence.image; processingMS = evidence.processingMS
+        latestText = evidence.text; latestImage = evidence.image; processingMS = evidence.processingMS; lastUpdate = .now
+        guard UIApplication.shared.applicationState == .background else { return }
         for tip in evidence.advice.sorted(by: { $0.priority < $1.priority }) {
             voice?.speak(tip.text, key: tip.key, priority: tip.priority)
         }
@@ -130,8 +132,10 @@ final class LiveFrameProcessor: @unchecked Sendable {
         Task { @MainActor [weak self] in self?.status = error.localizedDescription }
     }
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        processor.disable()
-        Task { @MainActor [weak self] in self?.active = false; self?.status = error.localizedDescription }
+        Task { @MainActor [weak self] in
+            guard let self, self.stream === stream else { return }
+            self.processor.disable(); self.active = false; self.status = error.localizedDescription
+        }
     }
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         if type == .screen { processor.process(sampleBuffer) }
@@ -152,6 +156,7 @@ struct LiveCaptureView: View {
         Form {
             Section("Экспериментальный режим • iOS 27") {
                 Text(capture.status)
+                if let updated = capture.lastUpdate { Text("Последнее наблюдение: \(updated.formatted(date: .omitted, time: .standard))").font(.caption) }
                 Button("Выбрать экран для захвата") { capture.presentPicker(voice: voice) }
                 Button("Остановить захват") { Task { await capture.stop() } }.disabled(!capture.active)
                 Text("После системного разрешения откройте MLBB. Затем вернитесь сюда для проверки кадра и калибровки. Длительная фоновая работа, расход батареи и совместимость с бесплатной подписью пока не проверены на iPhone.").font(.caption).foregroundStyle(.secondary)

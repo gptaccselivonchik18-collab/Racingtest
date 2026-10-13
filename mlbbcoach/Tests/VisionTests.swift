@@ -16,7 +16,9 @@ import CoachVision
     context.textPosition = CGPoint(x: 50, y: 80)
     CTLineDraw(CTLineCreateWithAttributedString(text), context)
     let image = try #require(context.makeImage())
-    let result = try VisionEngine.recognize(image, at: 10, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1))
+    let result: (text: String, health: HealthObservation?)
+    do { result = try VisionEngine.recognize(image, at: 10, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1), useCPUOnly: true) }
+    catch { let e = error as NSError; print("VISION FAILURE domain=\(e.domain) code=\(e.code) info=\(e.userInfo)"); throw error }
     #expect(result.text.replacingOccurrences(of: " ", with: "").contains("12/100"))
     let hp = try #require(result.health)
     #expect(abs(hp.fraction - 0.12) < 0.001)

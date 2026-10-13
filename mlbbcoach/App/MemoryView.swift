@@ -44,9 +44,9 @@ struct MemoryEditor: View {
     @State private var source: String
     @State private var enabled: Bool
     @State private var error: String?
-    init(entry: MemoryEntry? = nil, initialText: String = "") {
+    init(entry: MemoryEntry? = nil, initialText: String = "", initialKind: String = "Предпочтение") {
         self.entry = entry
-        _text = State(initialValue: entry?.text ?? initialText); _kind = State(initialValue: entry?.kind ?? "Предпочтение")
+        _text = State(initialValue: entry?.text ?? initialText); _kind = State(initialValue: entry?.kind ?? initialKind)
         _hero = State(initialValue: entry?.hero ?? ""); _role = State(initialValue: entry?.role ?? "")
         _patch = State(initialValue: entry?.patch ?? ""); _source = State(initialValue: entry?.source ?? "")
         _enabled = State(initialValue: entry?.enabled ?? true)

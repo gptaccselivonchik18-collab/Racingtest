@@ -32,8 +32,11 @@ jobs:
           plutil -lint MLBBNeuralCoach.xcodeproj/project.pbxproj
       - name: Core tests
         run: |
-          if [ -f Package.swift ]; then swift test; fi
+          set -o pipefail
+          mkdir -p build
+          swift test 2>&1 | tee build/tests.log
       - name: Archive for iPhone
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           mkdir -p build
@@ -67,4 +70,5 @@ jobs:
           path: |
             mlbbcoach/build/archive.log
             mlbbcoach/build/Archive.xcresult
+            mlbbcoach/build/tests.log
           retention-days: 7

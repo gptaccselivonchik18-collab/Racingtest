@@ -6,8 +6,9 @@ import CoachCore
 #endif
 
 public enum VisionEngine {
-    public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil) throws -> (text: String, health: HealthObservation?) {
+    public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false) throws -> (text: String, health: HealthObservation?) {
         let full = VNRecognizeTextRequest()
+        full.usesCPUOnly = useCPUOnly
         full.recognitionLevel = .accurate; full.usesLanguageCorrection = false
         let supported = try full.supportedRecognitionLanguages()
         full.recognitionLanguages = ["en-US", "ru-RU"].filter { supported.contains($0) }
@@ -15,11 +16,13 @@ public enum VisionEngine {
         var modelRequest: VNCoreMLRequest?
         if let model {
             let request = VNCoreMLRequest(model: model); request.imageCropAndScaleOption = .scaleFit
+            request.usesCPUOnly = useCPUOnly
             modelRequest = request; requests.append(request)
         }
         var healthRequest: VNRecognizeTextRequest?
         if let roi = hpRegion {
             let request = VNRecognizeTextRequest()
+            request.usesCPUOnly = useCPUOnly
             request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
             request.recognitionLanguages = ["en-US"]
             request.regionOfInterest = CGRect(x: roi.x, y: 1 - roi.y - roi.height, width: roi.width, height: roi.height)
