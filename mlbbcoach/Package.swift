@@ -6,7 +6,7 @@ let package = Package(
     products: [.library(name: "CoachCore", targets: ["CoachCore"])],
     targets: [
         .target(name: "CoachCore", path: "Core"),
-        .target(name: "CoachStorage", path: "App", exclude: ["AppShell.swift", "BrainView.swift", "CoachApp.swift", "DeviceServices.swift", "MemoryView.swift", "StrategyAI.swift"], sources: ["Storage.swift"]),
+        .target(name: "CoachStorage", path: "App", exclude: ["AppShell.swift", "BrainView.swift", "CoachApp.swift", "DeviceServices.swift", "MemoryView.swift", "StrategyAI.swift", "VideoAnalyzer.swift", "VideoAnalysisView.swift"], sources: ["Storage.swift"]),
         .testTarget(name: "CoachCoreTests", dependencies: ["CoachCore", "CoachStorage"], path: "Tests")
     ],
     swiftLanguageModes: [.v5]

@@ -45,6 +45,7 @@ struct DashboardView: View {
                 LabeledContent("Разобранных матчей", value: "\(matches.count)")
                 Text("База хранится на устройстве. iCloud выключен.").font(.caption).foregroundStyle(.secondary)
             }
+            Section { NavigationLink { VideoAnalysisView() } label: { Label("Разобрать запись матча", systemImage: "play.rectangle") } }
         }.navigationTitle("Главная")
     }
 }
@@ -73,6 +74,7 @@ struct LibraryView: View {
     @AppStorage("sampleInterval") private var interval = 3.0
     var body: some View {
         List {
+            NavigationLink { VideoAnalysisView() } label: { Label("Анализ видео", systemImage: "play.rectangle") }
             NavigationLink { MatchHistoryView() } label: { Label("Матчи", systemImage: "film") }
             NavigationLink { ModelsView() } label: { Label("Модели", systemImage: "cpu") }
             Section("Производительность") {
