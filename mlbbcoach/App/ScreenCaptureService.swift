@@ -1,3 +1,4 @@
+#if canImport(ScreenCaptureKit)
 import SwiftUI
 import ScreenCaptureKit
 import CoreMedia
@@ -192,3 +193,5 @@ struct LiveCaptureView: View {
         }.navigationTitle("Захват экрана")
     }
 }
+
+#endif

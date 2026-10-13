@@ -36,11 +36,18 @@ struct CoachApp: App {
 
 struct RootWithCapture: View {
     var body: some View {
+        #if canImport(ScreenCaptureKit)
         if #available(iOS 27.0, *) { CaptureRoot() } else { AppShell() }
+        #else
+        AppShell()
+        #endif
     }
 }
+#if canImport(ScreenCaptureKit)
 @available(iOS 27.0, *)
 private struct CaptureRoot: View {
     @State private var capture = ScreenCaptureService()
     var body: some View { AppShell().environment(capture) }
 }
+
+#endif
