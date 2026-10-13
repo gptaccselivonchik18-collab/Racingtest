@@ -17,7 +17,7 @@ int coach_llama_generate(const char *path, const char *system, const char *promp
     auto mp = llama_model_default_params(); mp.n_gpu_layers = 0;
     llama_model *model = llama_model_load_from_file(path, mp);
     if (!model) return -3;
-    auto cp = llama_context_default_params(); cp.n_ctx = 2048; cp.n_batch = 256; cp.n_threads = 2; cp.n_threads_batch = 2;
+    auto cp = llama_context_default_params(); cp.n_ctx = 2048; cp.n_batch = 256; cp.n_threads = 2; cp.n_threads_batch = 2; cp.offload_kqv = false;
     cp.abort_callback = cancelled; cp.abort_callback_data = user;
     llama_context *ctx = llama_init_from_model(model, cp);
     if (!ctx) { llama_model_free(model); return -4; }
@@ -40,7 +40,7 @@ int coach_llama_generate(const char *path, const char *system, const char *promp
     for (int offset=0; offset<count; offset+=256) {
         if (abort()) return finish(-2);
         auto batch = llama_batch_get_one(tokens.data()+offset, std::min(256,count-offset));
-        if (llama_decode(ctx,batch)) return finish(-7);
+        if (llama_decode(ctx,batch)) return finish(abort() ? -2 : -7);
     }
     std::string result;
     for (int i=0; i<400; ++i) {
@@ -52,7 +52,7 @@ int coach_llama_generate(const char *path, const char *system, const char *promp
         if ((int)result.size()+n >= capacity) break;
         result.append(piece,n);
         auto batch = llama_batch_get_one(&token,1);
-        if (llama_decode(ctx,batch)) return finish(-7);
+        if (llama_decode(ctx,batch)) return finish(abort() ? -2 : -7);
     }
     memcpy(output,result.data(),result.size()); output[result.size()]=0;
     return finish((int)result.size());

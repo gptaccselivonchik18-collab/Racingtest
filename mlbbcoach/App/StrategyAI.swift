@@ -23,12 +23,14 @@ enum CoachError: LocalizedError {
 
 @MainActor @Observable final class StrategyAI {
     private(set) var busy = false
-    var provider: String { UserDefaults.standard.string(forKey: "languageProvider") ?? "apple" }
+    var provider: String = UserDefaults.standard.string(forKey: "languageProvider") ?? "apple" { didSet { UserDefaults.standard.set(provider, forKey: "languageProvider") } }
+    private var runtimeRevision = 0
+    func refreshModels() { runtimeRevision += 1 }
     var appleAvailable: Bool {
         if case .available = SystemLanguageModel.default.availability { return SystemLanguageModel.default.supportsLocale(Locale(identifier: "en_US")) }; return false
     }
     var status: String {
-        if provider == "llama" { return LocalLlama.modelExists ? "Независимая локальная модель • русский" : "Импортируйте русскоязычную GGUF-модель" }
+        if provider == "llama" { return chatAvailable ? "Независимая локальная модель • русский" : "Импортируйте русскоязычную GGUF-модель" }
         switch SystemLanguageModel.default.availability {
         case .available: return appleAvailable ? "Apple • игровые решения на английском, рекомендации на русском" : "Apple не поддерживает английский в этой конфигурации"
         case .unavailable(.deviceNotEligible): return "Устройство не поддерживает Apple Intelligence"
@@ -38,10 +40,11 @@ enum CoachError: LocalizedError {
         }
     }
     var available: Bool { provider == "llama" ? LocalLlama.modelExists : appleAvailable }
-    var chatAvailable: Bool { LocalLlama.modelExists }
+    var chatAvailable: Bool { _ = runtimeRevision; return LocalLlama.modelExists }
     private func begin() throws {
         guard !busy else { throw CoachError.unavailable("Дождитесь текущего ответа") }
         guard ProcessInfo.processInfo.thermalState != .critical && ProcessInfo.processInfo.thermalState != .serious else { throw CoachError.unavailable("Сильный нагрев; анализ отложен") }
+        guard !LiveTrainingGuard.active || !ProcessInfo.processInfo.isLowPowerModeEnabled else { throw CoachError.unavailable("Фоновая стратегия приостановлена: энергосбережение") }
         busy = true
     }
     func respond(question: String, memory: String, recent: String = "") async throws -> String {

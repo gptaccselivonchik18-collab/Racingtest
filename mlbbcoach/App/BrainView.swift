@@ -15,6 +15,7 @@ struct BrainView: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(ai.status).font(.caption).foregroundStyle(ai.available ? .mint : .orange).padding(8)
+            if !ai.chatAvailable { NavigationLink("Установить модель для русского общения") { LanguageModelsView() }.font(.caption).padding(8) }
             ScrollViewReader { proxy in
                 List {
                     ForEach(messages) { message in
@@ -83,9 +84,9 @@ struct ModelsView: View {
             NavigationLink("Выбор языковой модели и русский чат") { LanguageModelsView() }
             NavigationLink("Обучаемая нейросеть иконок") { IconLearningView() }
             Section("Языковая модель") {
-                LabeledContent("Провайдер", value: "Apple • SystemLanguageModel")
+                LabeledContent("Провайдер", value: ai.provider == "llama" ? "llama.cpp • CPU" : "Apple • SystemLanguageModel")
                 Text(ai.status).foregroundStyle(ai.available ? .mint : .orange)
-                Text("Используется локальная системная модель. Private Cloud Compute не подключён. Включение, загрузка и обновление модели управляются настройками iOS.")
+                if ai.provider == "apple" { Text("Apple используется локально для английских структурированных решений. Включение и загрузка системной модели управляются настройками iOS.") }
                 Text("Размер модели и занятая ей RAM не публикуются этим API; приложение их не выдумывает.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Обучение") { Text("Раздел «Обучаемая нейросеть иконок» изменяет веса небольшой нейросети на размеченных изображениях и сравнивает отложенную выборку. Память и языковые веса — отдельные компоненты.") }

@@ -18,20 +18,6 @@ struct IconSlot: Codable, Sendable {
     let side: String
 }
 // The exact same 16x16 RGB preprocessing is used for annotations and live inference.
-enum IconPixels {
-    static func features(_ image: CGImage, region: HUDRegion) -> [Double]? {
-        guard region.isValid else { return nil }
-        let rect = CGRect(x: region.x * Double(image.width), y: region.y * Double(image.height), width: region.width * Double(image.width), height: region.height * Double(image.height)).integral
-        guard rect.width >= 8, rect.height >= 8, let crop = image.cropping(to: rect) else { return nil }
-        var bytes = [UInt8](repeating: 0, count: 16 * 16 * 4)
-        let made = bytes.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(data: buffer.baseAddress, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
-            context.interpolationQuality = .medium; context.draw(crop, in: CGRect(x: 0, y: 0, width: 16, height: 16)); return true
-        }
-        guard made else { return nil }
-        return (0..<256).flatMap { pixel in (0..<3).map { Double(bytes[pixel * 4 + $0]) / 127.5 - 1 } }
-    }
-}
 final class IconInference: @unchecked Sendable {
     static let shared = IconInference()
     private let lock = NSLock()

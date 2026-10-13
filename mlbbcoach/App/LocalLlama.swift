@@ -7,7 +7,7 @@ private final class LlamaCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
     func cancel() { lock.lock(); stopped = true; lock.unlock() }
-    func cancelled() -> Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+    func cancelled() -> Bool { lock.lock(); defer { lock.unlock() }; let heat = ProcessInfo.processInfo.thermalState; return stopped || heat == .serious || heat == .critical }
 }
 enum LocalLlama {
     static var modelURL: URL { URL.applicationSupportDirectory.appendingPathComponent("LanguageModels/active.gguf") }
@@ -65,18 +65,18 @@ actor LanguageModelInstaller {
     }
 }
 struct LanguageModelsView: View {
-    @AppStorage("languageProvider") private var provider = "apple"
+    @Environment(StrategyAI.self) private var ai
     @State private var importing = false
     @State private var sha = ""
     @State private var status = ""
     @State private var operation: Task<Void, Never>?
     var body: some View {
         Form {
-            Picker("Игровые решения", selection: $provider) { Text("Apple • английское ядро").tag("apple"); Text("Независимая GGUF-модель").tag("llama") }
+            Picker("Игровые решения", selection: Binding(get: { ai.provider }, set: { ai.provider = $0 })) { Text("Apple • английское ядро").tag("apple"); Text("Независимая GGUF-модель").tag("llama") }
             Text("Русский интерфейс и рекомендации сохраняются. Apple получает только структурированное состояние на английском. Русский свободный чат всегда использует независимую модель; смена промпта не добавляет Apple поддержку языка.").font(.caption)
             Section("Бесплатная локальная модель") {
                 Text("Qwen2.5 1.5B Instruct Q4_K_M • Apache 2.0 • 1,12 ГБ. Небольшая многоязычная модель для базового русского общения; качество сложной стратегии и скорость на iPhone ещё не подтверждены.")
-                Button("Скачать Qwen на устройство") { operation = Task { do { try await LanguageModelInstaller.shared.downloadQwen(); status = "Модель проверена и сохранена" } catch { status = error.localizedDescription }; operation = nil } }.disabled(operation != nil || LiveTrainingGuard.active)
+                Button("Скачать Qwen на устройство") { operation = Task { do { try await LanguageModelInstaller.shared.downloadQwen(); ai.refreshModels(); status = "Модель проверена и сохранена" } catch { status = error.localizedDescription }; operation = nil } }.disabled(operation != nil || LiveTrainingGuard.active)
                 TextField("SHA-256 своего GGUF", text: $sha).textInputAutocapitalization(.never)
                 Button("Импортировать совместимый GGUF") { importing = true }.disabled(operation != nil || LiveTrainingGuard.active)
                 Text(LocalLlama.modelExists ? "Локальная модель установлена" : "Локальная модель не установлена")
@@ -87,7 +87,7 @@ struct LanguageModelsView: View {
             Text("Вычисления llama.cpp выполняются на CPU, 2 потока, контекст 2048 токенов, до 400 выходных токенов. Файл хранится локально; после установки интернет не требуется. Языковые веса не обучаются этим экраном.").font(.caption)
         }.navigationTitle("Языковые модели")
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
-            do { let url = try result.get(); operation = Task { do { try await LanguageModelInstaller.shared.install(url, sha: sha); status = "GGUF проверен и сохранён" } catch { status = error.localizedDescription }; operation = nil } } catch { status = error.localizedDescription }
+            do { let url = try result.get(); operation = Task { do { try await LanguageModelInstaller.shared.install(url, sha: sha); ai.refreshModels(); status = "GGUF проверен и сохранён" } catch { status = error.localizedDescription }; operation = nil } } catch { status = error.localizedDescription }
         }
     }
 }

@@ -63,7 +63,7 @@ def generate():
 <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">{ref}</BuildableProductRunnable></ProfileAction>
 <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>''', encoding='utf-8')
-    print(f'Generated Xcode project: {len(files)} Swift sources')
+    print(f'Generated Xcode project: {len(files)} source files')
     if (ROOT / 'Tests').is_dir() and (ROOT / 'Core').is_dir():
         app_files = sorted(p.name for p in (ROOT / 'App').glob('*.swift'))
         storage_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist', 'ThirdPartyNotices.txt'] if f != 'Storage.swift')

@@ -94,3 +94,32 @@ private func makeHealthImage() throws -> CGImage {
     let evidence = try VisionEngine.recognize(frame.image, at: frame.actualTime.seconds, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1), useCPUOnly: true)
     #expect(abs((try #require(evidence.health)).fraction - 0.12) < 0.001)
 }
+
+@Test func actualImageFeaturesTrainNeuralIconClassifierAndReloadVersion() throws {
+    func sample(_ label: Int, _ brightness: Double, _ group: String) throws -> LabeledVector {
+        let context = try #require(CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: label == 0 ? brightness : 0.1, green: 0.15, blue: label == 1 ? brightness : 0.1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(CGRect(x: label == 0 ? 8 : 40, y: 12, width: 12, height: 36))
+        let image = try #require(context.makeImage())
+        let features = try #require(IconPixels.features(image, region: HUDRegion(x: 0, y: 0, width: 1, height: 1)))
+        return LabeledVector(group: group, features: features, label: label)
+    }
+    var train: [LabeledVector] = [], test: [LabeledVector] = []
+    for label in 0..<2 {
+        for index in 0..<3 { train.append(try sample(label, 0.65 + Double(index)*0.1, "train-\(label)-\(index)")) }
+        for index in 0..<2 { test.append(try sample(label, 0.72 + Double(index)*0.1, "test-\(label)-\(index)")) }
+    }
+    try TrainableNetwork.validateSplit(train: train, test: test, classes: 2)
+    var network = TrainableNetwork(inputs: 768, outputs: 2)
+    let original = network.w1
+    let before = try #require(network.metrics(test))
+    try network.train(train)
+    let after = try #require(network.metrics(test))
+    #expect(network.w1 != original && after.loss < before.loss && after.accuracy == 1)
+    let version = IconNetworkVersion(labels: [IconLabel(code: "synthetic_alpha", russian: "Синтетический А"), IconLabel(code: "synthetic_beta", russian: "Синтетический Б")], network: network, before: before, after: after, parametersChanged: true)
+    let restored = try JSONDecoder().decode(IconNetworkVersion.self, from: JSONEncoder().encode(version))
+    #expect(restored.valid && restored.id == version.id && restored.network.w1 == network.w1)
+    print("ICON_IMAGE_EXPERIMENT synthetic_images=true features=768 before_accuracy=\(before.accuracy) after_accuracy=\(after.accuracy) before_loss=\(before.loss) after_loss=\(after.loss) weights_changed=true version_reload=true")
+}
