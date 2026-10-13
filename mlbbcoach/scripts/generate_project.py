@@ -6,19 +6,24 @@ ROOT = Path(__file__).resolve().parents[1]
 def uid(name):
     return hashlib.sha256(name.encode()).hexdigest()[:24].upper()
 def generate():
-    files = sorted(p.relative_to(ROOT).as_posix() for folder in ('App', 'Core') for p in (ROOT / folder).glob('*.swift'))
+    files = sorted([p.relative_to(ROOT).as_posix() for folder in ('App', 'Core') for p in (ROOT / folder).glob('*.swift')] + ["Native/CoachLlama.cpp"])
     objects = []
     def obj(name, body):
         objects.append(f'{uid(name)} = {{ {body} }};')
     for file in files:
-        obj('ref:'+file, f'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "{file}"; sourceTree = "<group>";')
+        filetype = "sourcecode.cpp.cpp" if file.endswith(".cpp") else "sourcecode.swift"
+        obj('ref:'+file, f'isa = PBXFileReference; lastKnownFileType = {filetype}; path = "{file}"; sourceTree = "<group>";')
         obj('build:'+file, f'isa = PBXBuildFile; fileRef = {uid("ref:"+file)};')
+    obj('llama-ref', 'isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/llama.xcframework; sourceTree = "<group>";')
+    obj('llama-link', f'isa = PBXBuildFile; fileRef = {uid("llama-ref")};')
+    obj('notice-ref', 'isa = PBXFileReference; lastKnownFileType = text; path = App/ThirdPartyNotices.txt; sourceTree = "<group>";')
+    obj('notice-build', f'isa = PBXBuildFile; fileRef = {uid("notice-ref")};')
     obj('product', 'isa = PBXFileReference; explicitFileType = wrapper.application; path = MLBBNeuralCoach.app; sourceTree = BUILT_PRODUCTS_DIR;')
     obj('products', f'isa = PBXGroup; children = ({uid("product")},); name = Products; sourceTree = "<group>";')
-    obj('rootgroup', 'isa = PBXGroup; children = (' + ','.join(uid('ref:'+f) for f in files) + f',{uid("products")},); sourceTree = "<group>";')
+    obj('rootgroup', 'isa = PBXGroup; children = (' + ','.join(uid('ref:'+f) for f in files) + f',{uid("llama-ref")},{uid("notice-ref")},{uid("products")},); sourceTree = "<group>";')
     obj('sources', 'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (' + ','.join(uid('build:'+f) for f in files) + ',); runOnlyForDeploymentPostprocessing = 0;')
-    obj('resources', 'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
-    obj('frameworks', 'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+    obj('resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({uid("notice-build")},); runOnlyForDeploymentPostprocessing = 0;')
+    obj('frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ({uid("llama-link")},); runOnlyForDeploymentPostprocessing = 0;')
     for config in ('Debug', 'Release'):
         obj('project:'+config, f'isa = XCBuildConfiguration; name = {config}; buildSettings = {{ SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; }};')
         obj('app:'+config, f'''isa = XCBuildConfiguration; name = {config}; buildSettings = {{
@@ -31,6 +36,9 @@ def generate():
             INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
             TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
             SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            SWIFT_OBJC_BRIDGING_HEADER = Native/CoachLlama.h;
+            CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+            OTHER_LDFLAGS = ("-lc++", "-framework", "Accelerate", "-framework", "Metal");
             CODE_SIGN_STYLE = Automatic; ENABLE_USER_SCRIPT_SANDBOXING = YES;
             SWIFT_OPTIMIZATION_LEVEL = "{'-Onone' if config == 'Debug' else '-O'}";
         }};''')
@@ -55,8 +63,8 @@ def generate():
     print(f'Generated Xcode project: {len(files)} Swift sources')
     if (ROOT / 'Tests').is_dir() and (ROOT / 'Core').is_dir():
         app_files = sorted(p.name for p in (ROOT / 'App').glob('*.swift'))
-        storage_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist'] if f != 'Storage.swift')
-        vision_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist'] if f != 'VisionEngine.swift')
+        storage_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist', 'ThirdPartyNotices.txt'] if f != 'Storage.swift')
+        vision_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist', 'ThirdPartyNotices.txt'] if f != 'VisionEngine.swift')
         (ROOT / 'Package.swift').write_text('''// swift-tools-version: 6.0
 import PackageDescription
 let package = Package(

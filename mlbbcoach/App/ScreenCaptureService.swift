@@ -9,6 +9,7 @@ import AVFoundation
 
 struct LiveEvidence: @unchecked Sendable {
     let generation: Int
+    let icons: [RecognizedIcon]
     let image: CGImage
     let text: String
     let health: HealthObservation?
@@ -108,6 +109,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 } else {
                     evidence = try VisionEngine.recognize(image, at: started, hpRegion: region, useCPUOnly: true, includeScene: includeScene)
                 }
+                let icons = validRect != nil ? IconInference.shared.recognize(image, at: started) : []
                 let detected = ProcessInfo.processInfo.systemUptime
                 var tips: [TacticalAdvice] = []
                 var confirmed: HealthObservation?
@@ -122,13 +124,13 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 let statistics = counts
                 lock.unlock()
                 let text = savedCalibration != nil && region == nil ? "Область HP не подходит к ориентации/пропорциям кадра: требуется калибровка" : evidence.text
-                if stillEnabled { callback?(LiveEvidence(generation: token, image: image, text: text, health: confirmed, advice: tips, processingMS: (detected - started) * 1000, receivedAt: started, detectedAt: detected, background: isBackground, counts: statistics)) }
+                if stillEnabled { callback?(LiveEvidence(generation: token, icons: icons, image: image, text: text, health: confirmed, advice: tips, processingMS: (detected - started) * 1000, receivedAt: started, detectedAt: detected, background: isBackground, counts: statistics)) }
             } catch {
                 let detected = ProcessInfo.processInfo.systemUptime
                 lock.lock(); let stillEnabled = enabled && epoch == token
                 if stillEnabled { tracker = GameStateTracker(); counts.errors += 1; previousProcessing = detected - started }
                 let statistics = counts; lock.unlock()
-                if stillEnabled { callback?(LiveEvidence(generation: token, image: image, text: "Ошибка Vision: \(error.localizedDescription)", health: nil, advice: [], processingMS: (detected - started) * 1000, receivedAt: started, detectedAt: detected, background: isBackground, counts: statistics)) }
+                if stillEnabled { callback?(LiveEvidence(generation: token, icons: [], image: image, text: "Ошибка Vision: \(error.localizedDescription)", health: nil, advice: [], processingMS: (detected - started) * 1000, receivedAt: started, detectedAt: detected, background: isBackground, counts: statistics)) }
             }
         }
         }
@@ -144,6 +146,12 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private(set) var processingMS = 0.0
     private(set) var lastUpdate: Date?
     private(set) var counts = LiveFrameCounts()
+    private(set) var recognizedIcons: [RecognizedIcon] = []
+    private(set) var strategyStatus = "Стратегический анализ ещё не выполнялся"
+    private(set) var strategicText = ""
+    @ObservationIgnored private var ai: StrategyAI?
+    @ObservationIgnored private var strategyTask: Task<Void, Never>?
+    @ObservationIgnored private var lastStrategy = -1000.0
     private(set) var latestHealth: HealthObservation?
     private(set) var detectionToSpeechMS: Double?
     private(set) var frameToSpeechMS: Double?
@@ -244,7 +252,9 @@ final class LiveFrameProcessor: @unchecked Sendable {
         }
     }
 
-    func presentPicker(voice: VoiceCoach) {
+    func presentPicker(voice: VoiceCoach, ai: StrategyAI) {
+        guard !LiveTrainingGuard.training else { status = "Сначала завершите обучение нейросети"; return }
+        self.ai = ai
         guard !starting else { return }
         self.voice = voice
         let picker = SCContentSharingPicker.shared
@@ -274,6 +284,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     }
     private func configureProcessor(resetCounts: Bool = false) {
         evidenceGeneration += 1
+        strategyTask?.cancel(); strategyTask = nil; recognizedIcons = []; IconInference.shared.resetEvidence()
         latestHealth = nil
         processor.configure(enabled: active, calibration: calibration, generation: evidenceGeneration, streamID: stream.map { ObjectIdentifier($0) }, resetCounts: resetCounts) { [weak self] evidence in
             Task { @MainActor [weak self] in self?.receive(evidence) }
@@ -286,6 +297,8 @@ final class LiveFrameProcessor: @unchecked Sendable {
         // Keep the last landscape background frame available when the user returns for calibration.
         if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
         counts = evidence.counts; latestHealth = evidence.health
+        recognizedIcons = evidence.icons
+        scheduleStrategy(evidence)
         if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
         if evidence.advice.isEmpty { AdviceJournal.shared.cancelText(); voice?.stop() }
         guard evidence.background, armed, UIApplication.shared.applicationState == .background,
@@ -316,6 +329,61 @@ final class LiveFrameProcessor: @unchecked Sendable {
             }
         })
     }
+    private func stateStillCurrent(_ state: StrategicState) -> Bool {
+        guard let updated = lastUpdate, Date.now.timeIntervalSince(updated) <= 3 else { return false }
+        let old = state.icons.map { $0.slot + ":" + $0.code }.sorted()
+        let current = recognizedIcons.map { $0.slot + ":" + $0.code }.sorted()
+        guard old == current else { return false }
+        switch (state.ownHealth, latestHealth?.fraction) {
+        case (.none, .none): return true
+        case (.some(let a), .some(let b)): return abs(a-b) < 0.08
+        default: return false
+        }
+    }
+    private func scheduleStrategy(_ evidence: LiveEvidence) {
+        guard let ai, armed, evidence.background, UIApplication.shared.applicationState == .background,
+              strategyTask == nil, !ai.busy, (!evidence.icons.isEmpty || evidence.health != nil),
+              evidence.detectedAt - lastStrategy >= 25 else { return }
+        lastStrategy = evidence.detectedAt
+        // Foundation Models does not grant background GPU time. Only the explicitly CPU-only runtime is used here.
+        guard ai.provider == "llama" else {
+            strategyStatus = "Apple: английское состояние готово; фоновый глубокий анализ требует CPU-модели GGUF"
+            record("strategy-deferred", strategyStatus); return
+        }
+        let state = StrategicState(ownHealth: evidence.health?.fraction, icons: evidence.icons)
+        let token = evidenceGeneration
+        strategyStatus = "CPU-модель сравнивает действия"
+        record("strategy-start", "icons=\(state.icons.count); hp=\(state.ownHealth ?? -1); local CPU")
+        strategyTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { if self.evidenceGeneration == token { self.strategyTask = nil } }
+            do {
+                let plan = try await ai.analyze(state)
+                guard !Task.isCancelled, self.active, self.armed, self.evidenceGeneration == token,
+                      UIApplication.shared.applicationState == .background,
+                      self.stateStillCurrent(state) else {
+                    self.record("strategy-stale", "Результат отброшен: исходное состояние изменилось, свежих наблюдений нет или сессия изменилась"); return
+                }
+                self.strategicText = plan.russian(); self.strategyStatus = "Действия сравнены локальной нейросетью"
+                self.record("strategy-result", "selected=\(plan.selected.rawValue); alternatives=\(plan.alternatives.count); ordinalConfidence=\(plan.confidence)")
+                let episode = AdviceEpisode(id: UUID(), sessionID: self.sessionID, key: "strategy-" + plan.selected.rawValue, text: self.strategicText, priority: 3, observedHP: state.ownHealth,
+                    evidence: "Локальная языковая нейросеть сравнила альтернативы по HP и \(state.icons.count) распознанным иконкам. Стороны и области заданы пользователем.", uncertainty: "Позиции, золото, готовность навыков, текущий патч и намерения команды неизвестны. Оценки модели не являются измеренными вероятностями.")
+                guard self.latestHealth?.fraction ?? 1 > 0.3, AdviceJournal.shared.accept(episode, now: ProcessInfo.processInfo.systemUptime) else { return }
+                let valid: () -> Bool = { [weak self] in
+                    guard let self else { return false }
+                    return self.active && self.armed && self.evidenceGeneration == token && UIApplication.shared.applicationState == .background && self.stateStillCurrent(state) && (self.latestHealth?.fraction ?? 1) > 0.3
+                }
+                AdviceJournal.shared.showText(episode, valid: valid)
+                self.voice?.speak(String(self.strategicText.split(separator: "\n").first ?? ""), key: episode.key, priority: 3, deadline: ProcessInfo.processInfo.systemUptime + 3, valid: valid)
+            } catch is CancellationError { }
+            catch { self.strategyStatus = error.localizedDescription; self.record("strategy-error", self.strategyStatus) }
+        }
+    }
+    func analyzeLatestInForeground(ai: StrategyAI) async {
+        guard !ai.busy else { return }
+        do { let plan = try await ai.analyze(StrategicState(ownHealth: latestHealth?.fraction, icons: recognizedIcons)); strategicText = plan.russian(); strategyStatus = "Результат по последнему наблюдению; это не текущий экран MLBB" }
+        catch { strategyStatus = error.localizedDescription }
+    }
     private func start(filter: SCContentFilter) async {
         generation += 1
         let token = generation
@@ -334,7 +402,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
             stream = newStream
             try await newStream.startCapture()
             guard token == generation else { try? await newStream.stopCapture(); return }
-            active = true; status = "Захват активен • адаптивный анализ живых кадров"
+            active = true; LiveTrainingGuard.active = true; status = "Захват активен • адаптивный анализ живых кадров"
             sessionID = UUID(); events = []; speechStarts = 0; detectionToSpeechMS = nil; frameToSpeechMS = nil
             latestText = ""; latestImage = nil; lastUpdate = nil
             processor.setBackground(UIApplication.shared.applicationState == .background)
@@ -346,7 +414,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     func stop() async {
         generation += 1
         evidenceGeneration += 1
-        active = false; processor.disable(); heartbeat?.invalidate(); heartbeat = nil
+        active = false; LiveTrainingGuard.active = false; strategyTask?.cancel(); strategyTask = nil; processor.disable(); heartbeat?.invalidate(); heartbeat = nil
         counts = processor.snapshot(); latestHealth = nil
         let old = stream; stream = nil
         if let old { try? await old.stopCapture() }
@@ -366,7 +434,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         Task { @MainActor [weak self] in
             guard let self, self.stream === stream else { return }
-            self.evidenceGeneration += 1; self.processor.disable(); self.active = false; self.latestHealth = nil
+            self.evidenceGeneration += 1; self.processor.disable(); self.active = false; LiveTrainingGuard.active = false; self.strategyTask?.cancel(); self.strategyTask = nil; self.latestHealth = nil
             self.heartbeat?.invalidate(); self.heartbeat = nil; self.voice?.stop(); AdviceJournal.shared.cancelText()
             self.counts = self.processor.snapshot(); self.stream = nil; self.status = error.localizedDescription
             self.record("capture-error", self.status)
@@ -381,6 +449,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
 struct LiveCaptureView: View {
     @Environment(ScreenCaptureService.self) private var capture
     @Environment(VoiceCoach.self) private var voice
+    @Environment(StrategyAI.self) private var ai
     @State private var calibrated = false
     @State private var x = 0.35
     @State private var y = 0.80
@@ -392,15 +461,23 @@ struct LiveCaptureView: View {
             Section("Живой матч • проверка на iPhone") {
                 Text(capture.status)
                 if let updated = capture.lastUpdate { Text("Последнее наблюдение: \(updated.formatted(date: .omitted, time: .standard))").font(.caption) }
-                Button("Выбрать экран для захвата") { capture.presentPicker(voice: voice) }
+                Button("Выбрать экран для захвата") { capture.presentPicker(voice: voice, ai: ai) }
                 Button("Остановить захват") { Task { await capture.stop() } }.disabled(!capture.active)
                 Toggle("Я открыл MLBB • разрешить советы", isOn: Binding(get: { capture.armed }, set: { capture.armed = $0 }))
                 Text("1. Выберите весь экран. 2. Откройте тренировочный матч MLBB. 3. Вернитесь и выделите собственное число HP. 4. Включите советы и вернитесь в MLBB. Область сохраняется между запусками. Приложение не определяет название открытой игры; выключайте советы при выходе из MLBB.").font(.caption).foregroundStyle(.secondary)
-                Text("Первый сигнал — HP по двум согласованным наблюдениям. Выберите неподвижную полосу своего HP или число текущее/максимальное. Это калиброванный датчик, не полноценное понимание матча. Герои и миникарта пока не распознаются.").font(.caption).foregroundStyle(.orange)
+                Text("Первый сигнал — HP по двум согласованным наблюдениям. Выберите неподвижную полосу своего HP или число текущее/максимальное. Это калиброванный датчик, не полноценное понимание матча. Иконки героев распознаются только после вашего обучения и задания областей; миникарта пока не распознаётся.").font(.caption).foregroundStyle(.orange)
                 if let error = voice.error { Text(error).foregroundStyle(.orange) }
             }
             NavigationLink("Голос и текст • настройки") { AdviceSettingsView() }
             NavigationLink("Журнал и исправления советов") { AdviceJournalView() }
+            Section("Нейросетевое зрение → игровой анализ") {
+                NavigationLink("Разметить и обучить иконки") { IconLearningView() }
+                Text("Подтверждённых иконок: \(capture.recognizedIcons.count). Требуется своя обученная модель и заданные области; универсального детектора карты пока нет.").font(.caption)
+                Text(capture.strategyStatus)
+                Text(capture.strategicText).textSelection(.enabled)
+                Button("Сравнить действия по последнему состоянию") { Task { await capture.analyzeLatestInForeground(ai: ai) } }.disabled(!ai.available || ai.busy)
+                NavigationLink("Выбрать языковую модель") { LanguageModelsView() }
+            }
             Section("Диагностика настоящего потока") {
                 TimelineView(.periodic(from: .now, by: 1)) { clock in
                     Text(capture.lastUpdate.map { "Возраст обработанного кадра: \(Int(max(0, clock.date.timeIntervalSince($0)))) с" } ?? "Обработанные кадры ещё не поступали")

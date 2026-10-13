@@ -18,11 +18,11 @@ public struct AdviceEpisode: Codable, Identifiable, Sendable {
     public let uncertainty: String
     public var rating: Int = 0
     public var correction: String = ""
-    public init(id: UUID, sessionID: UUID, key: String, text: String, priority: Int, observedHP: Double?) {
+    public init(id: UUID, sessionID: UUID, key: String, text: String, priority: Int, observedHP: Double?, evidence: String? = nil, uncertainty: String? = nil) {
         self.id = id; self.created = .now; self.sessionID = sessionID; self.key = key
         self.text = text; self.priority = priority; self.observedHP = observedHP
-        evidence = "Два согласованных измерения в области собственного HP, указанной пользователем."
-        uncertainty = "Герои, противники, миникарта, действия игрока и результат решения неизвестны."
+        self.evidence = evidence ?? "Два согласованных измерения в области собственного HP, указанной пользователем."
+        self.uncertainty = uncertainty ?? "Герои, противники, миникарта, действия игрока и результат решения неизвестны."
     }
 }
 

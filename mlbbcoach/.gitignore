@@ -7,3 +7,5 @@ xcuserdata/
 *.xcarchive
 *.mlmodelc
 __pycache__/
+
+Vendor/

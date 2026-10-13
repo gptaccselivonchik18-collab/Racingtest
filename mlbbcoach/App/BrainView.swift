@@ -40,7 +40,7 @@ struct BrainView: View {
                     Button { request?.cancel() } label: { Image(systemName: "stop.circle") }.accessibilityLabel("Остановить ответ")
                 } else {
                     Button { send() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !ai.available)
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !ai.chatAvailable)
                         .accessibilityLabel("Отправить")
                 }
             }.padding()
@@ -80,13 +80,15 @@ struct ModelsView: View {
     var body: some View {
         List {
             NavigationLink { CustomModelView() } label: { Label("Управление Core ML-моделью зрения", systemImage: "eye") }
+            NavigationLink("Выбор языковой модели и русский чат") { LanguageModelsView() }
+            NavigationLink("Обучаемая нейросеть иконок") { IconLearningView() }
             Section("Языковая модель") {
                 LabeledContent("Провайдер", value: "Apple • SystemLanguageModel")
                 Text(ai.status).foregroundStyle(ai.available ? .mint : .orange)
                 Text("Используется локальная системная модель. Private Cloud Compute не подключён. Включение, загрузка и обновление модели управляются настройками iOS.")
                 Text("Размер модели и занятая ей RAM не публикуются этим API; приложение их не выдумывает.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Обучение") { Text("В этой версии обучение — сохранение и извлечение заметок. Изменение весов Core ML не реализовано: для него нужна отдельная updatable-модель и размеченные данные.") }
+            Section("Обучение") { Text("Раздел «Обучаемая нейросеть иконок» изменяет веса небольшой нейросети на размеченных изображениях и сравнивает отложенную выборку. Память и языковые веса — отдельные компоненты.") }
         }.navigationTitle("Модели")
     }
 }

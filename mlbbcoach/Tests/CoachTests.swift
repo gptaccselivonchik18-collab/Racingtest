@@ -171,3 +171,49 @@ private func barImage(_ filled: Int, width: Int = 200, holes: Range<Int> = 0..<0
     #expect(value.correction == episode.correction && value.observedHP == 0.2)
     #expect(value.uncertainty.contains("неизвестны"))
 }
+
+@Test func neuralTrainingChangesWeightsImprovesHeldOutAndReloads() throws {
+    let train = [LabeledVector(group: "a", features: [-0.9,-0.8], label: 0), LabeledVector(group: "a", features: [-0.8,-0.9], label: 0), LabeledVector(group: "b", features: [-0.7,-1], label: 0), LabeledVector(group: "c", features: [0.9,0.8], label: 1), LabeledVector(group: "c", features: [0.8,0.9], label: 1), LabeledVector(group: "d", features: [0.7,1], label: 1)]
+    let heldOut = [LabeledVector(group: "test1", features: [-0.6,-0.9], label: 0), LabeledVector(group: "test2", features: [-0.9,-0.6], label: 0), LabeledVector(group: "test3", features: [0.6,0.9], label: 1), LabeledVector(group: "test4", features: [0.9,0.6], label: 1)]
+    try TrainableNetwork.validateSplit(train: train, test: heldOut, classes: 2)
+    var model = TrainableNetwork(inputs: 2, hidden: 8, outputs: 2)
+    let original = model
+    let before = try #require(model.metrics(heldOut))
+    try model.train(train, epochs: 60, rate: 0.08)
+    let after = try #require(model.metrics(heldOut))
+    #expect(model.w1 != original.w1 && model.w2 != original.w2)
+    #expect(after.loss < before.loss && after.accuracy == 1)
+    #expect(TrainableNetwork.shouldPromote(before: before, after: after))
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let active = directory.appendingPathComponent("active.json"), previous = directory.appendingPathComponent("previous.json")
+    try JSONEncoder().encode(original).write(to: previous)
+    try JSONEncoder().encode(model).write(to: active)
+    let reloaded = try JSONDecoder().decode(TrainableNetwork.self, from: Data(contentsOf: active))
+    #expect(reloaded.w1 == model.w1 && reloaded.probabilities(heldOut[0].features) == model.probabilities(heldOut[0].features))
+    let rollback = try JSONDecoder().decode(TrainableNetwork.self, from: Data(contentsOf: previous))
+    #expect(rollback.w1 == original.w1 && rollback.w1 != model.w1)
+    print("NEURAL_EXPERIMENT synthetic_features=true before_accuracy=\(before.accuracy) after_accuracy=\(after.accuracy) before_loss=\(before.loss) after_loss=\(after.loss) weights_changed=true reload=true rollback=true")
+}
+@Test func neuralValidationRejectsLeakageAndWorseCandidate() throws {
+    let samples = (0..<6).map { LabeledVector(group: "same-match", features: [0.2,0.3], label: $0 % 2) }
+    #expect(throws: NeuralError.self) { try TrainableNetwork.validateSplit(train: samples, test: samples, classes: 2) }
+    let model = TrainableNetwork(inputs: 2, outputs: 2)
+    #expect(model.probabilities([.nan,0]) == nil)
+    #expect(model.probabilities([0]) == nil)
+    let strong = NetworkMetrics(count: 20, accuracy: 0.9, loss: 0.2)
+    let weak = NetworkMetrics(count: 20, accuracy: 0.6, loss: 0.7)
+    #expect(!TrainableNetwork.shouldPromote(before: strong, after: weak))
+}
+@Test func appleStateContainsOnlyEnglishIdentifiersAndRussianRendererIsLocal() throws {
+    let state = StrategicState(ownHealth: 0.4, icons: [RecognizedIcon(slot: "ally", code: "layla", score: 0.9, observedAt: 1)])
+    let json = try state.englishJSON()
+    #expect(json.utf8.allSatisfy { $0 < 128 })
+    let invalid = StrategicState(ownHealth: nil, icons: [RecognizedIcon(slot: "ally", code: "Лейла", score: 0.9, observedAt: 1)])
+    #expect(throws: NeuralError.self) { try invalid.englishJSON() }
+    let plan = StrategicPlan(selected: .gatherInformation, alternatives: [ActionOption(action: .gatherInformation, reason: .insufficientEvidence, utility: 60, risk: 10), ActionOption(action: .recover, reason: .healthLimited, utility: 40, risk: 20)], confidence: 30)
+    #expect(plan.valid && plan.russian().contains("Уточните обстановку"))
+    let restored = try JSONDecoder().decode(StrategicPlan.self, from: JSONEncoder().encode(plan))
+    #expect(restored.russian() == plan.russian())
+}

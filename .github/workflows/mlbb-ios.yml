@@ -32,9 +32,34 @@ jobs:
           name: test-diagnostics
           path: mlbbcoach/build/tests.log
           retention-days: 7
+  local-model:
+    runs-on: macos-26-intel
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mlbbcoach
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            mlbbcoach/build/qwen-test.gguf
+            mlbbcoach/build/llama-b5046.zip
+          key: coach-llama-b5046-qwen-74a4da8c
+      - name: Verify pinned llama runtime
+        run: python3 scripts/fetch_llama.py
+      - name: Actual local Russian inference on macOS CPU
+        run: |
+          set -o pipefail
+          python3 scripts/test_llama.py 2>&1 | tee build/local-model.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-model-diagnostics
+          path: mlbbcoach/build/local-model.log
+          retention-days: 7
   build:
-    needs: tests
-    if: ${{ !cancelled() }}
+    needs: [tests, local-model]
     runs-on: xcode-27
     timeout-minutes: 25
     defaults:
@@ -47,13 +72,14 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
           swift --version
+      - name: Install pinned local inference runtime
+        run: python3 scripts/fetch_llama.py
       - name: Verify generated project
         run: |
           python3 scripts/generate_project.py
           git diff --exit-code -- MLBBNeuralCoach.xcodeproj Package.swift
           plutil -lint MLBBNeuralCoach.xcodeproj/project.pbxproj
       - name: Archive for iPhone
-        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           mkdir -p build
@@ -74,7 +100,6 @@ jobs:
           cd ../..
           shasum -a 256 build/MLBBNeuralCoach-unsigned.ipa > build/SHA256SUMS.txt
       - name: Simulator launch smoke check
-        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           mkdir -p build

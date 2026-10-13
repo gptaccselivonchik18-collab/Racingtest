@@ -29,7 +29,7 @@ struct MatchDetailView: View {
                 Text(ai.status).font(.caption).foregroundStyle(.secondary)
                 Text("Модель получает выборку OCR и ваши заметки. Это не полноценное распознавание всех событий матча.").font(.caption).foregroundStyle(.secondary)
                 if request != nil { ProgressView(); Button("Отменить") { request?.cancel() } }
-                else { Button(match.strategy.isEmpty ? "Разобрать с локальным ИИ" : "Повторить разбор") { analyze() }.disabled(!ai.available || ai.busy) }
+                else { Button(match.strategy.isEmpty ? "Разобрать с локальным ИИ" : "Повторить разбор") { analyze() }.disabled(!ai.chatAvailable || ai.busy) }
                 if !match.strategy.isEmpty { Text(match.strategy).textSelection(.enabled) }
                 if let error { Text(error).foregroundStyle(.orange) }
             }
