@@ -291,7 +291,34 @@ final class LiveFrameProcessor: @unchecked Sendable {
             Task { @MainActor [weak self] in self?.receive(evidence) }
         }
     }
-    private func receive(_ evidence: LiveE…615 tokens truncated…Info.processInfo.systemUptime) else { return false }
+    private func receive(_ evidence: LiveEvidence) {
+        guard active, evidence.generation == evidenceGeneration else { return }
+        let previousText = latestText
+        latestText = evidence.text; processingMS = evidence.processingMS; lastUpdate = .now
+        // Keep the last landscape background frame available when the user returns for calibration.
+        if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
+        counts = evidence.counts; latestHealth = evidence.health
+        if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
+        let oldIcons = recognizedIcons.map { $0.slot + ":" + $0.code }.sorted()
+        recognizedIcons = evidence.icons
+        if oldIcons != recognizedIcons.map({ $0.slot + ":" + $0.code }).sorted() {
+            record("vision-icons", recognizedIcons.map { "\($0.slot):\($0.code);score=\($0.score)" }.joined(separator: ","))
+        }
+        voice?.revalidate()
+        scheduleStrategy(evidence)
+        guard evidence.background, armed, UIApplication.shared.applicationState == .background,
+              LiveTiming.isFresh(frame: evidence.receivedAt, now: ProcessInfo.processInfo.systemUptime),
+              let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
+        let id = UUID(), token = evidenceGeneration
+        record("event", "\(tip.key); hp=\(evidence.health?.fraction ?? -1); inferenceMS=\(Int(evidence.processingMS)); own-HP ROI asserted by user", eventID: id)
+        let spokenText = calibration?.barTint == nil ? tip.text : tip.text.replacingOccurrences(of: "По OCR", with: "По выделенной полосе")
+        let episode = AdviceEpisode(id: id, sessionID: sessionID, key: tip.key, text: spokenText, priority: tip.priority, observedHP: evidence.health?.fraction)
+        guard AdviceJournal.shared.accept(episode, now: evidence.detectedAt) else { return }
+        record("advice-accepted", "mode=\(AdviceJournal.shared.mode.rawValue); key=\(tip.key)", eventID: id)
+        let valid: () -> Bool = { [weak self] in
+            guard let self, self.active, self.armed, self.evidenceGeneration == token,
+                  UIApplication.shared.applicationState == .background,
+                  let hp = self.latestHealth, LiveTiming.isFresh(frame: hp.time, now: ProcessInfo.processInfo.systemUptime) else { return false }
             return TacticalDecisionEngine.evaluate(health: hp, at: ProcessInfo.processInfo.systemUptime, maxAge: 3).contains { $0.key == tip.key }
         }
         AdviceJournal.shared.showText(episode, valid: valid)
