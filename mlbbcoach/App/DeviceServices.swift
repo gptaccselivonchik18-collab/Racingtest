@@ -59,7 +59,7 @@ import AVFoundation
         let settings = UserDefaults.standard
         guard settings.object(forKey: "voiceEnabled") == nil || settings.bool(forKey: "voiceEnabled") else { report?(.suppressed("Голос выключен")); return }
         guard deadline.map({ ProcessInfo.processInfo.systemUptime <= $0 }) ?? true, valid?() ?? true else { report?(.suppressed("Событие устарело")); return }
-        let interval = max(5, settings.double(forKey: "voiceInterval"))
+        let interval = max(5, settings.object(forKey: "voiceInterval") == nil ? 15 : settings.double(forKey: "voiceInterval"))
         guard Date.now.timeIntervalSince(lastSpoken[key] ?? .distantPast) >= 45,
               priority == 1 || Date.now.timeIntervalSince(lastTime) >= interval else { report?(.suppressed("Пауза или повтор")); return }
         guard let voice = AVSpeechSynthesisVoice(language: "ru-RU") else {

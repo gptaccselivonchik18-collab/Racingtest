@@ -321,7 +321,6 @@ final class LiveFrameProcessor: @unchecked Sendable {
         guard token == generation else { return }
         let config = SCStreamConfiguration()
         config.width = 1920; config.height = 1080
-        config.preservesAspectRatio = true
         config.capturesAudio = false
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         do {

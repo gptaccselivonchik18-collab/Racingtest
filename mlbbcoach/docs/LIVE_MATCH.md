@@ -44,3 +44,7 @@ GitHub Actions не проверяет системное разрешение �
 - [Apple: Capturing screen content on iOS](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios): iOS 27, `present()` для full-display; `screen-capture` сохраняет поток после backgrounding. В примере `audio` служит микрофонному потоку; в этом приложении `.playback/.spokenAudio` используется только для настоящей речи, без тихого аудио для удержания процесса.
 - [Apple: MLComputeUnits](https://developer.apple.com/documentation/coreml/mlcomputeunits): Apple рекомендует CPU-only для моделей, которые могут работать в фоне. Это не обещание бесконечного фонового времени.
 - [Apple: Performing long-running tasks](https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados): GPU в фоне требует поддерживаемого устройства, BGContinuedProcessingTask и отдельного entitlement. Такой task имеет завершение/expiration и не используется как гарантия непрерывного тренера. В этом прототипе GPU не запрашивается.
+
+## Расхождение документации и SDK
+
+Документация перечисляет preservesAspectRatio на iOS 27, но Xcode 27.0 (27A266a) отклоняет явную установку как unavailable in iOS. Свойство не устанавливается. Геометрия проверяется по contentRect каждого живого кадра; неизвестная геометрия не допускается к HP-анализу.

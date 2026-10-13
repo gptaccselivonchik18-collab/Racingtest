@@ -13,14 +13,14 @@ concurrency:
   cancel-in-progress: true
 jobs:
   tests:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 10
     defaults:
       run:
         working-directory: mlbbcoach
     steps:
       - uses: actions/checkout@v4
-      - name: Core and Vision integration tests on stable macOS 15
+      - name: Core and Vision integration tests on stable macOS 26
         run: |
           set -o pipefail
           mkdir -p build

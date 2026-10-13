@@ -23,7 +23,7 @@
 
 ## Сборка и установка
 
-Откройте PR №1 / Checks или Actions / MLBB Coach unsigned IPA. Сборка выполняется на стандартном runner xcode-27 (Xcode 27.0, iOS SDK 27); тесты — на стабильном macos-15 (ранее macos-26; runner изменён из-за очереди). Workflow также собирает и запускает приложение в симуляторе, проверяет живой процесс и сохраняет screenshot в build-diagnostics. Результаты конкретного запуска смотрите в docs/VALIDATION.md и логе Actions.
+Откройте PR №1 / Checks или Actions / MLBB Coach unsigned IPA. Сборка выполняется на стандартном runner xcode-27 (Xcode 27.0, iOS SDK 27); тесты — на стабильном macos-26. Workflow также собирает и запускает приложение в симуляторе, проверяет живой процесс и сохраняет screenshot в build-diagnostics. Результаты конкретного запуска смотрите в docs/VALIDATION.md и логе Actions.
 
 Deployment target iOS 26.0; живой захват требует iOS 27.0 и устройства. Исходники Xcode-проекта включены; scripts/generate_project.py детерминированно обновляет проект и Swift Package после добавления Swift-файлов. Локальный Xcode для облачной сборки не требуется.
 
