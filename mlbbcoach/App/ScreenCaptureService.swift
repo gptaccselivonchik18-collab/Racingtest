@@ -152,6 +152,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     @ObservationIgnored private var ai: StrategyAI?
     @ObservationIgnored private var strategyTask: Task<Void, Never>?
     @ObservationIgnored private var lastStrategy = -1000.0
+    @ObservationIgnored private var lastStrategyFingerprint = ""
     private(set) var latestHealth: HealthObservation?
     private(set) var detectionToSpeechMS: Double?
     private(set) var frameToSpeechMS: Double?
@@ -284,40 +285,13 @@ final class LiveFrameProcessor: @unchecked Sendable {
     }
     private func configureProcessor(resetCounts: Bool = false) {
         evidenceGeneration += 1
-        strategyTask?.cancel(); strategyTask = nil; recognizedIcons = []; IconInference.shared.resetEvidence()
+        strategyTask?.cancel(); strategyTask = nil; lastStrategyFingerprint = ""; recognizedIcons = []; IconInference.shared.resetEvidence()
         latestHealth = nil
         processor.configure(enabled: active, calibration: calibration, generation: evidenceGeneration, streamID: stream.map { ObjectIdentifier($0) }, resetCounts: resetCounts) { [weak self] evidence in
             Task { @MainActor [weak self] in self?.receive(evidence) }
         }
     }
-    private func receive(_ evidence: LiveEvidence) {
-        guard active, evidence.generation == evidenceGeneration else { return }
-        let previousText = latestText
-        latestText = evidence.text; processingMS = evidence.processingMS; lastUpdate = .now
-        // Keep the last landscape background frame available when the user returns for calibration.
-        if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
-        counts = evidence.counts; latestHealth = evidence.health
-        let previousIcons = recognizedIcons.map { $0.slot + ":" + $0.code }.sorted()
-        recognizedIcons = evidence.icons
-        if previousIcons != recognizedIcons.map({ $0.slot + ":" + $0.code }).sorted() {
-            record("vision-icons", recognizedIcons.map { "\($0.slot):\($0.code) score=\(String(format: "%.3f", $0.score))" }.joined(separator: "; "))
-        }
-        scheduleStrategy(evidence)
-        if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
-        voice?.revalidate()
-        guard evidence.background, armed, UIApplication.shared.applicationState == .background,
-              LiveTiming.isFresh(frame: evidence.receivedAt, now: ProcessInfo.processInfo.systemUptime),
-              let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
-        let id = UUID(), token = evidenceGeneration
-        record("event", "\(tip.key); hp=\(evidence.health?.fraction ?? -1); inferenceMS=\(Int(evidence.processingMS)); own-HP ROI asserted by user", eventID: id)
-        let spokenText = calibration?.barTint == nil ? tip.text : tip.text.replacingOccurrences(of: "По OCR", with: "По выделенной полосе")
-        let episode = AdviceEpisode(id: id, sessionID: sessionID, key: tip.key, text: spokenText, priority: tip.priority, observedHP: evidence.health?.fraction)
-        guard AdviceJournal.shared.accept(episode, now: evidence.detectedAt) else { return }
-        record("advice-accepted", "mode=\(AdviceJournal.shared.mode.rawValue); key=\(tip.key)", eventID: id)
-        let valid: () -> Bool = { [weak self] in
-            guard let self, self.active, self.armed, self.evidenceGeneration == token,
-                  UIApplication.shared.applicationState == .background,
-                  let hp = self.latestHealth, LiveTiming.isFresh(frame: hp.time, now: ProcessInfo.processInfo.systemUptime) else { return false }
+    private func receive(_ evidence: LiveE…615 tokens truncated…Info.processInfo.systemUptime) else { return false }
             return TacticalDecisionEngine.evaluate(health: hp, at: ProcessInfo.processInfo.systemUptime, maxAge: 3).contains { $0.key == tip.key }
         }
         AdviceJournal.shared.showText(episode, valid: valid)
@@ -348,6 +322,9 @@ final class LiveFrameProcessor: @unchecked Sendable {
         guard let ai, armed, evidence.background, UIApplication.shared.applicationState == .background,
               strategyTask == nil, !ai.busy, (!evidence.icons.isEmpty || evidence.health != nil),
               evidence.detectedAt - lastStrategy >= 25 else { return }
+        let fingerprint = ai.provider + ":" + (evidence.health.map { String(Int($0.fraction * 10)) } ?? "unknown") + ":" + evidence.icons.map { $0.slot + ":" + $0.code }.sorted().joined(separator: ",")
+        guard fingerprint != lastStrategyFingerprint else { return }
+        lastStrategyFingerprint = fingerprint
         lastStrategy = evidence.detectedAt
         // Foundation Models does not grant background GPU time. Only the explicitly CPU-only runtime is used here.
         guard ai.provider == "llama" else {
@@ -366,6 +343,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 guard !Task.isCancelled, self.active, self.armed, self.evidenceGeneration == token,
                       UIApplication.shared.applicationState == .background,
                       self.stateStillCurrent(state) else {
+                    self.lastStrategyFingerprint = ""
                     self.record("strategy-stale", "Результат отброшен: исходное состояние изменилось, свежих наблюдений нет или сессия изменилась"); return
                 }
                 self.strategicText = plan.russian(); self.strategyStatus = "Действия сравнены локальной нейросетью"
@@ -380,7 +358,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 AdviceJournal.shared.showText(episode, valid: valid)
                 self.voice?.speak(String(self.strategicText.split(separator: "\n").first ?? ""), key: episode.key, priority: 3, deadline: ProcessInfo.processInfo.systemUptime + 3, valid: valid)
             } catch is CancellationError { }
-            catch { self.strategyStatus = error.localizedDescription; self.record("strategy-error", self.strategyStatus) }
+            catch { self.lastStrategyFingerprint = ""; self.strategyStatus = error.localizedDescription; self.record("strategy-error", self.strategyStatus) }
         }
     }
     func analyzeLatestInForeground(ai: StrategyAI) async {

@@ -17,7 +17,7 @@ enum CoachError: LocalizedError {
 }
 @Generable struct ApplePlan {
     var selected: AppleAction
-    @Guide(description: "Compare two to five distinct actions", .count(2...5)) var alternatives: [AppleOption]
+    @Guide(description: "Compare three distinct actions", .count(3)) var alternatives: [AppleOption]
     @Guide(description: "Confidence given missing evidence", .range(0...100)) var confidence: Int
 }
 

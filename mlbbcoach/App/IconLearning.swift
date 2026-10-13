@@ -8,6 +8,7 @@ import Observation
 struct IconExample: Codable, Identifiable, Sendable {
     let id: UUID
     let sourceHash: String
+    let region: HUDRegion?
     let group: String
     let label: IconLabel
     let validation: Bool
@@ -73,7 +74,7 @@ actor IconLearningStore {
         let hash = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
         guard !all.contains(where: { ($0.sourceHash == hash || $0.group == group) && $0.validation != validation }) else { throw NeuralError.invalidSplit }
         guard !all.contains(where: { $0.features == features }) else { throw CoachError.unavailable("Такая область уже размечена") }
-        let sample = IconExample(id: UUID(), sourceHash: hash, group: group, label: label, validation: validation, features: features)
+        let sample = IconExample(id: UUID(), sourceHash: hash, region: region, group: group, label: label, validation: validation, features: features)
         let crop = image.cropping(to: CGRect(x: region.x * Double(image.width), y: region.y * Double(image.height), width: region.width * Double(image.width), height: region.height * Double(image.height)).integral)
         guard let crop, let png = UIImage(cgImage: crop).pngData() else { throw NeuralError.invalidData }
         try FileManager.default.createDirectory(at: Self.root, withIntermediateDirectories: true)
@@ -98,8 +99,10 @@ actor IconLearningStore {
         let original = network
         guard let before = network.metrics(test) else { throw NeuralError.invalidData }
         try network.train(train)
+        try Task.checkCancellation()
         guard let after = network.metrics(test) else { throw NeuralError.invalidData }
         let version = IconNetworkVersion(labels: labels, network: network, before: before, after: after, parametersChanged: original.w1 != network.w1 || original.w2 != network.w2)
+        try Task.checkCancellation()
         try write(version, "candidate.json")
         // Dataset changes never silently replace an incumbent with unrelated labels.
         let incumbentMetric = previous.flatMap { $0.labels == labels ? $0.network.metrics(test) : nil }
@@ -168,6 +171,7 @@ struct IconLearningView: View {
                 if busy { ProgressView(); Button("Отменить") { training?.cancel() } }
                 Button("Вернуть предыдущие веса") { run { try await IconLearningStore.shared.rollback(); status = "Веса предыдущей версии восстановлены" } }.disabled(busy)
                 Text(status).textSelection(.enabled)
+                ShareLink("Экспорт активных весов JSON", item: IconLearningStore.root.appendingPathComponent("active.json")).disabled(!FileManager.default.fileExists(atPath: IconLearningStore.root.appendingPathComponent("active.json").path))
                 Button("Показать активную версию") { run { let v = try await IconLearningStore.shared.current(); status = v.map { "Версия \($0.id), проверка \($0.after.count), точность \(Int($0.after.accuracy*100))%. Это качество вашей выборки, не всей MLBB." } ?? "Обученной активной модели нет" } }
             }
             Section("Область для живого распознавания") {

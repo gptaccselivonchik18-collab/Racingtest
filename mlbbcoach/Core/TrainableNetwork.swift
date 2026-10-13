@@ -39,6 +39,7 @@ public struct TrainableNetwork: Codable, Sendable {
         var h = b1, z = b2
         for j in 0..<hidden { for i in 0..<inputs { h[j] += w1[j * inputs + i] * x[i] }; h[j] = tanh(h[j]) }
         for k in 0..<outputs { for j in 0..<hidden { z[k] += w2[k * hidden + j] * h[j] } }
+        guard z.allSatisfy(\.isFinite) else { return nil }
         let peak = z.max() ?? 0; let e = z.map { exp($0 - peak) }; let sum = e.reduce(0,+)
         return (h, e.map { $0 / sum })
     }
