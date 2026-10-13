@@ -4,6 +4,24 @@ import Testing
 @testable import CoachCore
 @testable import CoachStorage
 
+@Test func stateNeedsTwoReadingsAndClearsMissingEvidence() {
+    var tracker = GameStateTracker()
+    #expect(tracker.observe(HealthObservation(fraction: 0.12, confidence: 0.99, time: 1), at: 1) == nil)
+    #expect(tracker.observe(HealthObservation(fraction: 0.13, confidence: 0.99, time: 3), at: 3) != nil)
+    #expect(tracker.observe(nil, at: 4) == nil)
+    #expect(tracker.health == nil)
+    #expect(tracker.observe(HealthObservation(fraction: 0.12, confidence: 0.99, time: 5), at: 5) == nil)
+    #expect(tracker.observe(HealthObservation(fraction: 0.13, confidence: 0.99, time: 30), at: 30) == nil)
+}
+@Test func longMatchSamplingIncludesStartAndEndWithinBudget() {
+    let lines = (0..<100).map { "frame-\($0)" }.joined(separator: "\n\n")
+    let result = EvidenceSampling.representative(lines, limit: 8)
+    #expect(result.contains("frame-0"))
+    #expect(result.contains("frame-99"))
+    #expect(result.components(separatedBy: "\n").count == 8)
+    #expect(EvidenceSampling.representative(lines, limit: 0).isEmpty)
+}
+
 @Test func backupRoundTripAndDuplicateProtection() throws {
     let entry = MemorySnapshot(text: "Моя стратегия", kind: "Исправление", patch: "test", enabled: false)
     let data = try JSONEncoder().encode(MemoryBackup(entries: [entry]))

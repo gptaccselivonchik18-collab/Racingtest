@@ -43,8 +43,10 @@ public enum VisionEngine {
                 }
             }
         }
-        do { try VNImageRequestHandler(cgImage: image, options: [:]).perform(requests) }
-        catch { throw DataValidationError.invalid("Vision: обработка изображения завершилась ошибкой: \(String(reflecting: error))") }
+        for request in requests {
+            do { try VNImageRequestHandler(cgImage: image, options: [:]).perform([request]) }
+            catch { throw DataValidationError.invalid("Vision: \(type(of: request)) завершился ошибкой: \(String(reflecting: error))") }
+        }
         var text = (full.results ?? []).compactMap { $0.topCandidates(1).first }.filter { $0.confidence >= 0.50 }.prefix(60)
             .map { "\($0.string) [\(Int($0.confidence * 100))%]" }.joined(separator: " | ")
         let health = (healthRequest?.results ?? []).compactMap { observation -> HealthObservation? in

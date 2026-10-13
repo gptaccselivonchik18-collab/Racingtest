@@ -35,6 +35,7 @@ import SwiftData
     var processingSeconds: Double
     var transcript: String
     var summary: String
+    var strategy: String = ""
     init(title: String, duration: Double, frameCount: Int, processingSeconds: Double, transcript: String) {
         id = UUID(); created = .now; self.title = title; self.duration = duration
         self.frameCount = frameCount; self.processingSeconds = processingSeconds

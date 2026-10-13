@@ -50,7 +50,7 @@ actor VideoAnalyzer {
         var lines: [String] = []
         var advice: [String] = []
         var lastAdvice: [String: Double] = [:]
-        var priorLowHP: HealthObservation?
+        var tracker = GameStateTracker()
         var lastText = ""
         while time < duration && frames < 2000 {
             try Task.checkCancellation()
@@ -63,16 +63,13 @@ actor VideoAnalyzer {
                 lines.append("[\(Int(observedTime)) с] OCR (непроверенный текст): \(evidence.text.prefix(1000))")
                 lastText = evidence.text
             }
-            if let hp = evidence.health, hp.fraction <= 0.30 {
-                if let previous = priorLowHP, abs(hp.fraction - previous.fraction) < 0.12, hp.time - previous.time <= 30 {
+            if let hp = tracker.observe(evidence.health, at: observedTime, maxAge: 30), hp.fraction <= 0.30 {
                     for tip in TacticalDecisionEngine.evaluate(health: hp, at: observedTime) {
                         if observedTime - (lastAdvice[tip.key] ?? -1000) >= 45 {
                             advice.append("[\(Int(observedTime)) с] \(tip.text)"); lastAdvice[tip.key] = observedTime
                         }
                     }
-                }
-                priorLowHP = hp
-            } else { priorLowHP = nil }
+            }
             await progress(min(1, time / duration))
             let heavy = ProcessInfo.processInfo.isLowPowerModeEnabled || ProcessInfo.processInfo.thermalState == .serious
             time += max(baseInterval * (heavy ? 2 : 1), duration / 2000)

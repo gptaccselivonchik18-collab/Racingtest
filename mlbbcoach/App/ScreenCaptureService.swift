@@ -21,13 +21,13 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private var epoch = 0
     private var roi: HUDRegion?
     private var lastFrame = -1000.0
-    private var previousHP: HealthObservation?
+    private var tracker = GameStateTracker()
     private var handler: (@Sendable (LiveEvidence) -> Void)?
     func configure(enabled: Bool, roi: HUDRegion?, handler: @Sendable @escaping (LiveEvidence) -> Void) {
         lock.lock(); defer { lock.unlock() }
-        epoch += 1; self.enabled = enabled; self.roi = roi; self.handler = handler; previousHP = nil
+        epoch += 1; self.enabled = enabled; self.roi = roi; self.handler = handler; tracker = GameStateTracker()
     }
-    func disable() { lock.lock(); epoch += 1; enabled = false; previousHP = nil; lock.unlock() }
+    func disable() { lock.lock(); epoch += 1; enabled = false; tracker = GameStateTracker(); lock.unlock() }
     func process(_ sample: CMSampleBuffer) {
         let started = ProcessInfo.processInfo.systemUptime
         let process = ProcessInfo.processInfo
@@ -35,7 +35,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         let minimumInterval = process.isLowPowerModeEnabled || process.thermalState == .serious ? 5.0 : 2.0
         guard enabled, !busy, started - lastFrame >= minimumInterval, process.thermalState != .critical else { lock.unlock(); return }
         lastFrame = started; busy = true
-        let region = roi, callback = handler, previous = previousHP, token = epoch
+        let region = roi, callback = handler, token = epoch
         lock.unlock()
         inferenceQueue.async { [self] in
         defer { lock.lock(); busy = false; lock.unlock() }
@@ -46,13 +46,15 @@ final class LiveFrameProcessor: @unchecked Sendable {
             do {
                 let evidence = try VisionEngine.recognize(image, at: started, hpRegion: region)
                 var tips: [TacticalAdvice] = []
-                if let hp = evidence.health, let previous, started - previous.time <= 10, abs(hp.fraction - previous.fraction) < 0.12 {
-                    tips = TacticalDecisionEngine.evaluate(health: hp, at: started)
+                lock.lock()
+                let stillEnabled = enabled && epoch == token
+                if stillEnabled, let hp = tracker.observe(evidence.health, at: ProcessInfo.processInfo.systemUptime) {
+                    tips = TacticalDecisionEngine.evaluate(health: hp, at: ProcessInfo.processInfo.systemUptime)
                 }
-                lock.lock(); let stillEnabled = enabled && epoch == token; if stillEnabled { previousHP = evidence.health }; lock.unlock()
+                lock.unlock()
                 if stillEnabled { callback?(LiveEvidence(image: image, text: evidence.text, advice: tips, processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             } catch {
-                lock.lock(); let stillEnabled = enabled && epoch == token; if stillEnabled { previousHP = nil }; lock.unlock()
+                lock.lock(); let stillEnabled = enabled && epoch == token; if stillEnabled { tracker = GameStateTracker() }; lock.unlock()
                 if stillEnabled { callback?(LiveEvidence(image: image, text: "Ошибка Vision: \(error.localizedDescription)", advice: [], processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             }
         }

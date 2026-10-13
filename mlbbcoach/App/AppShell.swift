@@ -100,12 +100,7 @@ struct MatchHistoryView: View {
             if matches.isEmpty { ContentUnavailableView("Матчей пока нет", systemImage: "film") }
             ForEach(matches) { match in
                 NavigationLink {
-                    ScrollView { VStack(alignment: .leading, spacing: 16) {
-                        Text(match.title).font(.title2.bold())
-                        Text("Кадров: \(match.frameCount) • обработка: \(Int(match.processingSeconds)) с")
-                        Text(match.summary).foregroundStyle(.mint)
-                        Text(match.transcript).textSelection(.enabled)
-                    }.padding() }.navigationTitle("Разбор матча")
+                    MatchDetailView(match: match)
                 } label: { VStack(alignment: .leading) {
                     Text(match.title)
                     Text(match.created.formatted()).font(.caption).foregroundStyle(.secondary)

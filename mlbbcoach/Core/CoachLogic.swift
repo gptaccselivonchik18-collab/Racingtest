@@ -69,6 +69,28 @@ public struct TacticalAdvice: Codable, Sendable {
     public let priority: Int
     public let text: String
 }
+public struct GameStateTracker: Sendable {
+    public private(set) var health: HealthObservation?
+    public init() {}
+    public mutating func observe(_ reading: HealthObservation?, at now: Double, maxAge: Double = 10) -> HealthObservation? {
+        guard let reading, reading.fraction.isFinite, reading.fraction > 0, reading.fraction <= 1,
+              reading.confidence >= 0.85, reading.confidence <= 1, reading.time.isFinite, now.isFinite,
+              now >= reading.time, now - reading.time <= maxAge else { health = nil; return nil }
+        let previous = health; health = reading
+        guard let previous, reading.time > previous.time, reading.time - previous.time <= maxAge,
+              abs(reading.fraction - previous.fraction) < 0.12 else { return nil }
+        return reading
+    }
+}
+public enum EvidenceSampling {
+    public static func representative(_ transcript: String, limit: Int = 8) -> String {
+        let lines = transcript.components(separatedBy: "\n\n").filter { !$0.isEmpty }
+        guard !lines.isEmpty, limit > 0 else { return "" }
+        if lines.count <= limit { return lines.map { String($0.prefix(500)) }.joined(separator: "\n") }
+        if limit == 1 { return String(lines[0].prefix(500)) }
+        return (0..<limit).map { index in String(lines[index * (lines.count - 1) / (limit - 1)].prefix(500)) }.joined(separator: "\n")
+    }
+}
 public enum TacticalDecisionEngine {
     public static func evaluate(health: HealthObservation?, at time: Double, maxAge: Double = 10) -> [TacticalAdvice] {
         guard let hp = health, hp.fraction.isFinite, hp.fraction > 0, hp.fraction <= 1,
