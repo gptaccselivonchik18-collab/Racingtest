@@ -51,7 +51,8 @@ import AVFoundation
         }
     }
     private func releaseAudioIfIdle() {
-        if !synth.isSpeaking { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+        // A cancelled utterance can finish before its replacement starts. Keep that replacement's audio session active.
+        if !synth.isSpeaking && pending.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
     func speak(_ text: String, key: String, priority: Int = 5, deadline: Double? = nil,
                valid: (() -> Bool)? = nil, report: ((Delivery) -> Void)? = nil) {
@@ -68,6 +69,7 @@ import AVFoundation
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)
+            error = nil
             if priority == 1 { synth.stopSpeaking(at: .immediate) }
             let utterance = AVSpeechUtterance(string: text)
             utterance.voice = voice; utterance.rate = AVSpeechUtteranceDefaultSpeechRate
