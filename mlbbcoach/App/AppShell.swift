@@ -77,6 +77,8 @@ struct LibraryView: View {
             NavigationLink { VideoAnalysisView() } label: { Label("Анализ видео", systemImage: "play.rectangle") }
             NavigationLink { MatchHistoryView() } label: { Label("Матчи", systemImage: "film") }
             NavigationLink { ModelsView() } label: { Label("Модели", systemImage: "cpu") }
+            NavigationLink { KnowledgeView() } label: { Label("Знания", systemImage: "books.vertical") }
+            NavigationLink { BackupView() } label: { Label("Резервная копия памяти", systemImage: "externaldrive") }
             Section("Производительность") {
                 Slider(value: $interval, in: 1...10, step: 1)
                 LabeledContent("Интервал анализа записи", value: "\(Int(interval)) с")

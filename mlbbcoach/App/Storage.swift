@@ -47,6 +47,7 @@ import SwiftData
     var patch: String
     var source: String
     var text: String
+    var license: String = ""
     init(patch: String, source: String, text: String) {
         id = UUID(); updated = .now; self.patch = patch; self.source = source; self.text = text
     }

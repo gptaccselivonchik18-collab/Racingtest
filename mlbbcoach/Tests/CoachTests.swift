@@ -4,6 +4,24 @@ import Testing
 @testable import CoachCore
 @testable import CoachStorage
 
+@Test func backupRoundTripAndDuplicateProtection() throws {
+    let entry = MemorySnapshot(text: "Моя стратегия", kind: "Исправление", patch: "test", enabled: false)
+    let data = try JSONEncoder().encode(MemoryBackup(entries: [entry]))
+    let restored = try MemoryBackup.decode(data)
+    #expect(restored.entries.first?.id == entry.id)
+    #expect(restored.entries.first?.enabled == false)
+    let duplicate = try JSONEncoder().encode(MemoryBackup(entries: [entry, entry]))
+    #expect(throws: (any Error).self) { try MemoryBackup.decode(duplicate) }
+}
+@Test func knowledgeRejectsUnversionedAndInsecureSources() throws {
+    let valid = Data(#"{"schemaVersion":1,"patch":"test","published":"2026-01-01T00:00:00Z","source":"https://example.com/source","license":"test-only","entries":["Непроверенная заметка"]}"#.utf8)
+    #expect(try KnowledgePack.decode(valid).patch == "test")
+    let insecure = Data(String(decoding: valid, as: UTF8.self).replacingOccurrences(of: "https://", with: "http://").utf8)
+    #expect(throws: (any Error).self) { try KnowledgePack.decode(insecure) }
+    let wrongVersion = Data(String(decoding: valid, as: UTF8.self).replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":2").utf8)
+    #expect(throws: (any Error).self) { try KnowledgePack.decode(wrongVersion) }
+}
+
 @Test func healthRejectsAmbiguousAndImpossibleReadings() {
     for text in ["12/0", "150/100", "-1/100", "12/100/200", "HP 12/100", "3:40", ""] {
         #expect(HealthParser.parse(text, confidence: 0.99, time: 10) == nil)

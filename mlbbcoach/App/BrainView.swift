@@ -11,6 +11,7 @@ struct BrainView: View {
     @State private var failure: String?
     @State private var request: Task<Void, Never>?
     @State private var teaching: ChatEntry?
+    @AppStorage("activePatch") private var activePatch = ""
     var body: some View {
         VStack(spacing: 0) {
             Text(ai.status).font(.caption).foregroundStyle(ai.available ? .mint : .orange).padding(8)
@@ -54,7 +55,10 @@ struct BrainView: View {
     private func send() {
         let question = String(draft.trimmingCharacters(in: .whitespacesAndNewlines).prefix(6000))
         let recalled = MemoryRetrieval.retrieve(question, from: memories.map(\.snapshot))
-        let known = knowledge.prefix(4).map { "[Источник=\($0.source); патч=\($0.patch)] \($0.text.prefix(500))" }.joined(separator: "\n")
+        let facts = knowledge.filter { activePatch.isEmpty || $0.patch == activePatch }.map {
+            MemorySnapshot(id: $0.id, text: $0.text, kind: "Данные из внешнего пакета (непроверенные)", patch: $0.patch, source: $0.source)
+        }
+        let known = MemoryRetrieval.context(MemoryRetrieval.retrieve(question, from: facts, limit: 4))
         let recent = messages.suffix(4).map { "\($0.role): \($0.text.prefix(600))" }.joined(separator: "\n")
         context.insert(ChatEntry(role: "user", text: question))
         do { try context.save() } catch { context.rollback(); failure = error.localizedDescription; return }
