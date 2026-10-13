@@ -8,9 +8,12 @@ import CoachCore
 public enum VisionEngine {
     public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false) throws -> (text: String, health: HealthObservation?) {
         let full = VNRecognizeTextRequest()
+        full.revision = VNRecognizeTextRequestRevision3
         full.usesCPUOnly = useCPUOnly
         full.recognitionLevel = .accurate; full.usesLanguageCorrection = false
-        let supported = try full.supportedRecognitionLanguages()
+        let supported: [String]
+        do { supported = try full.supportedRecognitionLanguages() }
+        catch { throw DataValidationError.invalid("Vision: список языков OCR недоступен: \(String(reflecting: error))") }
         full.recognitionLanguages = ["en-US", "ru-RU"].filter { supported.contains($0) }
         var requests: [VNRequest] = [full]
         var modelRequest: VNCoreMLRequest?
@@ -22,13 +25,15 @@ public enum VisionEngine {
         var healthRequest: VNRecognizeTextRequest?
         if let roi = hpRegion {
             let request = VNRecognizeTextRequest()
+            request.revision = VNRecognizeTextRequestRevision3
             request.usesCPUOnly = useCPUOnly
             request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
             request.recognitionLanguages = ["en-US"]
             request.regionOfInterest = CGRect(x: roi.x, y: 1 - roi.y - roi.height, width: roi.width, height: roi.height)
             healthRequest = request; requests.append(request)
         }
-        try VNImageRequestHandler(cgImage: image, options: [:]).perform(requests)
+        do { try VNImageRequestHandler(cgImage: image, options: [:]).perform(requests) }
+        catch { throw DataValidationError.invalid("Vision: обработка изображения завершилась ошибкой: \(String(reflecting: error))") }
         var text = (full.results ?? []).compactMap { $0.topCandidates(1).first }.filter { $0.confidence >= 0.50 }.prefix(60)
             .map { "\($0.string) [\(Int($0.confidence * 100))%]" }.joined(separator: " | ")
         let health = (healthRequest?.results ?? []).compactMap { observation -> HealthObservation? in

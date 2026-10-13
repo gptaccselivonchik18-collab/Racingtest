@@ -17,11 +17,21 @@ import AVFoundation
         }
     }
 }
-@MainActor @Observable final class VoiceCoach {
+@MainActor @Observable final class VoiceCoach: NSObject, AVSpeechSynthesizerDelegate {
     private let synth = AVSpeechSynthesizer()
     private var lastSpoken: [String: Date] = [:]
     private var lastTime = Date.distantPast
     var error: String?
+    override init() { super.init(); synth.delegate = self }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in self?.releaseAudioIfIdle() }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in self?.releaseAudioIfIdle() }
+    }
+    private func releaseAudioIfIdle() {
+        if !synth.isSpeaking { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+    }
     func speak(_ text: String, key: String, priority: Int = 5) {
         let settings = UserDefaults.standard
         guard settings.object(forKey: "voiceEnabled") == nil || settings.bool(forKey: "voiceEnabled") else { return }

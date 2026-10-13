@@ -3,6 +3,7 @@ import ScreenCaptureKit
 import CoreMedia
 import CoreImage
 import Observation
+import UIKit
 
 struct LiveEvidence: @unchecked Sendable {
     let image: CGImage
@@ -14,25 +15,30 @@ struct LiveEvidence: @unchecked Sendable {
 final class LiveFrameProcessor: @unchecked Sendable {
     private let lock = NSLock()
     private let context = CIContext(options: [.cacheIntermediates: false])
+    private let inferenceQueue = DispatchQueue(label: "org.mlbbcoach.inference", qos: .utility)
+    private var busy = false
     private var enabled = false
+    private var epoch = 0
     private var roi: HUDRegion?
     private var lastFrame = -1000.0
     private var previousHP: HealthObservation?
     private var handler: (@Sendable (LiveEvidence) -> Void)?
     func configure(enabled: Bool, roi: HUDRegion?, handler: @Sendable @escaping (LiveEvidence) -> Void) {
         lock.lock(); defer { lock.unlock() }
-        self.enabled = enabled; self.roi = roi; self.handler = handler; previousHP = nil
+        epoch += 1; self.enabled = enabled; self.roi = roi; self.handler = handler; previousHP = nil
     }
-    func disable() { lock.lock(); enabled = false; lock.unlock() }
+    func disable() { lock.lock(); epoch += 1; enabled = false; previousHP = nil; lock.unlock() }
     func process(_ sample: CMSampleBuffer) {
         let started = ProcessInfo.processInfo.systemUptime
         let process = ProcessInfo.processInfo
         lock.lock()
         let minimumInterval = process.isLowPowerModeEnabled || process.thermalState == .serious ? 5.0 : 2.0
-        guard enabled, started - lastFrame >= minimumInterval, process.thermalState != .critical else { lock.unlock(); return }
-        lastFrame = started
-        let region = roi, callback = handler, previous = previousHP
+        guard enabled, !busy, started - lastFrame >= minimumInterval, process.thermalState != .critical else { lock.unlock(); return }
+        lastFrame = started; busy = true
+        let region = roi, callback = handler, previous = previousHP, token = epoch
         lock.unlock()
+        inferenceQueue.async { [self] in
+        defer { lock.lock(); busy = false; lock.unlock() }
         guard CMSampleBufferIsValid(sample), let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
         autoreleasepool {
             let ci = CIImage(cvPixelBuffer: buffer)
@@ -43,12 +49,13 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 if let hp = evidence.health, let previous, started - previous.time <= 10, abs(hp.fraction - previous.fraction) < 0.12 {
                     tips = TacticalDecisionEngine.evaluate(health: hp, at: started)
                 }
-                lock.lock(); previousHP = evidence.health; let stillEnabled = enabled; lock.unlock()
+                lock.lock(); let stillEnabled = enabled && epoch == token; if stillEnabled { previousHP = evidence.health }; lock.unlock()
                 if stillEnabled { callback?(LiveEvidence(image: image, text: evidence.text, advice: tips, processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             } catch {
-                lock.lock(); previousHP = nil; let stillEnabled = enabled; lock.unlock()
+                lock.lock(); let stillEnabled = enabled && epoch == token; if stillEnabled { previousHP = nil }; lock.unlock()
                 if stillEnabled { callback?(LiveEvidence(image: image, text: "Ошибка Vision: \(error.localizedDescription)", advice: [], processingMS: (ProcessInfo.processInfo.systemUptime - started) * 1000)) }
             }
+        }
         }
     }
 }
@@ -101,8 +108,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         guard token == generation else { return }
         let config = SCStreamConfiguration()
         config.width = 1920; config.height = 1080
-        config.minimumFrameInterval = CMTime(seconds: 1, preferredTimescale: 600)
-        config.queueDepth = 3; config.capturesAudio = false
+        config.capturesAudio = false
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         do {
             try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
