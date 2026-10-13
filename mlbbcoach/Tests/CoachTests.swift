@@ -147,13 +147,20 @@ private func barImage(_ filled: Int, width: Int = 200, holes: Range<Int> = 0..<0
 }
 @Test func adviceGateSuppressesRepeatsButAllowsUrgentEscalation() {
     var gate = AdviceRepeatGate()
-    #expect(gate.admit(key: "low", priority: 2, now: 10, repeatSeconds: 45, interval: 15))
-    #expect(!gate.admit(key: "low", priority: 2, now: 12, repeatSeconds: 45, interval: 15))
-    #expect(!gate.admit(key: "other", priority: 2, now: 12, repeatSeconds: 45, interval: 15))
-    #expect(gate.admit(key: "critical", priority: 1, now: 12, repeatSeconds: 45, interval: 15))
-    #expect(!gate.admit(key: "critical", priority: 1, now: 13, repeatSeconds: 45, interval: 15))
-    #expect(gate.admit(key: "low", priority: 2, now: 56, repeatSeconds: 45, interval: 15))
-    #expect(!gate.admit(key: "invalid", priority: 1, now: .nan, repeatSeconds: 45, interval: 15))
+    let admitted1 = gate.admit(key: "low", priority: 2, now: 10, repeatSeconds: 45, interval: 15)
+    #expect(admitted1)
+    let admitted2 = gate.admit(key: "low", priority: 2, now: 12, repeatSeconds: 45, interval: 15)
+    #expect(!admitted2)
+    let admitted3 = gate.admit(key: "other", priority: 2, now: 12, repeatSeconds: 45, interval: 15)
+    #expect(!admitted3)
+    let admitted4 = gate.admit(key: "critical", priority: 1, now: 12, repeatSeconds: 45, interval: 15)
+    #expect(admitted4)
+    let admitted5 = gate.admit(key: "critical", priority: 1, now: 13, repeatSeconds: 45, interval: 15)
+    #expect(!admitted5)
+    let admitted6 = gate.admit(key: "low", priority: 2, now: 56, repeatSeconds: 45, interval: 15)
+    #expect(admitted6)
+    let admitted7 = gate.admit(key: "invalid", priority: 1, now: .nan, repeatSeconds: 45, interval: 15)
+    #expect(!admitted7)
 }
 @Test func adviceFeedbackRoundTripRetainsUnknownsAndSession() throws {
     let session = UUID()
