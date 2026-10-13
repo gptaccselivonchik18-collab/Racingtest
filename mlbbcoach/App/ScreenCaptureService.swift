@@ -202,7 +202,9 @@ final class LiveFrameProcessor: @unchecked Sendable {
         events.append(LiveDiagnosticRow(kind: kind, detail: String(detail.prefix(600)), background: UIApplication.shared.applicationState == .background,
                                         uptime: ProcessInfo.processInfo.systemUptime, eventID: eventID, detectionToSpeechMS: detection, frameToSpeechMS: frame))
         if events.count > 600 { events.removeFirst(events.count - 600) }
-        persistDiagnostics()
+        // Per-frame suppressed advice must not trigger repeated full-journal writes.
+        // Heartbeats flush these rows; speech starts and lifecycle changes flush immediately.
+        if kind != "event" && kind != "speech-suppressed" { persistDiagnostics() }
     }
     private struct Report: Codable {
         let schemaVersion: Int
@@ -279,11 +281,12 @@ final class LiveFrameProcessor: @unchecked Sendable {
     }
     private func receive(_ evidence: LiveEvidence) {
         guard active, evidence.generation == evidenceGeneration else { return }
+        let previousText = latestText
         latestText = evidence.text; processingMS = evidence.processingMS; lastUpdate = .now
         // Keep the last landscape background frame available when the user returns for calibration.
         if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
         counts = evidence.counts; latestHealth = evidence.health
-        if evidence.text.hasPrefix("Ошибка") { record("vision-error", evidence.text) }
+        if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
         guard evidence.background, armed, UIApplication.shared.applicationState == .background,
               LiveTiming.isFresh(frame: evidence.receivedAt, now: ProcessInfo.processInfo.systemUptime),
               let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
