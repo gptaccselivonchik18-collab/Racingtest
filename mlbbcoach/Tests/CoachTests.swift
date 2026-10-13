@@ -4,6 +4,35 @@ import Testing
 @testable import CoachCore
 @testable import CoachStorage
 
+@Test func liveCalibrationRejectsPortraitAndDifferentAspect() throws {
+    let value = LiveCalibration(region: HUDRegion(x: 0.2, y: 0.7, width: 0.2, height: 0.1), aspectRatio: 1920.0 / 1080)
+    let restored = try JSONDecoder().decode(LiveCalibration.self, from: JSONEncoder().encode(value))
+    #expect(restored.matches(width: 1280, height: 720))
+    #expect(!restored.matches(width: 1080, height: 1920))
+    #expect(!restored.matches(width: 1920, height: 850))
+    #expect(!restored.matches(width: 0, height: 0))
+}
+@Test func liveTimingRejectsStaleEventsAndSlowsUnderLoad() {
+    #expect(LiveTiming.milliseconds(from: 10, to: 10.25) == 250)
+    #expect(LiveTiming.milliseconds(from: .nan, to: 11) == nil)
+    #expect(LiveTiming.milliseconds(from: 11, to: 10) == nil)
+    #expect(!LiveTiming.isFresh(frame: 10, now: 13.1))
+    #expect(LiveTiming.isFresh(frame: 10, now: 12))
+    #expect(LiveTiming.interval(lowPower: false, seriousHeat: false, previousProcessing: 0.1, confirmedHP: 0.2) == 0.5)
+    #expect(LiveTiming.interval(lowPower: false, seriousHeat: false, previousProcessing: 1, confirmedHP: 0.2) == 2)
+    #expect(LiveTiming.interval(lowPower: true, seriousHeat: false, previousProcessing: 0.1, confirmedHP: 0.2) == 3)
+}
+@Test func liveSpeechJournalLinksEventToMeasuredStart() throws {
+    let id = UUID()
+    let row = LiveDiagnosticRow(kind: "speech-start", detail: "critical-hp", background: true, uptime: 12,
+                                eventID: id, detectionToSpeechMS: 100, frameToSpeechMS: 350)
+    let restored = try JSONDecoder().decode(LiveDiagnosticRow.self, from: JSONEncoder().encode(row))
+    #expect(restored.eventID == id)
+    #expect(restored.background)
+    #expect(restored.detectionToSpeechMS == 100)
+    #expect(restored.frameToSpeechMS == 350)
+}
+
 @Test func stateNeedsTwoReadingsAndClearsMissingEvidence() {
     var tracker = GameStateTracker()
     #expect(tracker.observe(HealthObservation(fraction: 0.12, confidence: 0.99, time: 1), at: 1) == nil)

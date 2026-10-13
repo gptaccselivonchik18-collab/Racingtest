@@ -18,40 +18,66 @@ import AVFoundation
     }
 }
 @MainActor @Observable final class VoiceCoach: NSObject, AVSpeechSynthesizerDelegate {
+    enum Delivery { case started(Double), suppressed(String) }
+    private struct Pending {
+        let deadline: Double?
+        let valid: (() -> Bool)?
+        let report: ((Delivery) -> Void)?
+    }
+    private var pending: [ObjectIdentifier: Pending] = [:]
     private let synth = AVSpeechSynthesizer()
     private var lastSpoken: [String: Date] = [:]
     private var lastTime = Date.distantPast
     var error: String?
     override init() { super.init(); synth.delegate = self }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        let started = ProcessInfo.processInfo.systemUptime
+        Task { @MainActor [weak self] in
+            guard let self, let request = self.pending.removeValue(forKey: ObjectIdentifier(utterance)) else { return }
+            guard request.deadline.map({ started <= $0 }) ?? true, request.valid?() ?? true else {
+                self.synth.stopSpeaking(at: .immediate)
+                request.report?(.suppressed("Устаревшее событие или захват остановлен")); return
+            }
+            request.report?(.started(started))
+        }
+    }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in self?.releaseAudioIfIdle() }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.releaseAudioIfIdle() }
+        Task { @MainActor [weak self] in
+            self?.pending.removeValue(forKey: ObjectIdentifier(utterance))?.report?(.suppressed("Речь отменена до начала"))
+            self?.releaseAudioIfIdle()
+        }
     }
     private func releaseAudioIfIdle() {
         if !synth.isSpeaking { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
-    func speak(_ text: String, key: String, priority: Int = 5) {
+    func speak(_ text: String, key: String, priority: Int = 5, deadline: Double? = nil,
+               valid: (() -> Bool)? = nil, report: ((Delivery) -> Void)? = nil) {
         let settings = UserDefaults.standard
-        guard settings.object(forKey: "voiceEnabled") == nil || settings.bool(forKey: "voiceEnabled") else { return }
+        guard settings.object(forKey: "voiceEnabled") == nil || settings.bool(forKey: "voiceEnabled") else { report?(.suppressed("Голос выключен")); return }
+        guard deadline.map({ ProcessInfo.processInfo.systemUptime <= $0 }) ?? true, valid?() ?? true else { report?(.suppressed("Событие устарело")); return }
         let interval = max(5, settings.double(forKey: "voiceInterval"))
         guard Date.now.timeIntervalSince(lastSpoken[key] ?? .distantPast) >= 45,
-              priority == 1 || Date.now.timeIntervalSince(lastTime) >= interval else { return }
+              priority == 1 || Date.now.timeIntervalSince(lastTime) >= interval else { report?(.suppressed("Пауза или повтор")); return }
         guard let voice = AVSpeechSynthesisVoice(language: "ru-RU") else {
-            error = "Русский голос недоступен. Установите его в настройках iOS."; return
+            error = "Русский голос недоступен. Установите его в настройках iOS."; report?(.suppressed(error!)); return
         }
-        guard !synth.isSpeaking || priority == 1 else { return }
+        guard !synth.isSpeaking || priority == 1 else { report?(.suppressed("Голос занят")); return }
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)
             if priority == 1 { synth.stopSpeaking(at: .immediate) }
             let utterance = AVSpeechUtterance(string: text)
             utterance.voice = voice; utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+            pending[ObjectIdentifier(utterance)] = Pending(deadline: deadline, valid: valid, report: report)
             synth.speak(utterance); lastSpoken[key] = .now; lastTime = .now
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription; report?(.suppressed(error.localizedDescription)) }
     }
     func stop() {
+        let cancelled = Array(pending.values); pending.removeAll()
+        for request in cancelled { request.report?(.suppressed("Озвучивание остановлено")) }
         synth.stopSpeaking(at: .immediate)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

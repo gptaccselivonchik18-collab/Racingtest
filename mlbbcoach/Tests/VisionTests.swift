@@ -31,6 +31,18 @@ private func makeHealthImage() throws -> CGImage {
     #expect(TacticalDecisionEngine.evaluate(health: hp, at: 10).first?.priority == 1)
 }
 
+@Test func liveCPURegionPathConfirmsTwoFramesWithoutSceneOCR() throws {
+    let image = try makeHealthImage()
+    var tracker = GameStateTracker()
+    for time in [10.0, 11.0] {
+        let result = try VisionEngine.recognize(image, at: time, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1), useCPUOnly: true, includeScene: false)
+        let hp = try #require(result.health)
+        let confirmed = tracker.observe(hp, at: time + 0.1)
+        if time == 10 { #expect(confirmed == nil) }
+        else { #expect(TacticalDecisionEngine.evaluate(health: confirmed, at: time + 0.1).first?.key == "critical-hp") }
+    }
+}
+
 @Test func encodedMatchVideoDecodesIntoRecognizableFrame() async throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
     defer { try? FileManager.default.removeItem(at: url) }

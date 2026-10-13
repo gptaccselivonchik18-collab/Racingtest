@@ -7,7 +7,7 @@ import CoachCore
 #endif
 
 public enum VisionEngine {
-    public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false) throws -> (text: String, health: HealthObservation?) {
+    public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false, includeScene: Bool = true) throws -> (text: String, health: HealthObservation?) {
         let full = VNRecognizeTextRequest()
         full.revision = VNRecognizeTextRequestRevision3
         full.recognitionLevel = .accurate; full.usesLanguageCorrection = false
@@ -15,7 +15,7 @@ public enum VisionEngine {
         do { supported = try full.supportedRecognitionLanguages() }
         catch { throw DataValidationError.invalid("Vision: список языков OCR недоступен: \(String(reflecting: error))") }
         full.recognitionLanguages = ["en-US", "ru-RU"].filter { supported.contains($0) }
-        var requests: [VNRequest] = [full]
+        var requests: [VNRequest] = includeScene ? [full] : []
         var modelRequest: VNCoreMLRequest?
         if let model {
             let request = VNCoreMLRequest(model: model); request.imageCropAndScaleOption = .scaleFit
@@ -61,6 +61,7 @@ public enum VisionEngine {
             return nil
         }
         if !labels.isEmpty { text += " | Core ML (непроверенные метки): " + labels.joined(separator: " | ") }
+        if !includeScene { text = (healthRequest?.results ?? []).compactMap { $0.topCandidates(1).first }.map { "HP OCR: \($0.string) [\(Int($0.confidence * 100))%]" }.joined(separator: " | ") }
         return (text, health.count == 1 ? health[0] : nil)
     }
 }

@@ -34,6 +34,14 @@ struct DashboardView: View {
                     Text("Персональный тренер MLBB").foregroundStyle(.secondary)
                 }.padding(.vertical, 12)
             }
+            #if canImport(ScreenCaptureKit)
+            if #available(iOS 27.0, *) {
+                Section("Играть с тренером") {
+                    NavigationLink { LiveCaptureView() } label: { Label("Запустить живой анализ", systemImage: "record.circle") }
+                    Text("Захват экрана, собственное HP и голос. Проверка в настоящем матче на iPhone ещё необходима.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            #endif
             Section("Устройство • реальные показатели") {
                 LabeledContent("Тепловое состояние", value: monitor.thermal)
                 LabeledContent("Энергосбережение", value: monitor.lowPower ? "Включено" : "Выключено")
