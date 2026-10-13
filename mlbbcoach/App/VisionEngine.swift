@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import CoreGraphics
+import CoreML
 #if SWIFT_PACKAGE
 import CoachCore
 #endif
@@ -9,7 +10,6 @@ public enum VisionEngine {
     public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false) throws -> (text: String, health: HealthObservation?) {
         let full = VNRecognizeTextRequest()
         full.revision = VNRecognizeTextRequestRevision3
-        full.usesCPUOnly = useCPUOnly
         full.recognitionLevel = .accurate; full.usesLanguageCorrection = false
         let supported: [String]
         do { supported = try full.supportedRecognitionLanguages() }
@@ -19,18 +19,29 @@ public enum VisionEngine {
         var modelRequest: VNCoreMLRequest?
         if let model {
             let request = VNCoreMLRequest(model: model); request.imageCropAndScaleOption = .scaleFit
-            request.usesCPUOnly = useCPUOnly
             modelRequest = request; requests.append(request)
         }
         var healthRequest: VNRecognizeTextRequest?
         if let roi = hpRegion {
             let request = VNRecognizeTextRequest()
             request.revision = VNRecognizeTextRequestRevision3
-            request.usesCPUOnly = useCPUOnly
             request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
             request.recognitionLanguages = ["en-US"]
             request.regionOfInterest = CGRect(x: roi.x, y: 1 - roi.y - roi.height, width: roi.width, height: roi.height)
             healthRequest = request; requests.append(request)
+        }
+        var forceCPU = useCPUOnly
+        #if targetEnvironment(simulator)
+        forceCPU = true
+        #endif
+        if forceCPU {
+            for request in requests {
+                let supported = try request.supportedComputeStageDevices
+                for (stage, devices) in supported {
+                    guard let cpu = devices.first(where: { if case .cpu = $0 { return true }; return false }) else { throw DataValidationError.invalid("Vision: CPU недоступен для этапа \(stage)") }
+                    request.setComputeDevice(cpu, for: stage)
+                }
+            }
         }
         do { try VNImageRequestHandler(cgImage: image, options: [:]).perform(requests) }
         catch { throw DataValidationError.invalid("Vision: обработка изображения завершилась ошибкой: \(String(reflecting: error))") }

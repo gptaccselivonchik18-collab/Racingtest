@@ -2,10 +2,12 @@ import Testing
 import CoreGraphics
 import CoreText
 import Foundation
+import AVFoundation
+import CoreVideo
 import CoachCore
 import CoachVision
 
-@Test func visionReadsSyntheticHealthImage() throws {
+private func makeHealthImage() throws -> CGImage {
     let context = try #require(CGContext(data: nil, width: 600, height: 220, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.setFillColor(CGColor(gray: 0, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 600, height: 220))
     let attributes: [NSAttributedString.Key: Any] = [
@@ -15,7 +17,11 @@ import CoachVision
     let text = NSAttributedString(string: "12/100", attributes: attributes)
     context.textPosition = CGPoint(x: 50, y: 80)
     CTLineDraw(CTLineCreateWithAttributedString(text), context)
-    let image = try #require(context.makeImage())
+    return try #require(context.makeImage())
+}
+
+@Test func visionReadsSyntheticHealthImage() throws {
+    let image = try makeHealthImage()
     let result: (text: String, health: HealthObservation?)
     do { result = try VisionEngine.recognize(image, at: 10, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1), useCPUOnly: true) }
     catch { let e = error as NSError; print("VISION FAILURE domain=\(e.domain) code=\(e.code) info=\(e.userInfo)"); throw error }
@@ -23,4 +29,40 @@ import CoachVision
     let hp = try #require(result.health)
     #expect(abs(hp.fraction - 0.12) < 0.001)
     #expect(TacticalDecisionEngine.evaluate(health: hp, at: 10).first?.priority == 1)
+}
+
+@Test func encodedMatchVideoDecodesIntoRecognizableFrame() async throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+    let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 600, AVVideoHeightKey: 220])
+    let attributes: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 600, kCVPixelBufferHeightKey as String: 220, kCVPixelBufferCGImageCompatibilityKey as String: true, kCVPixelBufferCGBitmapContextCompatibilityKey as String: true]
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: attributes)
+    writer.add(input)
+    #expect(writer.startWriting())
+    writer.startSession(atSourceTime: .zero)
+    var pixel: CVPixelBuffer?
+    #expect(CVPixelBufferCreate(kCFAllocatorDefault, 600, 220, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &pixel) == kCVReturnSuccess)
+    let buffer = try #require(pixel)
+    CVPixelBufferLockBaseAddress(buffer, [])
+    let canvas = try #require(CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: 600, height: 220, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue))
+    canvas.draw(try makeHealthImage(), in: CGRect(x: 0, y: 0, width: 600, height: 220))
+    CVPixelBufferUnlockBaseAddress(buffer, [])
+    for time in 0..<3 {
+        let deadline = Date.now.addingTimeInterval(5)
+        while !input.isReadyForMoreMediaData {
+            guard Date.now < deadline else { throw DataValidationError.invalid("Video writer timeout: \(String(describing: writer.error))") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(adaptor.append(buffer, withPresentationTime: CMTime(seconds: Double(time), preferredTimescale: 600)))
+    }
+    input.markAsFinished(); await writer.finishWriting()
+    #expect(writer.status == .completed)
+    let asset = AVURLAsset(url: url)
+    #expect(try await asset.load(.duration).seconds > 1)
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    let frame = try await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600))
+    let evidence = try VisionEngine.recognize(frame.image, at: frame.actualTime.seconds, hpRegion: HUDRegion(x: 0, y: 0, width: 1, height: 1), useCPUOnly: true)
+    #expect(abs((try #require(evidence.health)).fraction - 0.12) < 0.001)
 }
