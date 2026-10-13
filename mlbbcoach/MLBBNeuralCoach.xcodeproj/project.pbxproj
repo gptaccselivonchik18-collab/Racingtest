@@ -2,6 +2,8 @@
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
 AEB3973A9AAECBCAB574C94C = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/AppShell.swift"; sourceTree = "<group>"; };
 1D1581943E3DDBCD6FFFBAFB = { isa = PBXBuildFile; fileRef = AEB3973A9AAECBCAB574C94C; };
+956694F9304437B34AD151A9 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/BrainView.swift"; sourceTree = "<group>"; };
+986B25E6536098E1A1B0C814 = { isa = PBXBuildFile; fileRef = 956694F9304437B34AD151A9; };
 ED6330DB20F400746387BBC4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/CoachApp.swift"; sourceTree = "<group>"; };
 252958F880605CE43FBB7A32 = { isa = PBXBuildFile; fileRef = ED6330DB20F400746387BBC4; };
 16E545E878340FC793A330A3 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/DeviceServices.swift"; sourceTree = "<group>"; };
@@ -10,10 +12,14 @@ ED6330DB20F400746387BBC4 = { isa = PBXFileReference; lastKnownFileType = sourcec
 EA50BD1AC17CE77754B37EE7 = { isa = PBXBuildFile; fileRef = 273405A7B338D7037D7E0CA7; };
 2C949EEA45213D22D755E6FE = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/Storage.swift"; sourceTree = "<group>"; };
 5B2D2662A989803BC38A30BD = { isa = PBXBuildFile; fileRef = 2C949EEA45213D22D755E6FE; };
+5B39583BFA628B2CF30B2D05 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/StrategyAI.swift"; sourceTree = "<group>"; };
+8827BDA34966E0CF5C6ECCCB = { isa = PBXBuildFile; fileRef = 5B39583BFA628B2CF30B2D05; };
+4BADE8553BF2818F3C8CD284 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Core/CoachLogic.swift"; sourceTree = "<group>"; };
+A3E3D28E7E2793F0BD576CE3 = { isa = PBXBuildFile; fileRef = 4BADE8553BF2818F3C8CD284; };
 A8792157CB4F27FB949C035F = { isa = PBXFileReference; explicitFileType = wrapper.application; path = MLBBNeuralCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 0A3E27B8CA818264D75C8D81 = { isa = PBXGroup; children = (A8792157CB4F27FB949C035F,); name = Products; sourceTree = "<group>"; };
-C8D2DC745BFC63C0D67231CE = { isa = PBXGroup; children = (AEB3973A9AAECBCAB574C94C,ED6330DB20F400746387BBC4,16E545E878340FC793A330A3,273405A7B338D7037D7E0CA7,2C949EEA45213D22D755E6FE,0A3E27B8CA818264D75C8D81,); sourceTree = "<group>"; };
-878A52FC5FF6A57D50B7B870 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (1D1581943E3DDBCD6FFFBAFB,252958F880605CE43FBB7A32,66CCFC702B839EC41B8F9F36,EA50BD1AC17CE77754B37EE7,5B2D2662A989803BC38A30BD,); runOnlyForDeploymentPostprocessing = 0; };
+C8D2DC745BFC63C0D67231CE = { isa = PBXGroup; children = (AEB3973A9AAECBCAB574C94C,956694F9304437B34AD151A9,ED6330DB20F400746387BBC4,16E545E878340FC793A330A3,273405A7B338D7037D7E0CA7,2C949EEA45213D22D755E6FE,5B39583BFA628B2CF30B2D05,4BADE8553BF2818F3C8CD284,0A3E27B8CA818264D75C8D81,); sourceTree = "<group>"; };
+878A52FC5FF6A57D50B7B870 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (1D1581943E3DDBCD6FFFBAFB,986B25E6536098E1A1B0C814,252958F880605CE43FBB7A32,66CCFC702B839EC41B8F9F36,EA50BD1AC17CE77754B37EE7,5B2D2662A989803BC38A30BD,8827BDA34966E0CF5C6ECCCB,A3E3D28E7E2793F0BD576CE3,); runOnlyForDeploymentPostprocessing = 0; };
 41D311A605520FC7B8B9A980 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 E2AA269EB967A8853A258BFA = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 2B23A31EEC75B029432F2445 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; }; };

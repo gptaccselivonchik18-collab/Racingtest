@@ -4,13 +4,15 @@ import SwiftData
 struct AppShell: View {
     @State private var monitor = PerformanceMonitor()
     @State private var voice = VoiceCoach()
+    @State private var ai = StrategyAI()
     var body: some View {
         TabView {
             NavigationStack { DashboardView() }.tabItem { Label("Главная", systemImage: "waveform.path.ecg") }
             NavigationStack { CoachSettingsView() }.tabItem { Label("Тренер", systemImage: "speaker.wave.2") }
-            NavigationStack { MemoryView() }.tabItem { Label("Память", systemImage: "brain") }
+            NavigationStack { BrainView() }.tabItem { Label("ИИ-мозг", systemImage: "brain") }
+            NavigationStack { MemoryView() }.tabItem { Label("Память", systemImage: "square.stack") }
             NavigationStack { LibraryView() }.tabItem { Label("Библиотека", systemImage: "square.grid.2x2") }
-        }.environment(monitor).environment(voice)
+        }.environment(monitor).environment(voice).environment(ai)
         .task {
             while !Task.isCancelled {
                 monitor.refresh()
@@ -72,6 +74,7 @@ struct LibraryView: View {
     var body: some View {
         List {
             NavigationLink { MatchHistoryView() } label: { Label("Матчи", systemImage: "film") }
+            NavigationLink { ModelsView() } label: { Label("Модели", systemImage: "cpu") }
             Section("Производительность") {
                 Slider(value: $interval, in: 1...10, step: 1)
                 LabeledContent("Интервал анализа записи", value: "\(Int(interval)) с")
