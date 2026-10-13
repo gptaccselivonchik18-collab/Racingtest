@@ -63,6 +63,8 @@ struct CoachSettingsView: View {
     @AppStorage("voiceInterval") private var interval = 15.0
     var body: some View {
         Form {
+            NavigationLink("Голос и текст • настройки") { AdviceSettingsView() }
+            NavigationLink("Журнал живых советов") { AdviceJournalView() }
             Section("Локальное озвучивание") {
                 Toggle("Голос тренера", isOn: $enabled).onChange(of: enabled) { _, value in if !value { voice.stop() } }
                 Slider(value: $interval, in: 5...60, step: 5)

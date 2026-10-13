@@ -139,3 +139,28 @@ private func barImage(_ filled: Int, width: Int = 200, holes: Range<Int> = 0..<0
     #expect(notes.first?.kind == "Исправление")
     #expect(notes.first?.patch == "test")
 }
+
+@Test func outputModesKeepTextOnlySilent() {
+    #expect(AdviceMode.voiceAndText.usesVoice && AdviceMode.voiceAndText.usesText)
+    #expect(AdviceMode.voiceOnly.usesVoice && !AdviceMode.voiceOnly.usesText)
+    #expect(!AdviceMode.textOnly.usesVoice && AdviceMode.textOnly.usesText)
+}
+@Test func adviceGateSuppressesRepeatsButAllowsUrgentEscalation() {
+    var gate = AdviceRepeatGate()
+    #expect(gate.admit(key: "low", priority: 2, now: 10, repeatSeconds: 45, interval: 15))
+    #expect(!gate.admit(key: "low", priority: 2, now: 12, repeatSeconds: 45, interval: 15))
+    #expect(!gate.admit(key: "other", priority: 2, now: 12, repeatSeconds: 45, interval: 15))
+    #expect(gate.admit(key: "critical", priority: 1, now: 12, repeatSeconds: 45, interval: 15))
+    #expect(!gate.admit(key: "critical", priority: 1, now: 13, repeatSeconds: 45, interval: 15))
+    #expect(gate.admit(key: "low", priority: 2, now: 56, repeatSeconds: 45, interval: 15))
+    #expect(!gate.admit(key: "invalid", priority: 1, now: .nan, repeatSeconds: 45, interval: 15))
+}
+@Test func adviceFeedbackRoundTripRetainsUnknownsAndSession() throws {
+    let session = UUID()
+    var episode = AdviceEpisode(id: UUID(), sessionID: session, key: "low", text: "Проверьте HP", priority: 2, observedHP: 0.2)
+    episode.rating = -1; episode.correction = "Выделена чужая полоса"
+    let value = try JSONDecoder().decode(AdviceEpisode.self, from: JSONEncoder().encode(episode))
+    #expect(value.sessionID == session && value.rating == -1)
+    #expect(value.correction == episode.correction && value.observedHP == 0.2)
+    #expect(value.uncertainty.contains("неизвестны"))
+}

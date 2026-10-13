@@ -153,7 +153,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private(set) var calibration: LiveCalibration?
     var armed = false {
         didSet {
-            if !armed { voice?.stop() }
+            if !armed { voice?.stop(); AdviceJournal.shared.cancelText() }
             record("armed", armed ? "Пользователь включил советы для MLBB" : "Советы выключены")
         }
     }
@@ -183,7 +183,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.processor.setBackground(background)
-                    if !background { self.voice?.stop() }
+                    if !background { self.voice?.stop(); AdviceJournal.shared.cancelText() }
                     if self.active { self.configureProcessor(); self.record("lifecycle", background ? "background" : "foreground") }
                 }
             })
@@ -269,7 +269,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         if let calibration { UserDefaults.standard.set(try? JSONEncoder().encode(calibration), forKey: "liveCalibration") }
         else { UserDefaults.standard.removeObject(forKey: "liveCalibration") }
         configureProcessor()
-        voice?.stop()
+        voice?.stop(); AdviceJournal.shared.cancelText()
         record("calibration", calibration == nil ? "Не задана" : "Область собственного числового HP задана пользователем")
     }
     private func configureProcessor(resetCounts: Bool = false) {
@@ -287,18 +287,24 @@ final class LiveFrameProcessor: @unchecked Sendable {
         if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
         counts = evidence.counts; latestHealth = evidence.health
         if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
+        if evidence.advice.isEmpty { AdviceJournal.shared.cancelText(); voice?.stop() }
         guard evidence.background, armed, UIApplication.shared.applicationState == .background,
               LiveTiming.isFresh(frame: evidence.receivedAt, now: ProcessInfo.processInfo.systemUptime),
               let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
         let id = UUID(), token = evidenceGeneration
         record("event", "\(tip.key); hp=\(evidence.health?.fraction ?? -1); inferenceMS=\(Int(evidence.processingMS)); own-HP ROI asserted by user", eventID: id)
         let spokenText = calibration?.barTint == nil ? tip.text : tip.text.replacingOccurrences(of: "По OCR", with: "По выделенной полосе")
-        voice?.speak(spokenText, key: tip.key, priority: tip.priority, deadline: evidence.receivedAt + 3, valid: { [weak self] in
+        let episode = AdviceEpisode(id: id, sessionID: sessionID, key: tip.key, text: spokenText, priority: tip.priority, observedHP: evidence.health?.fraction)
+        guard AdviceJournal.shared.accept(episode, now: evidence.detectedAt) else { return }
+        record("advice-accepted", "mode=\(AdviceJournal.shared.mode.rawValue); key=\(tip.key)", eventID: id)
+        let valid: () -> Bool = { [weak self] in
             guard let self, self.active, self.armed, self.evidenceGeneration == token,
                   UIApplication.shared.applicationState == .background,
                   let hp = self.latestHealth, LiveTiming.isFresh(frame: hp.time, now: ProcessInfo.processInfo.systemUptime) else { return false }
-            return !TacticalDecisionEngine.evaluate(health: hp, at: ProcessInfo.processInfo.systemUptime, maxAge: 3).isEmpty
-        }, report: { [weak self] delivery in
+            return TacticalDecisionEngine.evaluate(health: hp, at: ProcessInfo.processInfo.systemUptime, maxAge: 3).contains { $0.key == tip.key }
+        }
+        AdviceJournal.shared.showText(episode, valid: valid)
+        voice?.speak(spokenText, key: tip.key, priority: tip.priority, deadline: evidence.receivedAt + 3, valid: valid, report: { [weak self] delivery in
             guard let self, self.evidenceGeneration == token else { return }
             switch delivery {
             case .started(let time):
@@ -316,7 +322,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         starting = true
         defer { starting = false }
         processor.disable()
-        active = false; voice?.stop(); heartbeat?.invalidate(); heartbeat = nil; latestHealth = nil
+        active = false; voice?.stop(); AdviceJournal.shared.cancelText(); heartbeat?.invalidate(); heartbeat = nil; latestHealth = nil
         if let previous = stream { try? await previous.stopCapture() }
         guard token == generation else { return }
         let config = SCStreamConfiguration()
@@ -346,7 +352,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         if let old { try? await old.stopCapture() }
         SCContentSharingPicker.shared.remove(self)
         SCContentSharingPicker.shared.isActive = false
-        voice?.stop(); status = "Захват остановлен"; record("capture-stop", status)
+        voice?.stop(); AdviceJournal.shared.cancelText(); status = "Захват остановлен"; record("capture-stop", status)
     }
     nonisolated func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
         Task { @MainActor [weak self] in await self?.start(filter: filter) }
@@ -361,7 +367,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         Task { @MainActor [weak self] in
             guard let self, self.stream === stream else { return }
             self.evidenceGeneration += 1; self.processor.disable(); self.active = false; self.latestHealth = nil
-            self.heartbeat?.invalidate(); self.heartbeat = nil; self.voice?.stop()
+            self.heartbeat?.invalidate(); self.heartbeat = nil; self.voice?.stop(); AdviceJournal.shared.cancelText()
             self.counts = self.processor.snapshot(); self.stream = nil; self.status = error.localizedDescription
             self.record("capture-error", self.status)
         }
@@ -393,6 +399,8 @@ struct LiveCaptureView: View {
                 Text("Первый сигнал — HP по двум согласованным наблюдениям. Выберите неподвижную полосу своего HP или число текущее/максимальное. Это калиброванный датчик, не полноценное понимание матча. Герои и миникарта пока не распознаются.").font(.caption).foregroundStyle(.orange)
                 if let error = voice.error { Text(error).foregroundStyle(.orange) }
             }
+            NavigationLink("Голос и текст • настройки") { AdviceSettingsView() }
+            NavigationLink("Журнал и исправления советов") { AdviceJournalView() }
             Section("Диагностика настоящего потока") {
                 TimelineView(.periodic(from: .now, by: 1)) { clock in
                     Text(capture.lastUpdate.map { "Возраст обработанного кадра: \(Int(max(0, clock.date.timeIntervalSince($0)))) с" } ?? "Обработанные кадры ещё не поступали")

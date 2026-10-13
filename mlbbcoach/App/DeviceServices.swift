@@ -57,10 +57,11 @@ import AVFoundation
     func speak(_ text: String, key: String, priority: Int = 5, deadline: Double? = nil,
                valid: (() -> Bool)? = nil, report: ((Delivery) -> Void)? = nil) {
         let settings = UserDefaults.standard
+        guard AdviceMode(rawValue: settings.string(forKey: "adviceMode") ?? "") != .textOnly else { report?(.suppressed("Режим только текста")); return }
         guard settings.object(forKey: "voiceEnabled") == nil || settings.bool(forKey: "voiceEnabled") else { report?(.suppressed("Голос выключен")); return }
         guard deadline.map({ ProcessInfo.processInfo.systemUptime <= $0 }) ?? true, valid?() ?? true else { report?(.suppressed("Событие устарело")); return }
         let interval = max(5, settings.object(forKey: "voiceInterval") == nil ? 15 : settings.double(forKey: "voiceInterval"))
-        guard Date.now.timeIntervalSince(lastSpoken[key] ?? .distantPast) >= 45,
+        guard Date.now.timeIntervalSince(lastSpoken[key] ?? .distantPast) >= max(5, settings.object(forKey: "adviceRepeat") == nil ? 45 : settings.double(forKey: "adviceRepeat")),
               priority == 1 || Date.now.timeIntervalSince(lastTime) >= interval else { report?(.suppressed("Пауза или повтор")); return }
         guard let voice = AVSpeechSynthesisVoice(language: "ru-RU") else {
             error = "Русский голос недоступен. Установите его в настройках iOS."; report?(.suppressed(error!)); return
