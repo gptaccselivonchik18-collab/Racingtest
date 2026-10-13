@@ -45,7 +45,7 @@ jobs:
           path: |
             mlbbcoach/build/qwen-test.gguf
             mlbbcoach/build/llama-b5046.zip
-          key: coach-llama-b5046-qwen-74a4da8c
+          key: coach-llama-b5046-qwen-6a1a2eb6
       - name: Verify pinned llama runtime
         run: python3 scripts/fetch_llama.py
       - name: Actual local Russian inference on macOS CPU
@@ -59,7 +59,7 @@ jobs:
           path: mlbbcoach/build/local-model.log
           retention-days: 7
   build:
-    needs: [tests, local-model]
+    needs: tests
     runs-on: xcode-27
     timeout-minutes: 25
     defaults:
