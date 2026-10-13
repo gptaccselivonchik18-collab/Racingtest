@@ -50,6 +50,8 @@ BB639FA2603B86F3D1F1598E = { isa = PBXFileReference; lastKnownFileType = sourcec
 D589C6BAE9D55478CE9EC53F = { isa = PBXBuildFile; fileRef = 061C0FFCCB95389D210C5010; };
 8D4D5671C4BBA7878FD5F8BB = { isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/llama.xcframework; sourceTree = "<group>"; };
 000CBA49D731854CC13A956A = { isa = PBXBuildFile; fileRef = 8D4D5671C4BBA7878FD5F8BB; };
+29A8F0F49B219C5656110D57 = { isa = PBXBuildFile; fileRef = 8D4D5671C4BBA7878FD5F8BB; settings = { ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
+9680E567D75F12D762823AE5 = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 10; files = (29A8F0F49B219C5656110D57,); name = "Embed Frameworks"; runOnlyForDeploymentPostprocessing = 0; };
 F920953790DDC57E20D7434D = { isa = PBXFileReference; lastKnownFileType = text; path = App/ThirdPartyNotices.txt; sourceTree = "<group>"; };
 7F8F7749F99D3CD6A0BD1280 = { isa = PBXBuildFile; fileRef = F920953790DDC57E20D7434D; };
 A8792157CB4F27FB949C035F = { isa = PBXFileReference; explicitFileType = wrapper.application; path = MLBBNeuralCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -69,6 +71,7 @@ AA9B1D3BE1353EBD76471D11 = { isa = XCBuildConfiguration; name = Debug; buildSett
             INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
             TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
             SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
             SWIFT_OBJC_BRIDGING_HEADER = Native/CoachLlama.h;
             CLANG_CXX_LANGUAGE_STANDARD = "c++17";
             OTHER_LDFLAGS = ("-lc++", "-framework", "Accelerate", "-framework", "Metal");
@@ -86,6 +89,7 @@ AA9B1D3BE1353EBD76471D11 = { isa = XCBuildConfiguration; name = Debug; buildSett
             INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
             TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
             SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
             SWIFT_OBJC_BRIDGING_HEADER = Native/CoachLlama.h;
             CLANG_CXX_LANGUAGE_STANDARD = "c++17";
             OTHER_LDFLAGS = ("-lc++", "-framework", "Accelerate", "-framework", "Metal");
@@ -94,6 +98,6 @@ AA9B1D3BE1353EBD76471D11 = { isa = XCBuildConfiguration; name = Debug; buildSett
         }; };
 76F8DEC3DFE0BDB465198890 = { isa = XCConfigurationList; buildConfigurations = (2B23A31EEC75B029432F2445,07CA1E69F6068DEA30A4DA6B,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 06CB67C35A91E16DBD17B949 = { isa = XCConfigurationList; buildConfigurations = (AA9B1D3BE1353EBD76471D11,1E2E67F111F111E446D58E6C,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-34A04005BCAF206EEC990BD9 = { isa = PBXNativeTarget; buildConfigurationList = 06CB67C35A91E16DBD17B949; buildPhases = (878A52FC5FF6A57D50B7B870,E2AA269EB967A8853A258BFA,41D311A605520FC7B8B9A980,); buildRules = (); dependencies = (); name = MLBBNeuralCoach; productName = MLBBNeuralCoach; productReference = A8792157CB4F27FB949C035F; productType = "com.apple.product-type.application"; };
+34A04005BCAF206EEC990BD9 = { isa = PBXNativeTarget; buildConfigurationList = 06CB67C35A91E16DBD17B949; buildPhases = (878A52FC5FF6A57D50B7B870,E2AA269EB967A8853A258BFA,41D311A605520FC7B8B9A980,9680E567D75F12D762823AE5,); buildRules = (); dependencies = (); name = MLBBNeuralCoach; productName = MLBBNeuralCoach; productReference = A8792157CB4F27FB949C035F; productType = "com.apple.product-type.application"; };
 244210E48437B6556980A702 = { isa = PBXProject; attributes = { LastUpgradeCheck = 2600; }; buildConfigurationList = 76F8DEC3DFE0BDB465198890; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; hasScannedForEncodings = 0; knownRegions = (ru,en,Base,); mainGroup = C8D2DC745BFC63C0D67231CE; productRefGroup = 0A3E27B8CA818264D75C8D81; projectDirPath = ""; projectRoot = ""; targets = (34A04005BCAF206EEC990BD9,); };
 }; rootObject = 244210E48437B6556980A702; }

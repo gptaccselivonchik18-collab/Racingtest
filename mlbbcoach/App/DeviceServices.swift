@@ -24,6 +24,7 @@ import AVFoundation
         let valid: (() -> Bool)?
         let report: ((Delivery) -> Void)?
     }
+    private var activeValidity: (ObjectIdentifier, () -> Bool)?
     private var pending: [ObjectIdentifier: Pending] = [:]
     private let synth = AVSpeechSynthesizer()
     private var lastSpoken: [String: Date] = [:]
@@ -38,14 +39,19 @@ import AVFoundation
                 self.synth.stopSpeaking(at: .immediate)
                 request.report?(.suppressed("Устаревшее событие или захват остановлен")); return
             }
+            if let valid = request.valid { self.activeValidity = (ObjectIdentifier(utterance), valid) }
             request.report?(.started(started))
         }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor [weak self] in self?.releaseAudioIfIdle() }
+        Task { @MainActor [weak self] in
+            if self?.activeValidity?.0 == ObjectIdentifier(utterance) { self?.activeValidity = nil }
+            self?.releaseAudioIfIdle()
+        }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
+            if self?.activeValidity?.0 == ObjectIdentifier(utterance) { self?.activeValidity = nil }
             self?.pending.removeValue(forKey: ObjectIdentifier(utterance))?.report?(.suppressed("Речь отменена до начала"))
             self?.releaseAudioIfIdle()
         }
@@ -78,7 +84,9 @@ import AVFoundation
             synth.speak(utterance); lastSpoken[key] = .now; lastTime = .now
         } catch { self.error = error.localizedDescription; report?(.suppressed(error.localizedDescription)) }
     }
+    func revalidate() { if let valid = activeValidity?.1, !valid() { stop() } }
     func stop() {
+        activeValidity = nil
         let cancelled = Array(pending.values); pending.removeAll()
         for request in cancelled { request.report?(.suppressed("Озвучивание остановлено")) }
         synth.stopSpeaking(at: .immediate)

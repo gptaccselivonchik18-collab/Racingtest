@@ -16,6 +16,8 @@ def generate():
         obj('build:'+file, f'isa = PBXBuildFile; fileRef = {uid("ref:"+file)};')
     obj('llama-ref', 'isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Vendor/llama.xcframework; sourceTree = "<group>";')
     obj('llama-link', f'isa = PBXBuildFile; fileRef = {uid("llama-ref")};')
+    obj('llama-embed', f'isa = PBXBuildFile; fileRef = {uid("llama-ref")}; settings = {{ ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }};')
+    obj('embed-frameworks', f'isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 10; files = ({uid("llama-embed")},); name = "Embed Frameworks"; runOnlyForDeploymentPostprocessing = 0;')
     obj('notice-ref', 'isa = PBXFileReference; lastKnownFileType = text; path = App/ThirdPartyNotices.txt; sourceTree = "<group>";')
     obj('notice-build', f'isa = PBXBuildFile; fileRef = {uid("notice-ref")};')
     obj('product', 'isa = PBXFileReference; explicitFileType = wrapper.application; path = MLBBNeuralCoach.app; sourceTree = BUILT_PRODUCTS_DIR;')
@@ -36,6 +38,7 @@ def generate():
             INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
             TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
             SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
             SWIFT_OBJC_BRIDGING_HEADER = Native/CoachLlama.h;
             CLANG_CXX_LANGUAGE_STANDARD = "c++17";
             OTHER_LDFLAGS = ("-lc++", "-framework", "Accelerate", "-framework", "Metal");
@@ -44,7 +47,7 @@ def generate():
         }};''')
     for kind in ('project', 'app'):
         obj(kind+'configs', f'isa = XCConfigurationList; buildConfigurations = ({uid(kind+":Debug")},{uid(kind+":Release")},); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
-    obj('target', f'isa = PBXNativeTarget; buildConfigurationList = {uid("appconfigs")}; buildPhases = ({uid("sources")},{uid("frameworks")},{uid("resources")},); buildRules = (); dependencies = (); name = MLBBNeuralCoach; productName = MLBBNeuralCoach; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
+    obj('target', f'isa = PBXNativeTarget; buildConfigurationList = {uid("appconfigs")}; buildPhases = ({uid("sources")},{uid("frameworks")},{uid("resources")},{uid("embed-frameworks")},); buildRules = (); dependencies = (); name = MLBBNeuralCoach; productName = MLBBNeuralCoach; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
     obj('project', f'isa = PBXProject; attributes = {{ LastUpgradeCheck = 2600; }}; buildConfigurationList = {uid("projectconfigs")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; hasScannedForEncodings = 0; knownRegions = (ru,en,Base,); mainGroup = {uid("rootgroup")}; productRefGroup = {uid("products")}; projectDirPath = ""; projectRoot = ""; targets = ({uid("target")},);')
     project = ROOT / 'MLBBNeuralCoach.xcodeproj'
     project.mkdir(exist_ok=True)

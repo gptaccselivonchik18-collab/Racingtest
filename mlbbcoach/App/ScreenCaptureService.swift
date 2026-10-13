@@ -297,10 +297,14 @@ final class LiveFrameProcessor: @unchecked Sendable {
         // Keep the last landscape background frame available when the user returns for calibration.
         if evidence.background && evidence.image.width > evidence.image.height { latestImage = evidence.image }
         counts = evidence.counts; latestHealth = evidence.health
+        let previousIcons = recognizedIcons.map { $0.slot + ":" + $0.code }.sorted()
         recognizedIcons = evidence.icons
+        if previousIcons != recognizedIcons.map({ $0.slot + ":" + $0.code }).sorted() {
+            record("vision-icons", recognizedIcons.map { "\($0.slot):\($0.code) score=\(String(format: "%.3f", $0.score))" }.joined(separator: "; "))
+        }
         scheduleStrategy(evidence)
         if evidence.text.hasPrefix("Ошибка") && evidence.text != previousText { record("vision-error", evidence.text) }
-        if evidence.advice.isEmpty { AdviceJournal.shared.cancelText(); voice?.stop() }
+        voice?.revalidate()
         guard evidence.background, armed, UIApplication.shared.applicationState == .background,
               LiveTiming.isFresh(frame: evidence.receivedAt, now: ProcessInfo.processInfo.systemUptime),
               let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
@@ -368,7 +372,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                 self.record("strategy-result", "selected=\(plan.selected.rawValue); alternatives=\(plan.alternatives.count); ordinalConfidence=\(plan.confidence)")
                 let episode = AdviceEpisode(id: UUID(), sessionID: self.sessionID, key: "strategy-" + plan.selected.rawValue, text: self.strategicText, priority: 3, observedHP: state.ownHealth,
                     evidence: "Локальная языковая нейросеть сравнила альтернативы по HP и \(state.icons.count) распознанным иконкам. Стороны и области заданы пользователем.", uncertainty: "Позиции, золото, готовность навыков, текущий патч и намерения команды неизвестны. Оценки модели не являются измеренными вероятностями.")
-                guard self.latestHealth?.fraction ?? 1 > 0.3, AdviceJournal.shared.accept(episode, now: ProcessInfo.processInfo.systemUptime) else { return }
+                guard (self.latestHealth?.fraction ?? 1) > 0.3, AdviceJournal.shared.accept(episode, now: ProcessInfo.processInfo.systemUptime) else { return }
                 let valid: () -> Bool = { [weak self] in
                     guard let self else { return false }
                     return self.active && self.armed && self.evidenceGeneration == token && UIApplication.shared.applicationState == .background && self.stateStillCurrent(state) && (self.latestHealth?.fraction ?? 1) > 0.3
@@ -472,7 +476,7 @@ struct LiveCaptureView: View {
             NavigationLink("Журнал и исправления советов") { AdviceJournalView() }
             Section("Нейросетевое зрение → игровой анализ") {
                 NavigationLink("Разметить и обучить иконки") { IconLearningView() }
-                Text("Подтверждённых иконок: \(capture.recognizedIcons.count). Требуется своя обученная модель и заданные области; универсального детектора карты пока нет.").font(.caption)
+                Text("Согласованных предсказаний иконок: \(capture.recognizedIcons.count). Требуется своя обученная модель и заданные области; универсального детектора карты пока нет.").font(.caption)
                 Text(capture.strategyStatus)
                 Text(capture.strategicText).textSelection(.enabled)
                 Button("Сравнить действия по последнему состоянию") { Task { await capture.analyzeLatestInForeground(ai: ai) } }.disabled(!ai.available || ai.busy)

@@ -9,5 +9,5 @@ with model.open('rb') as f:
     assert hashlib.file_digest(f, 'sha256').hexdigest() == sha
 framework = next(p.parent for p in (root / 'Vendor/llama.xcframework').rglob('llama.framework') if 'macos' in str(p))
 binary = root / 'build/llama-smoke'
-subprocess.run(['clang++', '-std=c++17', str(root/'Native/CoachLlama.cpp'), str(root/'scripts/llama_smoke.cpp'), '-F'+str(framework), '-framework', 'llama', '-framework', 'Foundation', '-framework', 'Metal', '-framework', 'Accelerate', '-o', str(binary)], check=True)
+subprocess.run(['clang++', '-std=c++17', str(root/'Native/CoachLlama.cpp'), str(root/'scripts/llama_smoke.cpp'), '-F'+str(framework), '-Wl,-rpath,'+str(framework), '-framework', 'llama', '-framework', 'Foundation', '-framework', 'Metal', '-framework', 'Accelerate', '-o', str(binary)], check=True)
 subprocess.run([str(binary), str(model)], check=True, timeout=120)
