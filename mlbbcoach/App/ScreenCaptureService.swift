@@ -99,7 +99,13 @@ final class LiveFrameProcessor: @unchecked Sendable {
             let image = validRect.flatMap { canvas.cropping(to: $0) } ?? canvas
             do {
                 let region = savedCalibration.flatMap { validRect != nil && $0.matches(width: image.width, height: image.height) ? $0.region : nil }
-                let evidence = try VisionEngine.recognize(image, at: started, hpRegion: region, useCPUOnly: true, includeScene: includeScene)
+                let evidence: (text: String, health: HealthObservation?)
+                if let tint = savedCalibration?.barTint, let region {
+                    let hp = VisionEngine.barPixels(image, region: region).flatMap { HealthBarSensor.observe(rgba: $0, width: 200, height: 5, tint: tint, time: started) }
+                    evidence = (hp.map { "Полоса HP: \(Int($0.fraction * 100))%; эвристический score, не вероятность" } ?? "Полоса HP не распознана", hp)
+                } else {
+                    evidence = try VisionEngine.recognize(image, at: started, hpRegion: region, useCPUOnly: true, includeScene: includeScene)
+                }
                 let detected = ProcessInfo.processInfo.systemUptime
                 var tips: [TacticalAdvice] = []
                 var confirmed: HealthObservation?
@@ -150,6 +156,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         }
     }
     var healthRegion: HUDRegion?
+    var useHealthBar = true
     @ObservationIgnored private var stream: SCStream?
     @ObservationIgnored private var starting = false
     @ObservationIgnored private var generation = 0
@@ -166,7 +173,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     override init() {
         super.init()
         if let data = UserDefaults.standard.data(forKey: "liveCalibration"), let value = try? JSONDecoder().decode(LiveCalibration.self, from: data), value.region.isValid {
-            calibration = value; healthRegion = value.region
+            calibration = value; healthRegion = value.region; useHealthBar = value.barTint != nil
         }
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willEnterForegroundNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
@@ -237,6 +244,9 @@ final class LiveFrameProcessor: @unchecked Sendable {
         guard !starting else { return }
         self.voice = voice
         let picker = SCContentSharingPicker.shared
+        var configuration = SCContentSharingPickerConfiguration()
+        configuration.showsMicrophoneControl = false
+        picker.defaultConfiguration = configuration
         picker.remove(self); picker.add(self); picker.isActive = true
         status = "Выберите весь экран в системном окне"
         picker.present()
@@ -245,7 +255,12 @@ final class LiveFrameProcessor: @unchecked Sendable {
         if let region = healthRegion, !region.isValid { status = "Некорректная область HP"; return }
         if let region = healthRegion, let image = latestImage {
             guard image.width > image.height else { status = "Для HP нужен горизонтальный кадр MLBB"; return }
-            calibration = LiveCalibration(region: region, aspectRatio: Double(image.width) / Double(image.height))
+            var tint: [Double]?
+            if useHealthBar {
+                tint = VisionEngine.barPixels(image, region: region).flatMap { HealthBarSensor.learnTint(rgba: $0, width: 200, height: 5) }
+                guard tint != nil else { status = "Не удалось выделить заполненную полосу. Нужен кадр с полным HP и область без рамки/иконок."; return }
+            }
+            calibration = LiveCalibration(region: region, aspectRatio: Double(image.width) / Double(image.height), barTint: tint)
         } else if healthRegion == nil { calibration = nil }
         if let calibration { UserDefaults.standard.set(try? JSONEncoder().encode(calibration), forKey: "liveCalibration") }
         else { UserDefaults.standard.removeObject(forKey: "liveCalibration") }
@@ -272,7 +287,8 @@ final class LiveFrameProcessor: @unchecked Sendable {
               let tip = evidence.advice.min(by: { $0.priority < $1.priority }) else { return }
         let id = UUID(), token = evidenceGeneration
         record("event", "\(tip.key); hp=\(evidence.health?.fraction ?? -1); inferenceMS=\(Int(evidence.processingMS)); own-HP ROI asserted by user", eventID: id)
-        voice?.speak(tip.text, key: tip.key, priority: tip.priority, deadline: evidence.receivedAt + 3, valid: { [weak self] in
+        let spokenText = calibration?.barTint == nil ? tip.text : tip.text.replacingOccurrences(of: "По OCR", with: "По выделенной полосе")
+        voice?.speak(spokenText, key: tip.key, priority: tip.priority, deadline: evidence.receivedAt + 3, valid: { [weak self] in
             guard let self, self.active, self.armed, self.evidenceGeneration == token,
                   UIApplication.shared.applicationState == .background,
                   let hp = self.latestHealth, LiveTiming.isFresh(frame: hp.time, now: ProcessInfo.processInfo.systemUptime) else { return false }
@@ -370,7 +386,7 @@ struct LiveCaptureView: View {
                 Button("Остановить захват") { Task { await capture.stop() } }.disabled(!capture.active)
                 Toggle("Я открыл MLBB • разрешить советы", isOn: Binding(get: { capture.armed }, set: { capture.armed = $0 }))
                 Text("1. Выберите весь экран. 2. Откройте тренировочный матч MLBB. 3. Вернитесь и выделите собственное число HP. 4. Включите советы и вернитесь в MLBB. Область сохраняется между запусками. Приложение не определяет название открытой игры; выключайте советы при выходе из MLBB.").font(.caption).foregroundStyle(.secondary)
-                Text("Первый сигнал — подтверждённое двумя чтениями числовое HP. Если на вашем HUD нет числа текущее/максимальное, этот детектор не работает. Распознавание полосы HP, героев и миникарты пока отсутствует.").font(.caption).foregroundStyle(.orange)
+                Text("Первый сигнал — HP по двум согласованным наблюдениям. Выберите неподвижную полосу своего HP или число текущее/максимальное. Это калиброванный датчик, не полноценное понимание матча. Герои и миникарта пока не распознаются.").font(.caption).foregroundStyle(.orange)
                 if let error = voice.error { Text(error).foregroundStyle(.orange) }
             }
             Section("Диагностика настоящего потока") {
@@ -398,16 +414,17 @@ struct LiveCaptureView: View {
                             if calibrated { Rectangle().stroke(.mint, lineWidth: 2).frame(width: geometry.size.width * roi.width, height: geometry.size.height * roi.height).offset(x: geometry.size.width * roi.x, y: geometry.size.height * roi.y) }
                         }
                     }
-                    Toggle("Выделить число собственного HP", isOn: $calibrated)
+                    Toggle("Выделить собственное HP", isOn: $calibrated)
                     if calibrated {
-                        Text("Только число текущее/максимальное HP. Выделение полосы или чужого HP даст неверный результат.").font(.caption)
+                        Toggle("Полоса HP вместо числа", isOn: Binding(get: { capture.useHealthBar }, set: { capture.useHealthBar = $0 }))
+                        Text(capture.useHealthBar ? "Калибруйте при полном HP. Выделите всю ширину неподвижной полосы без рамок и значков. Движущаяся полоса над героем не подходит. Смена цвета, размера HUD или раскладки требует новой калибровки." : "Выделите только число текущее/максимальное собственного HP.").font(.caption)
                         Slider(value: $x, in: 0...0.95) { Text("X") }
                         Slider(value: $y, in: 0...0.95) { Text("Y") }
                         Slider(value: $width, in: 0.02...1) { Text("Ширина") }
                         Slider(value: $height, in: 0.02...1) { Text("Высота") }
                     }
                     Button("Применить область HP") { capture.healthRegion = calibrated ? roi : nil; capture.applyCalibration() }
-                    Text("Последний кадр обработан за \(Int(capture.processingMS)) мс. Это время OCR, а не полная задержка подсказки.").font(.caption)
+                    Text("Последний кадр обработан за \(Int(capture.processingMS)) мс. Это время распознавания, а не полная задержка подсказки.").font(.caption)
                 }
             }
             Section("Непроверенный OCR") { Text(capture.latestText.isEmpty ? "Нет наблюдений" : capture.latestText).font(.caption).textSelection(.enabled) }

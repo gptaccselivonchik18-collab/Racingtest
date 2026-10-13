@@ -43,6 +43,21 @@ private func makeHealthImage() throws -> CGImage {
     }
 }
 
+@Test func liveBarSensorReadsPixelsFromActualCGImage() throws {
+    let context = try #require(CGContext(data: nil, width: 400, height: 40, bitsPerComponent: 8, bytesPerRow: 0,
+                                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(red: 0.08, green: 0.82, blue: 0.12, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 400, height: 40))
+    let region = HUDRegion(x: 0, y: 0, width: 1, height: 1)
+    let full = try #require(context.makeImage())
+    let tint = try #require(HealthBarSensor.learnTint(rgba: try #require(VisionEngine.barPixels(full, region: region)), width: 200, height: 5))
+    context.setFillColor(CGColor(gray: 0.1, alpha: 1)); context.fill(CGRect(x: 80, y: 0, width: 320, height: 40))
+    let low = try #require(context.makeImage())
+    let pixels = try #require(VisionEngine.barPixels(low, region: region))
+    let hp = try #require(HealthBarSensor.observe(rgba: pixels, width: 200, height: 5, tint: tint, time: 10))
+    #expect(abs(hp.fraction - 0.2) < 0.02)
+}
+
 @Test func encodedMatchVideoDecodesIntoRecognizableFrame() async throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
     defer { try? FileManager.default.removeItem(at: url) }

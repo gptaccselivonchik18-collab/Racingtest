@@ -4,6 +4,19 @@ import Testing
 @testable import CoachCore
 @testable import CoachStorage
 
+private func barImage(_ filled: Int, width: Int = 200, holes: Range<Int> = 0..<0) -> [UInt8] {
+    (0..<5).flatMap { _ in (0..<width).flatMap { x -> [UInt8] in x < filled && !holes.contains(x) ? [20, 210, 30, 255] : [25, 25, 25, 255] } }
+}
+@Test func calibratedBarFindsEdgeAndRejectsPartialCalibration() throws {
+    let tint = try #require(HealthBarSensor.learnTint(rgba: barImage(200), width: 200, height: 5))
+    let hp = try #require(HealthBarSensor.observe(rgba: barImage(40), width: 200, height: 5, tint: tint, time: 10))
+    #expect(abs(hp.fraction - 0.2) < 0.01)
+    #expect(HealthBarSensor.learnTint(rgba: barImage(40), width: 200, height: 5) == nil)
+    #expect(HealthBarSensor.observe(rgba: barImage(0), width: 200, height: 5, tint: tint, time: 10) == nil)
+    #expect(HealthBarSensor.observe(rgba: barImage(150, holes: 50..<90), width: 200, height: 5, tint: tint, time: 10) == nil)
+    #expect(HealthBarSensor.observe(rgba: [1, 2], width: 200, height: 5, tint: tint, time: 10) == nil)
+}
+
 @Test func liveCalibrationRejectsPortraitAndDifferentAspect() throws {
     let value = LiveCalibration(region: HUDRegion(x: 0.2, y: 0.7, width: 0.2, height: 0.1), aspectRatio: 1920.0 / 1080)
     let restored = try JSONDecoder().decode(LiveCalibration.self, from: JSONEncoder().encode(value))

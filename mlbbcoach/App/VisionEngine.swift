@@ -7,6 +7,22 @@ import CoachCore
 #endif
 
 public enum VisionEngine {
+    public static func barPixels(_ image: CGImage, region: HUDRegion) -> [UInt8]? {
+        guard region.isValid else { return nil }
+        // The user selects the bar's full width; sample its central strip to avoid borders and labels.
+        let rect = CGRect(x: region.x * Double(image.width), y: (region.y + region.height * 0.3) * Double(image.height),
+                          width: region.width * Double(image.width), height: region.height * 0.4 * Double(image.height)).integral
+        guard rect.width >= 20, rect.height >= 2, let cropped = image.cropping(to: rect) else { return nil }
+        var pixels = [UInt8](repeating: 0, count: 200 * 5 * 4)
+        let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(data: bytes.baseAddress, width: 200, height: 5, bitsPerComponent: 8, bytesPerRow: 800,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            context.interpolationQuality = .low
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 200, height: 5))
+            return true
+        }
+        return rendered ? pixels : nil
+    }
     public static func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?, model: VNCoreMLModel? = nil, useCPUOnly: Bool = false, includeScene: Bool = true) throws -> (text: String, health: HealthObservation?) {
         let full = VNRecognizeTextRequest()
         full.revision = VNRecognizeTextRequestRevision3
