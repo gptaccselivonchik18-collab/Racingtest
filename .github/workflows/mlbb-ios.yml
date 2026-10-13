@@ -1,0 +1,139 @@
+name: MLBB Coach unsigned IPA
+on:
+  push:
+    branches: [main]
+    paths: ["mlbbcoach/**", "!mlbbcoach/docs/**", "!mlbbcoach/README.md", ".github/workflows/mlbb-ios.yml"]
+  pull_request:
+    paths: ["mlbbcoach/**", "!mlbbcoach/docs/**", "!mlbbcoach/README.md", ".github/workflows/mlbb-ios.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mlbb-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tests:
+    runs-on: macos-26-intel
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mlbbcoach
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core and Vision integration tests on stable macOS 26 Intel
+        run: |
+          set -o pipefail
+          mkdir -p build
+          swift --version
+          swift test 2>&1 | tee build/tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-diagnostics
+          path: mlbbcoach/build/tests.log
+          retention-days: 7
+  local-model:
+    runs-on: macos-26-intel
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mlbbcoach
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            mlbbcoach/build/qwen-test.gguf
+            mlbbcoach/build/llama-b5046.zip
+          key: coach-llama-b5046-qwen-6a1a2eb6
+      - name: Verify pinned llama runtime
+        run: python3 scripts/fetch_llama.py
+      - name: Actual local Russian inference on macOS CPU
+        run: |
+          set -o pipefail
+          python3 scripts/test_llama.py 2>&1 | tee build/local-model.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-model-diagnostics
+          path: mlbbcoach/build/local-model.log
+          retention-days: 7
+  build:
+    needs: tests
+    runs-on: xcode-27
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mlbbcoach
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          swift --version
+      - name: Install pinned local inference runtime
+        run: python3 scripts/fetch_llama.py
+      - name: Verify generated project
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code -- MLBBNeuralCoach.xcodeproj Package.swift
+          plutil -lint MLBBNeuralCoach.xcodeproj/project.pbxproj
+      - name: Archive for iPhone
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -project MLBBNeuralCoach.xcodeproj -scheme MLBBNeuralCoach \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath build/MLBBNeuralCoach.xcarchive \
+            -resultBundlePath build/Archive.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive 2>&1 | tee build/archive.log
+      - name: Package unsigned IPA for external signing
+        if: ${{ success() && needs.tests.result == 'success' }}
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/MLBBNeuralCoach.xcarchive/Products/Applications/MLBBNeuralCoach.app build/ipa/Payload/
+          test -f build/ipa/Payload/MLBBNeuralCoach.app/MLBBNeuralCoach
+          plutil -lint build/ipa/Payload/MLBBNeuralCoach.app/Info.plist
+          cd build/ipa
+          zip -qry ../MLBBNeuralCoach-unsigned.ipa Payload
+          cd ../..
+          shasum -a 256 build/MLBBNeuralCoach-unsigned.ipa > build/SHA256SUMS.txt
+      - name: Simulator launch smoke check
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -project MLBBNeuralCoach.xcodeproj -scheme MLBBNeuralCoach \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/simulator-build.log
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import sys,json; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable") and "iOS" in x["name"]]; print(sorted(r,key=lambda x:tuple(map(int,x["version"].split("."))))[-1]["identifier"])')
+          DEVICE_TYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import sys,json; d=json.load(sys.stdin)["devicetypes"]; print(next(x["identifier"] for x in d if x["name"] == "iPhone Air"))')
+          DEVICE=$(xcrun simctl create MLBB-Coach-Smoke "$DEVICE_TYPE" "$RUNTIME")
+          trap 'xcrun simctl shutdown "$DEVICE" || true; xcrun simctl delete "$DEVICE" || true' EXIT
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/MLBBNeuralCoach.app
+          xcrun simctl launch "$DEVICE" org.personal.MLBBNeuralCoach | tee build/simulator-launch.log
+          sleep 5
+          xcrun simctl spawn "$DEVICE" launchctl list | grep -F org.personal.MLBBNeuralCoach >> build/simulator-launch.log
+          xcrun simctl io "$DEVICE" screenshot build/simulator-home.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MLBBNeuralCoach-unsigned
+          path: |
+            mlbbcoach/build/MLBBNeuralCoach-unsigned.ipa
+            mlbbcoach/build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-diagnostics
+          path: |
+            mlbbcoach/build/archive.log
+            mlbbcoach/build/Archive.xcresult
+            mlbbcoach/build/tests.log
+            mlbbcoach/build/simulator-build.log
+            mlbbcoach/build/simulator-launch.log
+            mlbbcoach/build/simulator-home.png
+          retention-days: 7
