@@ -41,6 +41,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private var enabled = false
     private var epoch = 0
     private var calibration: LiveCalibration?
+    private var streamID: ObjectIdentifier?
     private var background = false
     private var counts = LiveFrameCounts()
     private var lastReceived: Double?
@@ -49,20 +50,21 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private var lastFrame = -1000.0
     private var tracker = GameStateTracker()
     private var handler: (@Sendable (LiveEvidence) -> Void)?
-    func configure(enabled: Bool, calibration: LiveCalibration?, generation: Int, resetCounts: Bool = false, handler: @Sendable @escaping (LiveEvidence) -> Void) {
+    func configure(enabled: Bool, calibration: LiveCalibration?, generation: Int, streamID: ObjectIdentifier?, resetCounts: Bool = false, handler: @Sendable @escaping (LiveEvidence) -> Void) {
         lock.lock(); defer { lock.unlock() }
         epoch = generation; self.enabled = enabled; self.calibration = calibration; self.handler = handler; tracker = GameStateTracker()
+        self.streamID = streamID
         lastFrame = -1000; lastScene = -1000
         if resetCounts { counts = LiveFrameCounts(); lastReceived = nil; previousProcessing = 0 }
     }
     func disable() { lock.lock(); epoch += 1; enabled = false; tracker = GameStateTracker(); lock.unlock() }
     func setBackground(_ value: Bool) { lock.lock(); background = value; tracker = GameStateTracker(); lock.unlock() }
     func snapshot() -> LiveFrameCounts { lock.lock(); defer { lock.unlock() }; return counts }
-    func process(_ sample: CMSampleBuffer) {
+    func process(_ sample: CMSampleBuffer, streamID: ObjectIdentifier) {
         let started = ProcessInfo.processInfo.systemUptime
         let process = ProcessInfo.processInfo
         lock.lock()
-        guard enabled else { lock.unlock(); return }
+        guard enabled, self.streamID == streamID else { lock.unlock(); return }
         counts.received += 1
         if background { counts.backgroundReceived += 1 }
         if let previous = lastReceived { counts.maximumGapSeconds = max(counts.maximumGapSeconds, started - previous) }
@@ -79,12 +81,12 @@ final class LiveFrameProcessor: @unchecked Sendable {
         inferenceQueue.async { [self] in
         defer { lock.lock(); busy = false; lock.unlock() }
         guard CMSampleBufferIsValid(sample), CMSampleBufferDataIsReady(sample), let buffer = CMSampleBufferGetImageBuffer(sample) else {
-            lock.lock(); counts.invalid += 1; lock.unlock(); return
+            lock.lock(); if enabled && epoch == token { counts.invalid += 1; tracker = GameStateTracker() }; lock.unlock(); return
         }
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let metadata = attachments.first, let rawStatus = metadata[.status] as? Int,
               SCFrameStatus(rawValue: rawStatus) == .complete else {
-            lock.lock(); counts.invalid += 1; tracker = GameStateTracker(); lock.unlock(); return
+            lock.lock(); if enabled && epoch == token { counts.invalid += 1; tracker = GameStateTracker() }; lock.unlock(); return
         }
         autoreleasepool {
             let ci = CIImage(cvPixelBuffer: buffer)
@@ -182,7 +184,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
                     guard let self else { return }
                     self.processor.setBackground(background)
                     if !background { self.voice?.stop() }
-                    if self.active { self.record("lifecycle", background ? "background" : "foreground") }
+                    if self.active { self.configureProcessor(); self.record("lifecycle", background ? "background" : "foreground") }
                 }
             })
         }
@@ -271,7 +273,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
     private func configureProcessor(resetCounts: Bool = false) {
         evidenceGeneration += 1
         latestHealth = nil
-        processor.configure(enabled: active, calibration: calibration, generation: evidenceGeneration, resetCounts: resetCounts) { [weak self] evidence in
+        processor.configure(enabled: active, calibration: calibration, generation: evidenceGeneration, streamID: stream.map { ObjectIdentifier($0) }, resetCounts: resetCounts) { [weak self] evidence in
             Task { @MainActor [weak self] in self?.receive(evidence) }
         }
     }
@@ -311,7 +313,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         starting = true
         defer { starting = false }
         processor.disable()
-        active = false; voice?.stop()
+        active = false; voice?.stop(); heartbeat?.invalidate(); heartbeat = nil; latestHealth = nil
         if let previous = stream { try? await previous.stopCapture() }
         guard token == generation else { return }
         let config = SCStreamConfiguration()
@@ -363,7 +365,7 @@ final class LiveFrameProcessor: @unchecked Sendable {
         }
     }
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        if type == .screen { processor.process(sampleBuffer) }
+        if type == .screen { processor.process(sampleBuffer, streamID: ObjectIdentifier(stream)) }
     }
 }
 
