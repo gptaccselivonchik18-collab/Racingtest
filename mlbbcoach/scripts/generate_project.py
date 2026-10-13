@@ -23,7 +23,7 @@ def generate():
         obj('project:'+config, f'isa = XCBuildConfiguration; name = {config}; buildSettings = {{ SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; }};')
         obj('app:'+config, f'''isa = XCBuildConfiguration; name = {config}; buildSettings = {{
             PRODUCT_BUNDLE_IDENTIFIER = org.personal.MLBBNeuralCoach;
-            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES;
+            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = App/Info.plist;
             INFOPLIST_KEY_CFBundleDisplayName = "MLBB Coach";
             INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
             INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -53,5 +53,24 @@ def generate():
 <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>''', encoding='utf-8')
     print(f'Generated Xcode project: {len(files)} Swift sources')
+    if (ROOT / 'Tests').is_dir() and (ROOT / 'Core').is_dir():
+        app_files = sorted(p.name for p in (ROOT / 'App').glob('*.swift'))
+        storage_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist'] if f != 'Storage.swift')
+        vision_excludes = ', '.join('"'+f+'"' for f in app_files + ['Info.plist'] if f != 'VisionEngine.swift')
+        (ROOT / 'Package.swift').write_text('''// swift-tools-version: 6.0
+import PackageDescription
+let package = Package(
+    name: "CoachCore",
+    platforms: [.macOS(.v14)],
+    products: [.library(name: "CoachCore", targets: ["CoachCore"])],
+    targets: [
+        .target(name: "CoachCore", path: "Core"),
+        .target(name: "CoachStorage", path: "App", exclude: ['''+storage_excludes+'''], sources: ["Storage.swift"]),
+        .target(name: "CoachVision", dependencies: ["CoachCore"], path: "App", exclude: ['''+vision_excludes+'''], sources: ["VisionEngine.swift"]),
+        .testTarget(name: "CoachCoreTests", dependencies: ["CoachCore", "CoachStorage", "CoachVision"], path: "Tests")
+    ],
+    swiftLanguageModes: [.v5]
+)
+''', encoding='utf-8')
 if __name__ == '__main__':
     generate()

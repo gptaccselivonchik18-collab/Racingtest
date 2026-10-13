@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Vision
 import CoreGraphics
+import CoreML
 
 struct VideoResult: Sendable {
     let duration: Double
@@ -38,6 +39,11 @@ actor VideoAnalyzer {
         generator.maximumSize = CGSize(width: 1920, height: 1920)
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = CMTime(seconds: 0.2, preferredTimescale: 600)
+        var customModel: VNCoreMLModel?
+        if UserDefaults.standard.bool(forKey: "useCustomModel"), let url = await ModelManager.shared.activeModelURL() {
+            let config = MLModelConfiguration(); config.computeUnits = .cpuAndNeuralEngine
+            customModel = try VNCoreMLModel(for: MLModel(contentsOf: url, configuration: config))
+        }
         let baseInterval = max(1, min(10, interval.isFinite ? interval : 3))
         var time = 0.0
         var frames = 0
@@ -51,7 +57,7 @@ actor VideoAnalyzer {
             if ProcessInfo.processInfo.thermalState == .critical { throw CoachError.unavailable("Анализ остановлен из-за критического нагрева. Повторите после охлаждения.") }
             let frame = try await generator.image(at: CMTime(seconds: time, preferredTimescale: 600))
             let observedTime = frame.actualTime.seconds
-            let evidence = try autoreleasepool { try recognize(frame.image, at: observedTime, hpRegion: hpRegion) }
+            let evidence = try autoreleasepool { try VisionEngine.recognize(frame.image, at: observedTime, hpRegion: hpRegion, model: customModel) }
             frames += 1
             if evidence.text != lastText && !evidence.text.isEmpty && lines.count < 500 {
                 lines.append("[\(Int(observedTime)) с] OCR (непроверенный текст): \(evidence.text.prefix(1000))")
@@ -75,27 +81,4 @@ actor VideoAnalyzer {
         return VideoResult(duration: duration, frames: frames, processingSeconds: Date.now.timeIntervalSince(started), transcript: lines.joined(separator: "\n\n"), advice: advice.isEmpty ? "Подтверждённых тактических сигналов не получено. OCR без калибровки не определяет HP, героев и навыки." : advice.joined(separator: "\n\n"))
     }
 
-    private func recognize(_ image: CGImage, at time: Double, hpRegion: HUDRegion?) throws -> (text: String, health: HealthObservation?) {
-        let full = VNRecognizeTextRequest()
-        full.recognitionLevel = .accurate; full.usesLanguageCorrection = false
-        let supported = try full.supportedRecognitionLanguages()
-        full.recognitionLanguages = ["en-US", "ru-RU"].filter { supported.contains($0) }
-        var requests: [VNRequest] = [full]
-        var healthRequest: VNRecognizeTextRequest?
-        if let roi = hpRegion {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
-            request.recognitionLanguages = ["en-US"]
-            request.regionOfInterest = CGRect(x: roi.x, y: 1 - roi.y - roi.height, width: roi.width, height: roi.height)
-            healthRequest = request; requests.append(request)
-        }
-        try VNImageRequestHandler(cgImage: image, options: [:]).perform(requests)
-        let text = (full.results ?? []).compactMap { $0.topCandidates(1).first }.filter { $0.confidence >= 0.50 }.prefix(60)
-            .map { "\($0.string) [\(Int($0.confidence * 100))%]" }.joined(separator: " | ")
-        let health = (healthRequest?.results ?? []).compactMap { observation -> HealthObservation? in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            return HealthParser.parse(candidate.string, confidence: Double(candidate.confidence), time: time)
-        }
-        return (text, health.count == 1 ? health[0] : nil)
-    }
 }

@@ -79,6 +79,7 @@ struct ModelsView: View {
     @Environment(StrategyAI.self) private var ai
     var body: some View {
         List {
+            NavigationLink { CustomModelView() } label: { Label("Управление Core ML-моделью зрения", systemImage: "eye") }
             Section("Языковая модель") {
                 LabeledContent("Провайдер", value: "Apple • SystemLanguageModel")
                 Text(ai.status).foregroundStyle(ai.available ? .mint : .orange)

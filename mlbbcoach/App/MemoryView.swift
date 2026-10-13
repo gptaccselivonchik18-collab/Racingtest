@@ -67,6 +67,7 @@ struct MemoryEditor: View {
         }
     }
     private func save() {
+        guard text.count <= 8000, source.count <= 2000 else { error = "Лимит: 8000 символов записи и 2000 символов ссылки"; return }
         if kind == "Факт с источником", URL(string: source)?.scheme != "https" { error = "Для факта нужна HTTPS-ссылка на источник."; return }
         let item = entry ?? MemoryEntry(text: text)
         if entry == nil { context.insert(item) }

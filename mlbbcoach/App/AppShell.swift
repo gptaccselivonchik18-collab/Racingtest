@@ -79,6 +79,9 @@ struct LibraryView: View {
             NavigationLink { ModelsView() } label: { Label("Модели", systemImage: "cpu") }
             NavigationLink { KnowledgeView() } label: { Label("Знания", systemImage: "books.vertical") }
             NavigationLink { BackupView() } label: { Label("Резервная копия памяти", systemImage: "externaldrive") }
+            if #available(iOS 27.0, *) {
+                NavigationLink { LiveCaptureView() } label: { Label("Захват экрана • эксперимент", systemImage: "record.circle") }
+            }
             Section("Производительность") {
                 Slider(value: $interval, in: 1...10, step: 1)
                 LabeledContent("Интервал анализа записи", value: "\(Int(interval)) с")

@@ -9,7 +9,7 @@ struct CoachApp: App {
         WindowGroup {
             Group {
                 if let container {
-                    AppShell().modelContainer(container)
+                    RootWithCapture().modelContainer(container)
                 } else if let failure {
                     ContentUnavailableView {
                         Label("Хранилище недоступно", systemImage: "externaldrive.badge.exclamationmark")
@@ -32,4 +32,15 @@ struct CoachApp: App {
             failure = nil
         } catch { failure = error.localizedDescription }
     }
+}
+
+struct RootWithCapture: View {
+    var body: some View {
+        if #available(iOS 27.0, *) { CaptureRoot() } else { AppShell() }
+    }
+}
+@available(iOS 27.0, *)
+private struct CaptureRoot: View {
+    @State private var capture = ScreenCaptureService()
+    var body: some View { AppShell().environment(capture) }
 }
