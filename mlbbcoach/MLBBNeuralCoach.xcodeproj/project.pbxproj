@@ -1,0 +1,43 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+ED6330DB20F400746387BBC4 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/CoachApp.swift"; sourceTree = "<group>"; };
+252958F880605CE43FBB7A32 = { isa = PBXBuildFile; fileRef = ED6330DB20F400746387BBC4; };
+A8792157CB4F27FB949C035F = { isa = PBXFileReference; explicitFileType = wrapper.application; path = MLBBNeuralCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+0A3E27B8CA818264D75C8D81 = { isa = PBXGroup; children = (A8792157CB4F27FB949C035F,); name = Products; sourceTree = "<group>"; };
+C8D2DC745BFC63C0D67231CE = { isa = PBXGroup; children = (ED6330DB20F400746387BBC4,0A3E27B8CA818264D75C8D81,); sourceTree = "<group>"; };
+878A52FC5FF6A57D50B7B870 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (252958F880605CE43FBB7A32,); runOnlyForDeploymentPostprocessing = 0; };
+41D311A605520FC7B8B9A980 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+E2AA269EB967A8853A258BFA = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+2B23A31EEC75B029432F2445 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; }; };
+AA9B1D3BE1353EBD76471D11 = { isa = XCBuildConfiguration; name = Debug; buildSettings = {
+            PRODUCT_BUNDLE_IDENTIFIER = org.personal.MLBBNeuralCoach;
+            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES;
+            INFOPLIST_KEY_CFBundleDisplayName = "MLBB Coach";
+            INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+            INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+            INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+            INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+            TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+            SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            CODE_SIGN_STYLE = Automatic; ENABLE_USER_SCRIPT_SANDBOXING = YES;
+            SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+        }; };
+07CA1E69F6068DEA30A4DA6B = { isa = XCBuildConfiguration; name = Release; buildSettings = { SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; }; };
+1E2E67F111F111E446D58E6C = { isa = XCBuildConfiguration; name = Release; buildSettings = {
+            PRODUCT_BUNDLE_IDENTIFIER = org.personal.MLBBNeuralCoach;
+            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES;
+            INFOPLIST_KEY_CFBundleDisplayName = "MLBB Coach";
+            INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+            INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+            INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+            INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+            TARGETED_DEVICE_FAMILY = 1; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
+            SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = targeted;
+            CODE_SIGN_STYLE = Automatic; ENABLE_USER_SCRIPT_SANDBOXING = YES;
+            SWIFT_OPTIMIZATION_LEVEL = "-O";
+        }; };
+76F8DEC3DFE0BDB465198890 = { isa = XCConfigurationList; buildConfigurations = (2B23A31EEC75B029432F2445,07CA1E69F6068DEA30A4DA6B,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+06CB67C35A91E16DBD17B949 = { isa = XCConfigurationList; buildConfigurations = (AA9B1D3BE1353EBD76471D11,1E2E67F111F111E446D58E6C,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+34A04005BCAF206EEC990BD9 = { isa = PBXNativeTarget; buildConfigurationList = 06CB67C35A91E16DBD17B949; buildPhases = (878A52FC5FF6A57D50B7B870,E2AA269EB967A8853A258BFA,41D311A605520FC7B8B9A980,); buildRules = (); dependencies = (); name = MLBBNeuralCoach; productName = MLBBNeuralCoach; productReference = A8792157CB4F27FB949C035F; productType = "com.apple.product-type.application"; };
+244210E48437B6556980A702 = { isa = PBXProject; attributes = { LastUpgradeCheck = 2600; }; buildConfigurationList = 76F8DEC3DFE0BDB465198890; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; hasScannedForEncodings = 0; knownRegions = (ru,en,Base,); mainGroup = C8D2DC745BFC63C0D67231CE; productRefGroup = 0A3E27B8CA818264D75C8D81; projectDirPath = ""; projectRoot = ""; targets = (34A04005BCAF206EEC990BD9,); };
+}; rootObject = 244210E48437B6556980A702; }

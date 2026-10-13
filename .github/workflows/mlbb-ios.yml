@@ -1,0 +1,70 @@
+name: MLBB Coach unsigned IPA
+on:
+  push:
+    branches: [main]
+    paths: ["mlbbcoach/**", ".github/workflows/mlbb-ios.yml"]
+  pull_request:
+    paths: ["mlbbcoach/**", ".github/workflows/mlbb-ios.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mlbb-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mlbbcoach
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          swift --version
+      - name: Verify generated project
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code -- MLBBNeuralCoach.xcodeproj
+          plutil -lint MLBBNeuralCoach.xcodeproj/project.pbxproj
+      - name: Core tests
+        run: |
+          if [ -f Package.swift ]; then swift test; fi
+      - name: Archive for iPhone
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -project MLBBNeuralCoach.xcodeproj -scheme MLBBNeuralCoach \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath build/MLBBNeuralCoach.xcarchive \
+            -resultBundlePath build/Archive.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO archive 2>&1 | tee build/archive.log
+      - name: Package unsigned IPA for external signing
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/MLBBNeuralCoach.xcarchive/Products/Applications/MLBBNeuralCoach.app build/ipa/Payload/
+          test -f build/ipa/Payload/MLBBNeuralCoach.app/MLBBNeuralCoach
+          plutil -lint build/ipa/Payload/MLBBNeuralCoach.app/Info.plist
+          cd build/ipa
+          zip -qry ../MLBBNeuralCoach-unsigned.ipa Payload
+          cd ../..
+          shasum -a 256 build/MLBBNeuralCoach-unsigned.ipa > build/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MLBBNeuralCoach-unsigned
+          path: |
+            mlbbcoach/build/MLBBNeuralCoach-unsigned.ipa
+            mlbbcoach/build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-diagnostics
+          path: |
+            mlbbcoach/build/archive.log
+            mlbbcoach/build/Archive.xcresult
+          retention-days: 7
