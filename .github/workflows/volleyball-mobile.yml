@@ -1,0 +1,148 @@
+name: Volleyball mobile builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/volleyball-*']
+    paths: ['volleyball/**', '.github/workflows/volleyball-mobile.yml']
+  pull_request:
+    branches: [main]
+    paths: ['volleyball/**', '.github/workflows/volleyball-mobile.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volleyball-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: volleyball
+
+jobs:
+  validate:
+    name: Godot import and gameplay tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash ci/install_godot.sh editor-only
+      - name: Import and test
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/import.log
+          ! grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' build/logs/import.log
+          godot --headless --path . --script tests/test_runner.gd 2>&1 | tee build/logs/tests.log
+          ! grep -E 'SCRIPT ERROR|ERROR:' build/logs/tests.log
+          grep -q 'ALL TESTS PASSED' build/logs/tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-Validation-Logs
+          path: volleyball/build/logs/
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-24.04
+    needs: validate
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.1'
+      - run: bash ci/install_godot.sh
+      - name: Configure SDK and debug signing
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs "$HOME/.config/godot"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/volleyball-debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/volleyball-debug.keystore" >> "$GITHUB_ENV"
+          echo 'GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey' >> "$GITHUB_ENV"
+          echo 'GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android' >> "$GITHUB_ENV"
+          cat > "$HOME/.config/godot/editor_settings-4.6.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+      - name: Export and verify APK
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/android-import.log
+          godot --headless --path . --export-debug Android build/VolleyballSimulator-Android.apk 2>&1 | tee build/logs/android-export.log
+          test -s build/VolleyballSimulator-Android.apk
+          unzip -t build/VolleyballSimulator-Android.apk | tee build/logs/apk-contents.log
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose build/VolleyballSimulator-Android.apk | tee build/logs/apk-signature.log
+          "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging build/VolleyballSimulator-Android.apk | tee build/logs/apk-manifest.log
+          grep -q "org.volleylab.simulator" build/logs/apk-manifest.log
+          unzip -l build/VolleyballSimulator-Android.apk | grep 'lib/arm64-v8a/libgodot_android.so'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolleyballSimulator-Android
+          path: volleyball/build/VolleyballSimulator-Android.apk
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-Android-Logs
+          path: volleyball/build/logs/
+
+  ios:
+    name: iPhone arm64 unsigned IPA
+    runs-on: macos-15
+    needs: validate
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash ci/install_godot.sh
+      - name: Import Godot project
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/ios-import.log
+      - name: Build and verify unsigned physical-device IPA
+        run: bash ci/build_ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolleyballSimulator-iOS-Unsigned
+          path: volleyball/build/VolleyballSimulator-iOS-Unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-iOS-Logs
+          path: volleyball/build/logs/
+
+  release:
+    name: Publish verified packages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VolleyballSimulator-*
+          merge-multiple: true
+          path: packages
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.1' --notes-file release-notes.txt --prerelease
