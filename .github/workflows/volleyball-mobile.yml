@@ -34,9 +34,9 @@ jobs:
           set -euo pipefail
           mkdir -p build/logs
           godot --headless --path . --editor --import 2>&1 | tee build/logs/import.log
-          ! grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' build/logs/import.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' build/logs/import.log; then exit 1; fi
           godot --headless --path . --script tests/test_runner.gd 2>&1 | tee build/logs/tests.log
-          ! grep -E 'SCRIPT ERROR|ERROR:' build/logs/tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/tests.log; then exit 1; fi
           grep -q 'ALL TESTS PASSED' build/logs/tests.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -51,11 +51,13 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.1'
       - run: bash ci/install_godot.sh
       - name: Configure SDK and debug signing

@@ -82,6 +82,26 @@ func run() -> void:
  ui._touch_down(44, ui.right_center)
  ui._cancel()
  check(a.action == VolleyAthlete.Action.IDLE and ui.aim_id == -1, "Focus/menu cancellation cannot leave held input")
+ var touch := InputEventScreenTouch.new()
+ touch.index = 55
+ touch.position = ui.right_center + Vector2(0, -50)
+ touch.pressed = true
+ ui._input(touch)
+ check(ui.aim_id == 55, "ScreenTouch event enters aim router")
+ touch.pressed = false
+ touch.canceled = true
+ swings_before = a.strike_count
+ ui._input(touch)
+ check(a.strike_count == swings_before and a.action == VolleyAthlete.Action.IDLE, "OS touch cancellation does not execute stroke")
+ var mouse := InputEventMouseButton.new()
+ mouse.button_index = MOUSE_BUTTON_RIGHT
+ mouse.position = Vector2(600, 300)
+ mouse.pressed = true
+ ui._input(mouse)
+ mouse.pressed = false
+ ui._input(mouse)
+ check(a.strike_count == swings_before + 1, "Right mouse release executes stroke")
+ a.action = VolleyAthlete.Action.IDLE
  # All feeds are fixed world trajectories; moving athlete does not move launcher.
  for i in range(6):
   game.training.selected = i

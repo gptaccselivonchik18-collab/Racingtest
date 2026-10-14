@@ -217,7 +217,9 @@ func _input(event: InputEvent) -> void:
  if menu.visible:
   return
  if event is InputEventScreenTouch:
-  if event.pressed:
+  if event.canceled:
+   _touch_cancel(event.index)
+  elif event.pressed:
    _touch_down(event.index, event.position)
   else:
    _touch_up(event.index)
@@ -288,6 +290,14 @@ func _touch_up(id: int) -> void:
  if id == sprint_id:
   sprint_id = -1
   mobile_sprint = false
+
+func _touch_cancel(id: int) -> void:
+ if id == aim_id:
+  aim_id = -1
+  aim_value = Vector2.ZERO
+  if game.athlete.action == VolleyAthlete.Action.PREPARE:
+   game.athlete.action = VolleyAthlete.Action.IDLE
+ _touch_up(id)
 
 func _process(dt: float) -> void:
  if not menu.visible:
