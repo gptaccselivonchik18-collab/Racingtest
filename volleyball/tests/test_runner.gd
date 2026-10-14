@@ -23,7 +23,7 @@ func run() -> void:
  check(scene != null, "Main scene loads")
  var game := scene.instantiate()
  root.add_child(game)
- await frames(5)
+ await frames(20)
  var a: VolleyAthlete = game.athlete
  var b: VolleyBall = game.ball
  var ui: VolleyHUD = game.hud
