@@ -142,6 +142,22 @@ func run() -> void:
  b.feed(a.wrists[0], Vector3(0, -1, 0))
  await frames(5)
  check(a.contact_count == count_before + 1, "Live physics integrator produces exactly one hand contact")
+ # A complete feed-to-contact path: no ball teleport to hands, only timed input.
+ for mode in range(2):
+  a.position = Vector3(0, 0.01, 4)
+  a.velocity = Vector3.ZERO
+  a.visual.rotation = Vector3.ZERO
+  a.action = VolleyAthlete.Action.IDLE
+  a.technique = mode
+  a.prepare()
+  await frames(10)
+  game.training.selected = 4 + mode
+  count_before = a.contact_count
+  game.repeat_drill()
+  await frames(54 if mode == 0 else 36)
+  a.release()
+  await frames(40)
+  check(a.contact_count == count_before + 1, "Convenient drill %d hittable from start with timed release" % mode)
  # Motion/attribute changes: compare actual jump velocities and sprint stamina.
  a.position = Vector3(0, 0.01, 4)
  a.velocity = Vector3.ZERO

@@ -105,6 +105,7 @@ func _layout() -> void:
 
 func _menu() -> void:
  menu = PanelContainer.new()
+ menu.add_theme_stylebox_override("panel", _panel(Color("102536")))
  menu.visible = false
  add_child(menu)
  var scroll := ScrollContainer.new()
@@ -135,6 +136,7 @@ func _menu() -> void:
  seed_label.text = "  Seed разброса: "
  seed_row.add_child(seed_label)
  var seed_edit := SpinBox.new()
+ seed_edit.custom_minimum_size.x = 145
  seed_edit.max_value = 2147483647
  seed_edit.value = game.athlete.random_seed
  seed_row.add_child(seed_edit)

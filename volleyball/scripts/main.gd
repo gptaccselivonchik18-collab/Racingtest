@@ -26,7 +26,7 @@ func _ready() -> void:
  camera.look_at(Vector3(0, 1.2, 0))
  camera.current = true
  for i in range(16):
-  var dash := VolleyGeometry.sphere(self, Vector3.ZERO, 0.035 if i % 2 else 0.055, Color("ffdb7e"))
+  var dash := VolleyGeometry.sphere(self, Vector3.ZERO, 0.035, Color("ffdb7e")) if i % 2 else VolleyGeometry.limb(self, Color("ffdb7e"))
   dash.visible = false
   guide.append(dash)
  var layer := CanvasLayer.new()
@@ -91,7 +91,11 @@ func _process(dt: float) -> void:
  camera.look_at(athlete.position + Vector3(0, 1.3, -3.7))
  for i in range(guide.size()):
   guide[i].visible = athlete.action == VolleyAthlete.Action.PREPARE
-  guide[i].position = athlete.position + Vector3(0, 1.65, -0.25) + athlete.desired_direction() * (0.3 + i * 0.23)
+  var point := athlete.position + Vector3(0, 1.65, -0.25) + athlete.desired_direction() * (0.3 + i * 0.23)
+  if i % 2:
+   guide[i].position = point
+  else:
+   VolleyGeometry.segment(guide[i], point, point + athlete.desired_direction() * 0.15, 0.025)
  ball_shadow.position = Vector3(ball.position.x, 0.037, ball.position.z)
  if ball.position.y < -3 or ball.position.length() > 45:
   ball.feed(Vector3(0, 0.3, 1), Vector3.ZERO)
