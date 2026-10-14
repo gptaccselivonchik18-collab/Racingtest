@@ -7,7 +7,9 @@ func capture() -> void:
  var scene := load("res://scenes/Main.tscn") as PackedScene
  var game := scene.instantiate()
  root.add_child(game)
- for i in range(40):
+ if OS.get_environment("VOLLEY_CAPTURE_MENU") == "1":
+  game.hud.toggle_menu()
+ for i in range(180):
   await process_frame
  await RenderingServer.frame_post_draw
  var destination := OS.get_environment("VOLLEY_SCREENSHOT")

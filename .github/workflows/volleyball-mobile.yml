@@ -3,7 +3,7 @@ name: Volleyball mobile builds
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'codex/volleyball-*']
+    branches: [main]
     paths: ['volleyball/**', '.github/workflows/volleyball-mobile.yml']
   pull_request:
     branches: [main]

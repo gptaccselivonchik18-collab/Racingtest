@@ -19,7 +19,7 @@ app=build/ios/DerivedData/Build/Products/Release-iphoneos/VolleyballSimulator.ap
 test -d "$app"
 executable=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Info.plist")
 test -x "$app/$executable"
-lipo -verify_arch arm64 "$app/$executable"
+lipo "$app/$executable" -verify_arch arm64
 # Remove any toolchain-added ad-hoc signatures, including embedded frameworks.
 while IFS= read -r -d '' binary; do
   if file "$binary" | grep -q 'Mach-O'; then

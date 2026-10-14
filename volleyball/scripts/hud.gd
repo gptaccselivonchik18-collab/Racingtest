@@ -90,7 +90,7 @@ func _layout() -> void:
  buttons.feed.rect = Rect2(size.x - 165, 77, 140, 46)
  scenario.position = Vector2(size.x - 410, 81)
  scenario.size = Vector2(230, 40)
- angle.position = Vector2(size.x - 250, size.y - 305)
+ angle.position = Vector2(size.x - 250, size.y - 270)
  angle.size = Vector2(220, 35)
  angle_label.position = angle.position - Vector2(0, 25)
  technique_label.position = Vector2(size.x - 250, size.y - 380)
@@ -324,8 +324,10 @@ func _draw() -> void:
   draw_line(center - Vector2(0, radius * 0.65), center + Vector2(0, radius * 0.65), Color(1, 1, 1, 0.12))
  draw_circle(left_center + move_value * radius * 0.65, radius * 0.28, Color("c1d5dd"))
  draw_circle(right_center + aim_value * radius * 0.65, radius * 0.28, Color("f5cf70"))
- draw_string(font, left_center + Vector2(-55, radius + 23), "ДВИЖЕНИЕ", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("c1d5dd"))
- draw_string(font, right_center + Vector2(-62, radius + 23), "ПЕРЕДАЧА", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("f5cf70"))
+ for center in [left_center, right_center]:
+  draw_style_box(_panel(Color("102536")), Rect2(center + Vector2(-78, radius + 5), Vector2(156, 28)))
+ draw_string(font, left_center + Vector2(-55, radius + 25), "ДВИЖЕНИЕ", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("c1d5dd"))
+ draw_string(font, right_center + Vector2(-48, radius + 25), "ПЕРЕДАЧА", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("f5cf70"))
  for key in buttons:
   var rect: Rect2 = buttons[key].rect
   draw_style_box(_panel(Color("30556a") if key != "feed" else Color("a87535")), rect)

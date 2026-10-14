@@ -42,13 +42,13 @@ func _court() -> void:
  env.background_color = Color("101e32")
  env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
  env.ambient_light_color = Color("b7cde0")
- env.ambient_light_energy = 0.65
- env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+ env.ambient_light_energy = 0.35
+ env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
  world.environment = env
  add_child(world)
  var sun := DirectionalLight3D.new()
  sun.rotation_degrees = Vector3(-48, -30, 0)
- sun.light_energy = 1.6
+ sun.light_energy = 0.85
  sun.shadow_enabled = true
  add_child(sun)
  VolleyGeometry.box(self, Vector3(0, -0.21, 0), Vector3(40, 0.4, 40), Color("1b3042"))
