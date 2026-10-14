@@ -1,7 +1,9 @@
 class_name VolleyAthlete
 extends CharacterBody3D
 
-enum Technique { OVERHEAD, UNDERHAND }
+enum Technique { OVERHEAD, UNDERHAND, SPIKE, SERVE, JUMP_SERVE, THROW }
+const TECHNIQUE_NAMES := ["Верхний пас", "Нижний пас", "Нападение", "Подача", "Подача в прыжке", "Бросок"]
+const DEFAULT_ANGLES := [58.0, 48.0, -22.0, 18.0, 12.0, 55.0]
 enum Action { IDLE, PREPARE, STRIKE, RECOVER }
 const BALL_RADIUS := 0.105
 const HAND_RADIUS := 0.085
@@ -38,6 +40,16 @@ var previous_elbows: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var previous_wrists: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var hand_velocity := Vector3.ZERO
 var gait := 0.0
+var holding_ball := false
+
+func select_technique(value: int) -> void:
+ technique = clampi(value, 0, Technique.THROW)
+ elevation = DEFAULT_ANGLES[technique]
+ if action == Action.PREPARE:
+  action_time = 0.0
+
+func hold_position() -> Vector3:
+ return visual.to_global(Vector3(0.18, 1.3, -0.5))
 
 func _ready() -> void:
  reset_seed(random_seed)
@@ -76,13 +88,21 @@ func reset_seed(value: int) -> void:
  rng.seed = value
 
 func prepare() -> void:
- if action == Action.IDLE or action == Action.PREPARE:
+ if action != Action.STRIKE:
   action = Action.PREPARE
   action_time = 0.0
 
 func release() -> void:
  # No ball lookup here: an empty swing is a complete, immediate action.
  if action != Action.PREPARE:
+  return
+ if holding_ball:
+  last_result = "Сначала ПОДБРОС или выберите БРОСОК"
+  action = Action.IDLE
+  return
+ if technique == Technique.JUMP_SERVE and is_on_floor() and velocity.y <= 0:
+  last_result = "Подача в прыжке: сначала ПРЫЖОК"
+  action = Action.IDLE
   return
  strike_technique = technique
  strike_direction = desired_direction()
@@ -166,12 +186,27 @@ func _update_pose(dt: float) -> void:
    if action == Action.STRIKE:
     e += Vector3(0, 0.18 * t, -0.18 * t)
     w += Vector3(0, 0.35 * sin(t * PI * 0.5), -0.35 * t)
-  else:
+  elif mode == Technique.UNDERHAND:
    e = Vector3(side * 0.22, 1.12, -0.28)
    w = Vector3(side * 0.075, 0.93, -0.63)
    if action == Action.STRIKE:
     e += Vector3(0, 0.18 * t, -0.08 * t)
     w += Vector3(0, 0.49 * t, -0.12 * t)
+  else:
+   # Attack/serve: one striking palm, drawn and tested at the same location.
+   if i == 1:
+    e = Vector3(0.35, 1.65, 0.12)
+    w = Vector3(0.22, 2.05, 0.12)
+    if action == Action.STRIKE:
+     e = e.lerp(Vector3(0.3, 1.7, -0.35), t)
+     w = Vector3(0.2, 2.05 + sin(t * PI) * 0.25, 0.12 - t * 1.15)
+   else:
+    e = Vector3(-0.3, 1.4, -0.15)
+    w = Vector3(-0.2, 1.7, -0.35)
+  if holding_ball:
+   e = Vector3(side * 0.3, 1.2, -0.2)
+   w = Vector3(0.18 + side * 0.1, 1.3, -0.5)
+   blend = 1.0
   elbow = elbow.lerp(e, blend)
   wrist = wrist.lerp(w, blend)
   VolleyGeometry.segment(arms[i * 2], shoulder, elbow, 0.075)
@@ -186,6 +221,8 @@ func _update_pose(dt: float) -> void:
 
 func intersects_ball(center: Vector3) -> bool:
  for i in range(2):
+  if strike_technique >= Technique.SPIKE and i == 0:
+   continue
   if center.distance_to(wrists[i]) <= BALL_RADIUS + HAND_RADIUS:
    return true
   if strike_technique == Technique.UNDERHAND and VolleyGeometry.distance_to_segment(center, elbows[i], wrists[i]) <= BALL_RADIUS + FOREARM_RADIUS:
@@ -209,6 +246,12 @@ func try_contact(center: Vector3, incoming: Vector3) -> Vector3:
  direction = direction.rotated(Vector3.RIGHT, deg_to_rad(rng.randf_range(-spread, spread) * 0.5)).normalized()
  var control := stats.n("control")
  var magnitude := lerpf(2.0, 12.5, strike_power) * lerpf(0.65, 1.2, stats.n("strength"))
+ if strike_technique == Technique.SPIKE:
+  magnitude *= 1.8
+ elif strike_technique == Technique.SERVE:
+  magnitude *= 1.55
+ elif strike_technique == Technique.JUMP_SERVE:
+  magnitude *= 1.9
  magnitude *= rng.randf_range(1.0 - 0.18 * (1 - control), 1.0 + 0.18 * (1 - control))
  magnitude *= quality * (0.9 if strike_technique == Technique.UNDERHAND else 1.0)
  var hand_speed := maxf(0, hand_velocity.dot(direction))

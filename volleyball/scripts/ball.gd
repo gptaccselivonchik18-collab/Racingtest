@@ -7,6 +7,60 @@ var last_velocity := Vector3.ZERO
 var pending_feed := false
 var feed_position := Vector3.ZERO
 var feed_velocity := Vector3.ZERO
+var held := false
+
+func can_pick_up() -> bool:
+ if held or pending_feed or linear_velocity.length() > 3.0:
+  return false
+ var offset := global_position - athlete.global_position
+ if Vector2(offset.x, offset.z).length() > 1.15 or offset.y > 1.8 or offset.y < -0.2:
+  return false
+ var ray := PhysicsRayQueryParameters3D.create(athlete.global_position + Vector3(0, 1.0, 0), global_position, 1)
+ return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
+
+func pick_up() -> bool:
+ if not can_pick_up():
+  athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
+  return false
+ held = true
+ athlete.holding_ball = true
+ athlete.cancel_input()
+ athlete.action = VolleyAthlete.Action.IDLE
+ freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+ freeze = true
+ collision_mask = 0
+ linear_velocity = Vector3.ZERO
+ angular_velocity = Vector3.ZERO
+ athlete.last_result = "Мяч в руках • ПОДБРОС или БРОСОК"
+ return true
+
+func _physics_process(_dt: float) -> void:
+ if held:
+  global_position = athlete.hold_position()
+
+func drop() -> void:
+ if held:
+  feed(athlete.hold_position(), athlete.velocity)
+
+func toss() -> bool:
+ if not held:
+  athlete.last_result = "Сначала подберите мяч"
+  return false
+ var upward := 6.8 if athlete.technique == VolleyAthlete.Technique.JUMP_SERVE else 5.4
+ feed(athlete.hold_position(), Vector3.UP * upward + athlete.velocity)
+ athlete.last_result = "Подброс • прыгните / отпустите правый стик для удара"
+ return true
+
+func throw_held() -> bool:
+ if not held:
+  athlete.last_result = "Бросок: сначала подберите мяч"
+  return false
+ feed(athlete.hold_position(), athlete.desired_direction() * lerpf(2.0, 12.0, athlete.power) + athlete.velocity)
+ athlete.action = VolleyAthlete.Action.RECOVER
+ athlete.strike_technique = VolleyAthlete.Technique.THROW
+ athlete.action_time = 0.0
+ athlete.last_result = "Бросок • направление и сила заданы вами"
+ return true
 
 func _ready() -> void:
  mass = 0.27
@@ -32,6 +86,10 @@ func _ready() -> void:
  ball_mesh.material_override = material
 
 func feed(at: Vector3, speed: Vector3) -> void:
+ held = false
+ athlete.holding_ball = false
+ freeze = false
+ collision_mask = 1
  feed_position = at
  feed_velocity = speed
  pending_feed = true

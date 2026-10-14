@@ -38,6 +38,9 @@ jobs:
           godot --headless --path . --script tests/test_runner.gd 2>&1 | tee build/logs/tests.log
           if grep -E 'SCRIPT ERROR|ERROR:' build/logs/tests.log; then exit 1; fi
           grep -q 'ALL TESTS PASSED' build/logs/tests.log
+          godot --headless --path . --script tests/test_mobile_v2.gd 2>&1 | tee build/logs/mobile-v2-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/mobile-v2-tests.log; then exit 1; fi
+          grep -q 'V2 TESTS PASSED' build/logs/mobile-v2-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

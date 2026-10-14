@@ -16,6 +16,10 @@ with zipfile.ZipFile(path) as archive:
     assert struct.unpack_from("<I", data, 4)[0] == 0x0100000C, "Expected arm64"
     assert info["CFBundleIdentifier"] == "org.volleylab.simulator"
     assert "iPhoneOS" in info["CFBundleSupportedPlatforms"], "Simulator build rejected"
+    assert "UISupportedInterfaceOrientations" in info, "Missing orientation declarations"
+    for key in ("UISupportedInterfaceOrientations", "UISupportedInterfaceOrientations~ipad"):
+        if key in info:
+            assert {"UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"} <= set(info[key]), "Both landscape orientations must be supported"
     assert any(name.endswith(".pck") for name in archive.namelist()), "Godot game pack missing"
     if "Unsigned" in path:
         assert not any("_CodeSignature/" in n for n in archive.namelist())

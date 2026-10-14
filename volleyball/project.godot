@@ -12,7 +12,7 @@ window/size/viewport_height=720
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
-window/handheld/orientation=0
+window/handheld/orientation=6
 
 [rendering]
 renderer/rendering_method="gl_compatibility"
@@ -28,4 +28,4 @@ common/physics_ticks_per_second=120
 
 [input_devices]
 pointing/emulate_touch_from_mouse=false
-pointing/emulate_mouse_from_touch=false
+pointing/emulate_mouse_from_touch=true

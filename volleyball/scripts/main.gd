@@ -9,6 +9,8 @@ var guide: Array[MeshInstance3D] = []
 var ball_shadow: MeshInstance3D
 
 func _ready() -> void:
+ if OS.get_name() in ["iOS", "Android"]:
+  DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
  _court()
  athlete = VolleyAthlete.new()
  add_child(athlete)
@@ -108,3 +110,26 @@ func reset_player() -> void:
  athlete.velocity = Vector3.ZERO
  athlete.visual.rotation = Vector3.ZERO
  athlete.cancel_input()
+
+func release_action() -> void:
+ if athlete.technique == VolleyAthlete.Technique.THROW:
+  if not ball.throw_held():
+   athlete.action = VolleyAthlete.Action.IDLE
+ else:
+  athlete.release()
+
+func pickup_or_drop() -> void:
+ if ball.held:
+  ball.drop()
+ else:
+  ball.pick_up()
+
+func serve_start() -> void:
+ # Explicit training reset, never part of an automatic contact or pickup.
+ athlete.position = Vector3(0, 0.02, 9.6)
+ athlete.velocity = Vector3.ZERO
+ athlete.aim = Vector2(0, -1)
+ athlete.visual.rotation = Vector3.ZERO
+ athlete.action = VolleyAthlete.Action.IDLE
+ ball.feed(Vector3(0.3, 0.2, 9), Vector3.ZERO)
+ athlete.last_result = "Задняя линия • ПОДОБРАТЬ → ПОДБРОС → удар"
