@@ -21,6 +21,12 @@ var feed_spin := FEED_SPIN
 var float_active := false
 var float_age := 0.0
 var float_flight := VolleyFloatFlight.new()
+var attack_owner: WeakRef
+var attack_team := -1
+var attack_skill := 0.5
+var attack_quality := 0.0
+var attack_kind := -1
+var last_duel: Dictionary = {}
 var held := false
 var toss_yaw := 0.0
 var jump_toss := false
@@ -192,6 +198,7 @@ func pick_up() -> bool:
   athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
   return false
  clear_float()
+ clear_attack()
  held = true
  held_mode = HeldMode.TOSS
  var forward := -athlete.visual.global_basis.z
@@ -251,7 +258,7 @@ func _ready() -> void:
  angular_damp = 0.15
  contact_monitor = true
  max_contacts_reported = 8
- body_entered.connect(func(body: Node): clear_float(); surface_contact.emit(str(body.get_meta("surface", "world"))))
+ body_entered.connect(_on_body_entered)
  var mat := PhysicsMaterial.new()
  mat.bounce = 0.73
  mat.friction = 0.45
@@ -272,6 +279,60 @@ func clear_float() -> void:
  float_active = false
  float_age = 0
 
+func _on_body_entered(body: Node) -> void:
+ clear_float()
+ var surface := str(body.get_meta("surface", "world"))
+ if surface == "net":
+  attack_quality *= 0.8
+ else:
+  clear_attack()
+ surface_contact.emit(surface)
+
+func clear_attack() -> void:
+ attack_owner = null
+ attack_team = -1
+ attack_quality = 0
+ attack_kind = -1
+ last_duel = {}
+
+static func team_of(actor: ContextAthlete) -> int:
+ return actor.court_team if actor.court_team >= 0 else (0 if actor.global_position.z >= 0 else 1)
+
+func attack_for(blocker: ContextAthlete) -> Dictionary:
+ if replica or blocker.strike_technique != ContextAthlete.BLOCK or attack_owner == null:
+  return {}
+ var source: Variant = attack_owner.get_ref()
+ if not is_instance_valid(source):
+  clear_attack()
+  return {}
+ if source == blocker or team_of(blocker) == attack_team:
+  return {}
+ return {"skill": attack_skill, "quality": attack_quality, "kind": attack_kind}
+
+func remember_contact(actor: ContextAthlete) -> void:
+ if replica:
+  return
+ if actor.strike_technique in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]:
+  clear_attack()
+  attack_owner = weakref(actor)
+  attack_team = team_of(actor)
+  attack_skill = actor.style_stats.n("spike")
+  attack_quality = actor.quality
+  attack_kind = actor.strike_technique
+ elif actor.strike_technique == ContextAthlete.BLOCK and not actor.duel_result.is_empty():
+  var source: Variant = attack_owner.get_ref() if attack_owner != null else null
+  var result := actor.duel_result.duplicate()
+  if is_instance_valid(source):
+   source.last_result = "Атака пробила блок" if result.pierced else "Атака остановлена блоком"
+  if result.pierced:
+   # A second actual blocker faces a weakened attack, never the original pace.
+   attack_quality *= 0.85
+  else:
+   clear_attack()
+  last_duel = result
+ else:
+  clear_attack()
+
 func launch_float(at: Vector3, speed: Vector3, spin: Vector3, skill: float, seed_value: int) -> void:
  if replica:
   return
@@ -283,6 +344,7 @@ func feed(at: Vector3, speed: Vector3, spin := FEED_SPIN) -> void:
  if replica:
   return
  clear_float()
+ clear_attack()
  held = false
  athlete.holding_ball = false
  freeze = false
@@ -318,11 +380,15 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
    for candidate in candidates:
     if not is_instance_valid(candidate) or (candidate is ContextAthlete and (candidate.lower_serve_active or candidate.float_serve_active)):
      continue
-    var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
+    var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity, attack_for(candidate)) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
      clear_float()
      state.apply_central_impulse(delta_v * mass)
      state.angular_velocity = candidate.outgoing_spin(state.angular_velocity, delta_v) if candidate is ContextAthlete else (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
+     if candidate is ContextAthlete:
+      remember_contact(candidate)
+     else:
+      clear_attack()
      break
   previous_center = center
   previous_center_valid = true

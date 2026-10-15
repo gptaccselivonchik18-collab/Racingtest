@@ -3,7 +3,7 @@ extends Node
 
 signal changed
 const PORT := 24681
-const MAGIC := "VOLLEYLAB13"
+const MAGIC := "VOLLEYLAB14"
 var lan: VolleyLAN
 var responder := PacketPeerUDP.new()
 var seeker := PacketPeerUDP.new()
@@ -87,7 +87,7 @@ func _process(dt: float) -> void:
    var request: Variant = JSON.parse_string(data.get_string_from_utf8())
    if request is Dictionary and request.get("magic") == MAGIC and str(request.get("token", "")).length() <= 32 and lan.hosting:
     responder.set_dest_address(ip, port)
-    responder.put_packet(JSON.stringify({"magic": MAGIC, "token": request.token, "port": game_port, "players": lan.players.size(), "limit": 12, "protocol": VolleyLAN.PROTOCOL, "version": "0.13"}).to_utf8_buffer())
+    responder.put_packet(JSON.stringify({"magic": MAGIC, "token": request.token, "port": game_port, "players": lan.players.size(), "limit": 12, "protocol": VolleyLAN.PROTOCOL, "version": "0.14"}).to_utf8_buffer())
  if not searching:
   return
  search_time += dt

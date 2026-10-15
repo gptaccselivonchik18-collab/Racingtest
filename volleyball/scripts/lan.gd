@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 13
+const PROTOCOL := 14
 var game: Node3D
 var active := false
 var hosting := false
@@ -108,6 +108,7 @@ func leave() -> void:
  if is_instance_valid(game.lower_serve):
   game.lower_serve.cancel_sequence()
  game.ball.clear_float()
+ game.ball.clear_attack()
  if is_instance_valid(discovery):
   discovery.stop_advertising()
   discovery.stop_search()
@@ -135,6 +136,7 @@ func leave() -> void:
  game.athlete.float_serve_active = false
  game.athlete.lower_serve_active = false
  game.athlete.replica = false
+ game.athlete.court_team = -1
  game.athlete.set_physics_process(true)
  if game.athlete.has_node("TeamTag"):
   game.athlete.get_node("TeamTag").queue_free()
@@ -157,6 +159,7 @@ func _spawn(id: int, team: int, slot: int) -> void:
   add_child(actor)
   actor.touched.connect(func(kind: int, point: Vector3, outgoing: Vector3): game._on_player_touch(actor, id, kind, point, outgoing))
  var side := 1.0 if team == 0 else -1.0
+ actor.court_team = team
  actor.position = Vector3((slot % 3 - 1) * 2.5, 0.02, side * (4.0 + (slot / 3) * 3.0))
  actor.visual.rotation.y = 0 if team == 0 else PI
  actor.camera_yaw = actor.visual.rotation.y
@@ -197,7 +200,7 @@ func hello(version: int, skills: Dictionary) -> void:
   return
  var id := multiplayer.get_remote_sender_id()
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.13." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.14." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -264,6 +267,8 @@ func _remove(id: int) -> void:
   if game.ball.held:
    game.ball.drop()
   game.ball.athlete = game.athlete
+ if game.ball.attack_owner != null and game.ball.attack_owner.get_ref() == actor:
+  game.ball.clear_attack()
  if actor != game.athlete:
   actor.queue_free()
  players.erase(id)

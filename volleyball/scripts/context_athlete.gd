@@ -51,6 +51,8 @@ var air_attack := false
 var takeoff_speed := 0.0
 var look_target := Vector3.ZERO
 var look_target_valid := false
+var court_team := -1
+var duel_result: Dictionary = {}
 
 func hold_position() -> Vector3:
  if pose_ready and is_instance_valid(limb_rig) and limb_rig.motion.initialized:
@@ -521,10 +523,10 @@ func contact_clear(center: Vector3, hand: Vector3) -> bool:
  var ray := PhysicsRayQueryParameters3D.create(center, hand, 1)
  return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 
-func try_contact(center: Vector3, incoming: Vector3) -> Vector3:
- return try_swept_contact(center, center, incoming)
+func try_contact(center: Vector3, incoming: Vector3, attack: Dictionary = {}) -> Vector3:
+ return try_swept_contact(center, center, incoming, attack)
 
-func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vector3:
+func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack: Dictionary = {}) -> Vector3:
  if hit_used or not contact_active():
   return Vector3.ZERO
  var distance := from.distance_to(center)
@@ -540,6 +542,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    break
  if not found:
   return Vector3.ZERO
+ duel_result = {}
  hit_used = true
  contact_flash = 0.16
  contact_count += 1
@@ -560,6 +563,10 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
   normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-float(p.accuracy), float(p.accuracy)) * (1.0 - quality)))
   outgoing = incoming.bounce(normal) * float(p.reflect) * lerpf(0.8, 1, quality) + hand_velocity.limit_length(6) * 0.12
   outgoing *= rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
+  if not attack.is_empty():
+   duel_result = VolleyBlockDuel.resolve(attack, style_stats.n("block"), quality, incoming, normal, rng)
+   if duel_result.pierced:
+    outgoing = duel_result.velocity
  else:
   # One sampled angular error and one speed error per contact, never per frame.
   var spread := float(p.accuracy) * (1.3 - quality)
@@ -610,11 +617,15 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    var launch: Vector3 = serve_solver.call(last_contact_point, aim, apex)
    outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
  last_result = "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]
+ if not duel_result.is_empty():
+  last_result = ("Блок пробит" if duel_result.pierced else "Блок удержан") + " • шанс блока %d%%" % roundi(float(duel_result.block_chance) * 100)
  touched.emit(strike_technique, last_contact_point, outgoing)
  return outgoing - incoming
 
 func outgoing_spin(incoming_spin: Vector3, delta_v: Vector3) -> Vector3:
  var p := mechanic(strike_technique)
+ if strike_technique == BLOCK and bool(duel_result.get("pierced", false)):
+  return incoming_spin * lerpf(0.75, 0.50, float(p.control))
  if strike_technique == Technique.JUMP_SERVE:
   var amount := power if action == Action.PREPARE else strike_power
   return (-Vector3(strike_direction.x, 0, strike_direction.z).normalized().cross(Vector3.UP) * float(p.topspin) * lerpf(0.65, 1.0, amount)).limit_length(45)
