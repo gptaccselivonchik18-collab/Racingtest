@@ -101,7 +101,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.3"
+ title.text = "   VOLLEY / LAB  0.4"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -123,6 +123,7 @@ func _menu() -> void:
  var help := Label.new()
  help.text = "ЛКМ: приём / атака. Q: пас / блок. E: пас в прыжке.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч.\nУдерживайте действие для меньшей силы, отпустите для касания.\nВ воздухе: короткое ЛКМ — скидка; удержание ≥ 0.13 с — атака.\nПодача: основная кнопка — подброс, затем удержать и отпустить.\nF: подобрать / опустить. Shift: фиксация корпуса. Мышь / свайп: камера."
  help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ help.text += "\nМяч в руках: свайп / мышь настраивает дугу подброса.\nTilt: левый джойстик / WASD до контакта. В прыжке сохраняется инерция."
  practice.add_child(help)
  var controls := _tab("Управление")
  control_sliders.sensitivity = _slider(controls, "Чувствительность камеры", 0.3, 2.5, settings.sensitivity, func(v: float): settings.sensitivity = v; game.rig.sensitivity = v; _save(), 0.05)
@@ -322,7 +323,7 @@ func _input(event: InputEvent) -> void:
    _release("primary")
  elif event is InputEventMouseMotion:
   if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not edit_mode:
-   game.rig.look(event.relative)
+   _look_or_aim(event.relative)
   else:
    _touch_move(1000, event.position, event.relative)
 
@@ -380,11 +381,17 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   if move_value.length() < 0.10:
    move_value = Vector2.ZERO
  elif role == "camera":
-  game.rig.look(relative)
+  _look_or_aim(relative)
  elif role.begins_with("edit:"):
   var key := role.trim_prefix("edit:")
   settings.layout[key] = Vector3(clampf(pos.x / size.x, 0.04, 0.96), clampf(pos.y / size.y, 0.1, 0.94), editor_scale.value)
   _layout()
+
+func _look_or_aim(relative: Vector2) -> void:
+ if game.ball.held and not game.ball.aiming_throw():
+  game.ball.aim_toss(relative)
+ else:
+  game.rig.look(relative)
 
 func _touch_up(id: int, canceled := false) -> void:
  if not fingers.has(id):
@@ -409,7 +416,7 @@ func _process(_dt: float) -> void:
   a.move_axis = game.rig.movement(axis)
   a.tilt = axis
  buttons.primary.text = "ПОДБРОС" if game.ball.held else "ПОДАЧА" if game.serving and not a.airborne() else "АТАКА" if a.airborne() else "ПРИЁМ"
- buttons.secondary.text = "БЛОК" if a.airborne() else "ПАС"
+ buttons.secondary.text = "БРОСОК" if game.ball.held else "БЛОК" if a.airborne() else "ПАС"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
@@ -420,6 +427,10 @@ func _process(_dt: float) -> void:
  buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.ball.held
  buttons.context.visible = game.ball.held or game.ball.can_pick_up()
  status.text = VolleyTraining.NAMES[game.training.selected] + "  •  " + (game.rules.message if game.rules.ended else a.last_result)
+ if game.ball.held:
+  status.text = "Свайп: направление и высота подброса • ПОДБРОС: запустить"
+  if game.ball.aiming_throw():
+   status.text = "БРОСОК: свайп — прицел • отпустить кнопку — бросить"
  if edit_mode:
   status.text = ""
  queue_redraw()
@@ -449,6 +460,13 @@ func _draw() -> void:
   draw_line(at + Vector2(0, 12), at + Vector2(180, 12), Color("334d5c"), 5)
   draw_line(at + Vector2(0, 12), at + Vector2(180 * game.athlete.power, 12), Color("f4cf77"), 5)
  draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
+ if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and not edit_mode:
+  var at := Vector2(size.x * 0.5, size.y - 168)
+  draw_circle(at, 23, Color(0.03, 0.09, 0.14, 0.65))
+  draw_arc(at, 23, 0, TAU, 32, Color("8eaebc"), 1, true)
+  draw_line(at, at + game.athlete.tilt * 20, Color("f4cf77"), 3, true)
+  draw_circle(at + game.athlete.tilt * 20, 4, Color("f4cf77"))
+  draw_string(font, at + Vector2(-35, -29), "TILT", HORIZONTAL_ALIGNMENT_CENTER, 70, 13, Color("f4cf77"))
 
 func _panel(color: Color, corners := 12) -> StyleBoxFlat:
  var style := StyleBoxFlat.new()

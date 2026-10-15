@@ -16,6 +16,49 @@ var pending_feed := false
 var feed_position := Vector3.ZERO
 var feed_velocity := Vector3.ZERO
 var held := false
+var toss_yaw := 0.0
+var toss_elevation := deg_to_rad(86.0)
+var jump_toss := false
+const FEED_SPIN := Vector3(2.3, 0.6, 1.1)
+
+func aim_toss(relative: Vector2) -> void:
+ toss_yaw = clampf(toss_yaw - relative.x * 0.0035, -PI / 3, PI / 3)
+ toss_elevation = clampf(toss_elevation - relative.y * 0.0025, deg_to_rad(50), deg_to_rad(88))
+
+func toss_velocity() -> Vector3:
+ var forward := -athlete.visual.global_basis.z
+ forward.y = 0
+ forward = forward.normalized().rotated(Vector3.UP, toss_yaw)
+ return (forward * cos(toss_elevation) + Vector3.UP * sin(toss_elevation)) * (6.8 if jump_toss else 5.4) + athlete.velocity
+
+func aiming_throw() -> bool:
+ return held and athlete.technique == VolleyAthlete.Technique.THROW and athlete.action == VolleyAthlete.Action.PREPARE
+
+func throw_velocity() -> Vector3:
+ return athlete.desired_direction() * lerpf(2.0, 12.0, athlete.power) + athlete.velocity
+
+func aero_force(speed: Vector3, spin: Vector3) -> Vector3:
+ var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
+ return (spin.cross(speed) * magnus_coefficient).limit_length(magnus_force_limit) - speed * speed.length() * 0.5 * air_density * drag_coefficient * area
+
+func preview_points() -> PackedVector3Array:
+ var points := PackedVector3Array()
+ var at := athlete.hold_position()
+ var speed := throw_velocity() if aiming_throw() else toss_velocity()
+ var spin := FEED_SPIN
+ var step := 1.0 / 120.0
+ points.append(at)
+ for tick in range(240):
+  speed += (Vector3.DOWN * 9.81 + aero_force(speed, spin) / mass) * step
+  spin *= 1.0 - angular_damp * step
+  var next := at + speed * step
+  var ray := PhysicsRayQueryParameters3D.create(at, next, 1)
+  if next.y <= VolleyAthlete.BALL_RADIUS or not get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+   break
+  at = next
+  if tick % 5 == 4:
+   points.append(at)
+ return points
 
 func can_pick_up() -> bool:
  if held or pending_feed or linear_velocity.length() > 3.0:
@@ -31,6 +74,8 @@ func pick_up() -> bool:
   athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
   return false
  held = true
+ toss_yaw = 0
+ toss_elevation = deg_to_rad(86)
  athlete.holding_ball = true
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE
@@ -54,8 +99,8 @@ func toss() -> bool:
  if not held:
   athlete.last_result = "Сначала подберите мяч"
   return false
- var upward := 6.8 if athlete.technique == VolleyAthlete.Technique.JUMP_SERVE else 5.4
- feed(athlete.hold_position(), Vector3.UP * upward + athlete.velocity)
+ jump_toss = athlete.technique == VolleyAthlete.Technique.JUMP_SERVE
+ feed(athlete.hold_position(), toss_velocity())
  athlete.last_result = "Подброс • удержать и отпустить основную кнопку для удара"
  return true
 
@@ -63,7 +108,7 @@ func throw_held() -> bool:
  if not held:
   athlete.last_result = "Бросок: сначала подберите мяч"
   return false
- feed(athlete.hold_position(), athlete.desired_direction() * lerpf(2.0, 12.0, athlete.power) + athlete.velocity)
+ feed(athlete.hold_position(), throw_velocity())
  athlete.action = VolleyAthlete.Action.RECOVER
  athlete.strike_technique = VolleyAthlete.Technique.THROW
  athlete.action_time = 0.0
@@ -111,7 +156,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
  if pending_feed:
   state.transform = Transform3D(Basis.IDENTITY, feed_position)
   state.linear_velocity = feed_velocity
-  state.angular_velocity = Vector3(2.3, 0.6, 1.1)
+  state.angular_velocity = FEED_SPIN
   pending_feed = false
   last_velocity = feed_velocity
   previous_center = feed_position
@@ -136,8 +181,6 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   previous_center = center
   previous_center_valid = true
  # Approximate, bounded Magnus force; no target or player tracking.
- state.apply_central_force((state.angular_velocity.cross(state.linear_velocity) * magnus_coefficient).limit_length(magnus_force_limit))
- var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
- state.apply_central_force(-state.linear_velocity * state.linear_velocity.length() * 0.5 * air_density * drag_coefficient * area)
+ state.apply_central_force(aero_force(state.linear_velocity, state.angular_velocity))
  acceleration = (state.linear_velocity - last_velocity) / state.step
  last_velocity = state.linear_velocity

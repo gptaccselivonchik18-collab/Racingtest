@@ -25,6 +25,9 @@ func _ready() -> void:
  ball.athlete = athlete
  add_child(ball)
  ball.position = Vector3(0, 0.2, 1)
+ var preview := VolleyTossPreview.new()
+ preview.ball = ball
+ add_child(preview)
  athlete.touched.connect(_on_touch)
  ball.surface_contact.connect(_on_surface)
  ball_shadow = VolleyGeometry.sphere(self, Vector3.ZERO, 0.16, Color("143c42"))
@@ -133,6 +136,7 @@ func repeat_drill() -> void:
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE
  serving = training.selected in [5, 6]
+ ball.jump_toss = training.selected == 6
  rules.reset(serving)
  previous_ball_valid = false
  training.launch(ball, athlete)

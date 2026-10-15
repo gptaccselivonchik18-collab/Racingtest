@@ -45,6 +45,9 @@ jobs:
           godot --headless --path . --script tests/test_playability.gd 2>&1 | tee build/logs/playability.log
           if grep -E 'SCRIPT ERROR|ERROR:' build/logs/playability.log; then exit 1; fi
           grep -q 'PLAYABILITY PASSED' build/logs/playability.log
+          godot --headless --path . --script tests/test_v4.gd 2>&1 | tee build/logs/v4-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v4-tests.log; then exit 1; fi
+          grep -q 'V4 TESTS PASSED' build/logs/v4-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -154,4 +157,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
-          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.3' --notes-file release-notes.txt --prerelease
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.4' --notes-file release-notes.txt --prerelease

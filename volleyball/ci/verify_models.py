@@ -9,4 +9,4 @@ for entry in inventory["preserved_files"]:
     path = root.parent / entry["path"]
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
     assert actual == entry["sha256"], f"Protected original resource changed: {entry['path']}"
-print("Original athlete geometry, materials, procedural animations, scene and stats are unchanged.")
+print("Original source assets, scene and stats are unchanged; the additive limb rig refines runtime geometry.")

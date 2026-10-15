@@ -64,7 +64,7 @@ func run() -> void:
   swing(kind)
   var hand: Vector3 = a.wrists[1] if kind in [2, 3, 4, ContextAthlete.TIP] else a.wrists[0]
   var incoming := Vector3(0, -4, 3)
-  check(a.try_contact(hand + Vector3(0.5, 0, 0), incoming) == Vector3.ZERO, "Spatial miss is never assisted: %d" % kind)
+  check(a.try_contact(hand + Vector3(0, 0, 0.7), incoming) == Vector3.ZERO, "Outside enlarged contact area remains a miss: %d" % kind)
   a.action_time = 0
   check(a.try_contact(hand, incoming) == Vector3.ZERO, "Early overlap does not hit: %d" % kind)
   a.action_time = a.strike_duration * 0.47
@@ -141,7 +141,7 @@ func run() -> void:
  await frames(24)
  check(a.visual.rotation.x < -0.8 and a.wrists[0].y < 1.1, "Dive lowers the actual visible hands")
  await frames(150)
- check(a.dive_time < 0 and a.visual.rotation.x == 0, "Dive finishes with recovery to standing")
+ check(a.dive_time < 0 and absf(a.visual.rotation.x) < 0.001, "Dive finishes with recovery to standing")
  # Context actions select on ground / in air, charging clamps monotonically.
  a.position = Vector3(0, 0.02, 4)
  a.velocity = Vector3.ZERO

@@ -1,9 +1,13 @@
 class_name ContextAthlete
 extends VolleyAthlete
 
-# The original athlete.gd owns every mesh, material and original animation.
-# This controller only drives those existing nodes; no replacement geometry.
+# The base resources stay intact; the additive rig refines limbs and poses.
 signal touched(kind: int, point: Vector3, outgoing: Vector3)
+@export var contact_ball_radius := 0.26
+@export var air_acceleration := 1.2
+var limb_rig: VolleyLimbRig
+var lean := Vector2.ZERO
+var landing_load := 0.0
 const BLOCK := 6
 const DIVE := 7
 const JUMP_SET := 8
@@ -25,6 +29,9 @@ var last_contact_point := Vector3.ZERO
 func _ready() -> void:
  super._ready()
  pose_ready = true
+ limb_rig = VolleyLimbRig.new()
+ limb_rig.athlete = self
+ add_child(limb_rig)
  last_result = "Выберите упражнение в меню • R — следующий мяч"
 
 func airborne() -> bool:
@@ -114,10 +121,10 @@ func direction_for(kind: int) -> Vector3:
    horizontal = (forward * -tilt.y + right * tilt.x).normalized()
   angle = lerpf(74, 43, power) if kind != Technique.UNDERHAND else lerpf(67, 41, power)
  elif kind in [Technique.SPIKE, TIP]:
-  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(35))
+  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(50))
   # Low contact really is shallow; there is no correction to clear the net.
   var height_factor := clampf((global_position.y + 2.2 - 2.43) / 0.9, 0, 1)
-  angle = lerpf(-6, -30, height_factor) + tilt.y * 22
+  angle = lerpf(-6, -30, height_factor) + tilt.y * 28
   if kind == TIP:
    angle = 7 + tilt.y * 15
  elif kind in [Technique.SERVE, Technique.JUMP_SERVE]:
@@ -138,7 +145,7 @@ func contact_active() -> bool:
  var phase := action_time / strike_duration
  if strike_technique == BLOCK:
   return phase >= 0.20 and phase <= 0.92 and airborne()
- return phase >= 0.18 and phase <= 0.76
+ return phase >= 0.12 and phase <= 0.90
 
 func phase_name() -> String:
  if action == Action.PREPARE:
@@ -155,6 +162,8 @@ func _physics_process(dt: float) -> void:
  if not shift_lock and move_axis.length() > 0.15:
   target_yaw = atan2(-move_axis.x, -move_axis.y)
  var turn_limit := lerpf(2.5, 5.5, stats.n("coordination")) * dt
+ if airborne():
+  turn_limit *= 0.45
  visual.rotation.y += clampf(angle_difference(visual.rotation.y, target_yaw), -turn_limit, turn_limit)
  if dive_time >= 0:
   dive_time += dt
@@ -176,12 +185,30 @@ func _physics_process(dt: float) -> void:
    action = Action.IDLE
  else:
   var speed := lerpf(2.8, 6.2, stats.n("speed")) * lerpf(0.8, 1.0, energy)
-  var acceleration := lerpf(9.0, 25.0, stats.n("agility"))
-  velocity.x = move_toward(velocity.x, move_axis.x * speed, acceleration * dt)
-  velocity.z = move_toward(velocity.z, move_axis.y * speed, acceleration * dt)
+  var horizontal := Vector2(velocity.x, velocity.z)
+  if airborne():
+   # Keep takeoff momentum; small corrections cannot reverse flight instantly.
+   if move_axis.length() > 0.1:
+    horizontal = horizontal.move_toward(move_axis * speed, air_acceleration * dt)
+  else:
+   var acceleration := lerpf(7.0, 14.0, stats.n("agility"))
+   if move_axis.length() < 0.1 or horizontal.dot(move_axis) < 0:
+    acceleration = lerpf(5.0, 8.0, stats.n("agility"))
+   horizontal = horizontal.move_toward(move_axis * speed, acceleration * dt)
+  velocity.x = horizontal.x
+  velocity.z = horizontal.y
+  lean = lean.lerp(tilt if not holding_ball else Vector2.ZERO, 1.0 - exp(-9.0 * dt))
+  visual.rotation.x = lean.y * 0.20
+  visual.rotation.z = -lean.x * 0.17
+ var fall_speed := velocity.y
+ var was_grounded := is_on_floor()
  if not is_on_floor():
   velocity.y -= 9.81 * dt
  move_and_slide()
+ if not was_grounded and is_on_floor() and fall_speed < -1:
+  landing_load = clampf(-fall_speed / 9.0, 0, 0.7)
+ landing_load = move_toward(landing_load, 0, dt * 2.0)
+ visual.position.y = -landing_load * 0.07
  position.x = clampf(position.x, -8, 8)
  position.z = clampf(position.z, -12, 12)
  energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -0.018 * (1.2 - stats.n("stamina"))), 0, 1)
@@ -211,10 +238,12 @@ func _update_pose(dt: float) -> void:
   _adapt_platform(dt)
   technique = old_technique
   strike_technique = old_strike
+  _finish_pose(dt)
   return
  super._update_pose(dt)
  _adapt_platform(dt)
  if mode not in [BLOCK, DIVE] or action == Action.IDLE:
+  _finish_pose(dt)
   return
  var blend := 1.0
  if action == Action.PREPARE:
@@ -238,6 +267,11 @@ func _update_pose(dt: float) -> void:
   hands[i].position = w
   elbows[i] = visual.to_global(e)
   wrists[i] = visual.to_global(w)
+ _finish_pose(dt)
+
+func _finish_pose(dt: float) -> void:
+ if is_instance_valid(limb_rig):
+  limb_rig.apply_pose()
  if dt > 0:
   hand_velocity = ((wrists[0] + wrists[1]) - (previous_wrists[0] + previous_wrists[1])) * 0.5 / dt
 
@@ -272,13 +306,20 @@ func overlap_at(center: Vector3, fraction: float) -> bool:
   if strike_technique in [Technique.SPIKE, Technique.SERVE, Technique.JUMP_SERVE, TIP] and i == 0:
    continue
   var wrist := previous_wrists[i].lerp(wrists[i], fraction)
-  if center.distance_to(wrist) <= BALL_RADIUS + HAND_RADIUS:
+  if center.distance_to(wrist) <= contact_ball_radius + HAND_RADIUS and contact_clear(center, wrist):
    return true
   if strike_technique in [Technique.UNDERHAND, DIVE]:
    var elbow := previous_elbows[i].lerp(elbows[i], fraction)
-   if VolleyGeometry.distance_to_segment(center, elbow, wrist) <= BALL_RADIUS + FOREARM_RADIUS:
+   var closest := Geometry3D.get_closest_point_to_segment(center, elbow, wrist)
+   if center.distance_to(closest) <= contact_ball_radius + FOREARM_RADIUS and contact_clear(center, closest):
     return true
  return false
+
+func contact_clear(center: Vector3, hand: Vector3) -> bool:
+ if center.distance_to(hand) < 0.001:
+  return true
+ var ray := PhysicsRayQueryParameters3D.create(center, hand, 1)
+ return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 
 func try_contact(center: Vector3, incoming: Vector3) -> Vector3:
  return try_swept_contact(center, center, incoming)
@@ -307,9 +348,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
  quality = clampf((0.45 + timing * 0.55) * lerpf(approach, 1, stats.n("control")) * lerpf(0.75, 1, stats.n("coordination")), 0.15, 1)
  var nearest := 1.0
  for i in range(2):
-  nearest = minf(nearest, last_contact_point.distance_to(wrists[i]) / (BALL_RADIUS + HAND_RADIUS))
+  nearest = minf(nearest, last_contact_point.distance_to(wrists[i]) / (contact_ball_radius + HAND_RADIUS))
   if strike_technique in [Technique.UNDERHAND, DIVE]:
-   nearest = minf(nearest, VolleyGeometry.distance_to_segment(last_contact_point, elbows[i], wrists[i]) / (BALL_RADIUS + FOREARM_RADIUS))
+   nearest = minf(nearest, VolleyGeometry.distance_to_segment(last_contact_point, elbows[i], wrists[i]) / (contact_ball_radius + FOREARM_RADIUS))
  quality *= lerpf(1.0, 0.65, clampf(nearest, 0, 1))
  var outgoing: Vector3
  if strike_technique == BLOCK:
@@ -319,6 +360,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
   # One sampled angular error and one speed error per contact, never per frame.
   var spread := lerpf(7.0, 0.3, stats.n("accuracy")) * (1.3 - quality)
   deviation = rng.randf_range(-spread, spread)
+  # Tilt remains live until contact, including after release of the hit button.
+  if strike_technique != DIVE:
+   strike_direction = direction_for(strike_technique)
   var direction := strike_direction.rotated(Vector3.UP, deg_to_rad(deviation))
   var strength := lerpf(0.75, 1.18, stats.n("strength"))
   var speed := lerpf(3, 12.5, strike_power)
