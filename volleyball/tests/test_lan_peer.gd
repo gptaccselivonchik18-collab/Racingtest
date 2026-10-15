@@ -32,6 +32,7 @@ var private_remote_seen := false
 var private_hold_time := 0.0
 var float_requested_at := -1.0
 var port := 24702
+var endpoint := "127.0.0.1"
 
 func _initialize() -> void:
  var args := OS.get_cmdline_user_args()
@@ -41,6 +42,8 @@ func _initialize() -> void:
   index = int(args[1])
  if args.size() > 2:
   port = int(args[2])
+ if args.size() > 3:
+  endpoint = args[3]
  call_deferred("run")
 
 func run() -> void:
@@ -55,10 +58,10 @@ func run() -> void:
   game.athlete.stats.set_stat("set", 135 + index)
   if index == 1:
    game.frontend.show_home()
-   var targets: Array[String] = ["127.0.0.1"]
+   var targets: Array[String] = [endpoint]
    game.lan.discovery.search(targets, port + 1)
   else:
-   game.lan.join_room("127.0.0.1", port)
+   game.lan.join_room(endpoint, port)
  if role == "host" or index != 1:
   game.frontend.enter_court()
  game.hud.set_process(false)
@@ -137,9 +140,9 @@ func _process(dt: float) -> bool:
    print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s view=%s hold=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen, view_seen, hold_seen])
    quit(0 if ok else 1)
  else:
-  if index == 1 and not drive and game.lan.discovery.rooms.has("127.0.0.1"):
+  if index == 1 and not drive and game.lan.discovery.rooms.has(endpoint):
    drive = true
-   var room: Dictionary = game.lan.discovery.rooms["127.0.0.1"]
+   var room: Dictionary = game.lan.discovery.rooms[endpoint]
    game.frontend.join_to(room.ip, room.port)
    print("LAN_DISCOVERY_JOIN")
   if game.lan.connected and joined_at < 0:

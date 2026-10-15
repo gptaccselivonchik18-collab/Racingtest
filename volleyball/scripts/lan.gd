@@ -4,7 +4,8 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 14
+const PROTOCOL := 15
+const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
 var hosting := false
@@ -49,15 +50,17 @@ func _ready() -> void:
  multiplayer.server_disconnected.connect(_lost_host)
 
 func addresses() -> String:
- var result := PackedStringArray()
- for address in IP.get_local_addresses():
-  if address.is_valid_ip_address() and ":" not in address and not address.begins_with("127.") and not address.begins_with("169.254."):
-   result.append(address)
- return ", ".join(result) if not result.is_empty() else "Проверьте подключение к Wi-Fi"
+ var result := VolleyNetworkInfo.local_addresses()
+ return ", ".join(result) if not result.is_empty() else "Подключитесь к Wi-Fi или включите точку доступа"
 
 func host_room(port := PORT) -> Error:
+ if port < 1 or port > 65534:
+  status = "Неверный порт комнаты"
+  changed.emit()
+  return ERR_INVALID_PARAMETER
  leave()
  var peer := ENetMultiplayerPeer.new()
+ peer.set_bind_ip("0.0.0.0")
  var error := peer.create_server(port, LIMIT - 1)
  if error != OK:
   status = "Не удалось создать комнату. Порт занят или сеть недоступна."
@@ -71,18 +74,20 @@ func host_room(port := PORT) -> Error:
  game.ball.replica = false
  game.ball.contact_athletes = [game.athlete]
  reset_round()
- discovery.advertise(port, port + 1)
+ var discovery_error := discovery.advertise(port, port + 1)
  status = "Комната создана • " + addresses()
+ if discovery_error != OK:
+  status += " • Поиск недоступен, войдите по IP"
  changed.emit()
  return OK
 
 func join_room(address: String, port := PORT) -> Error:
- leave()
  address = normalize_address(address)
- if not address.is_valid_ip_address():
+ if not VolleyNetworkInfo.usable_ipv4(address) or port < 1 or port > 65535:
   status = "Введите IP создателя комнаты, например 192.168.1.10"
   changed.emit()
   return ERR_INVALID_PARAMETER
+ leave()
  var peer := ENetMultiplayerPeer.new()
  var error := peer.create_client(address, port)
  if error != OK:
@@ -199,13 +204,14 @@ func hello(version: int, skills: Dictionary) -> void:
  if not hosting:
   return
  var id := multiplayer.get_remote_sender_id()
+ if players.has(id):
+  _broadcast_roster()
+  return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.14." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.15." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
-  return
- if players.has(id):
   return
  var count := [0, 0]
  for entry in players.values():
@@ -289,7 +295,7 @@ func _connected() -> void:
 
 func _failed() -> void:
  leave()
- status = rejected_reason if not rejected_reason.is_empty() else "Нет ответа. Откройте комнату у создателя, проверьте общую Wi-Fi сеть и разрешение локальной сети."
+ status = rejected_reason if not rejected_reason.is_empty() else "Нет ответа. Проверьте IP и общую Wi-Fi сеть / точку доступа. На iPhone разрешите локальную сеть в Настройках. Гостевая сеть может запрещать связь между устройствами. После разрешения попробуйте снова."
  game.frontend.show_home()
  changed.emit()
 
@@ -483,7 +489,7 @@ func _process(dt: float) -> void:
   return
  if not connected:
   connecting_for += dt
-  if connecting_for > 10:
+  if connecting_for > CONNECT_TIMEOUT:
    _failed()
   return
  tick += dt

@@ -107,7 +107,7 @@ func show_home() -> void:
  game.hud._native_button(extras, "Отменить подключение", func(): game.lan.leave(); game.lan.status = ""; auto_enter = false; _refresh())
  address.text_submitted.connect(func(_value: String): join_from_field())
  info = _label(game.lan.status, 16)
- _label("Одна Wi-Fi сеть / точка доступа. В iOS разрешите локальную сеть. Если поиск не находит комнату, можно вставить IP создателя.", 16)
+ _label("Android и iPhone играют вместе, версия должна совпадать. Подключите оба телефона к одной Wi-Fi сети или один к точке доступа другого. Один создаёт комнату, второй ищет её или вводит IP создателя. На iPhone разрешите локальную сеть.", 16)
  _refresh_rooms()
  _button("Настройки управления и спортсмена", func():
   game.hud.show()
@@ -155,7 +155,7 @@ func show_room() -> void:
  _label("КОМНАТА • VOLLEY / LAB", 30)
  info = _label("", 18)
  if game.lan.hosting:
-  _button("Скопировать IP комнаты", func(): DisplayServer.clipboard_set(game.lan.addresses().get_slice(",", 0).strip_edges()))
+  _button("Скопировать IP Wi-Fi / точки доступа", func(): DisplayServer.clipboard_set(game.lan.addresses().get_slice(",", 0).strip_edges()))
  roster_label = _label("", 20)
  _label("Две стороны, до 6 игроков в каждой. Можно входить во время игры.\nСоздатель рассчитывает мяч и счёт. Следующий розыгрыш — через 3 секунды.", 16)
  _button("На площадку", enter_court)

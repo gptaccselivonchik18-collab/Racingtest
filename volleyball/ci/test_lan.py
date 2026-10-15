@@ -9,6 +9,7 @@ import time
 
 godot = sys.argv[1] if len(sys.argv) > 1 else "godot"
 root = Path(__file__).resolve().parents[1]
+address = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
 logs = root / "build" / "logs"
 logs.mkdir(parents=True, exist_ok=True)
 # Reserve-check both adjacent UDP ports; a random OS ephemeral port alone
@@ -32,7 +33,7 @@ def launch(role, index):
     path = logs / f"lan-{role}-{index}.log"
     handle = path.open("w", encoding="utf-8")
     handles.append(handle)
-    command = [godot, "--headless", "--path", str(root), "--script", "tests/test_lan_peer.gd", "--", role, str(index), str(port)]
+    command = [godot, "--headless", "--path", str(root), "--script", "tests/test_lan_peer.gd", "--", role, str(index), str(port), address]
     child = subprocess.Popen(command, stdout=handle, stderr=subprocess.STDOUT)
     processes.append((child, path))
     return child, path
@@ -48,6 +49,7 @@ def wait_for(path, marker, seconds=8):
 
 
 try:
+    print(f"Testing actual ENet endpoint {address}", flush=True)
     host, log = launch("host", 0)
     wait_for(log, "LAN_HOST_READY")
     driver, driver_log = launch("client", 1)
