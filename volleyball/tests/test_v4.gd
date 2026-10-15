@@ -96,7 +96,7 @@ func run() -> void:
  a._physics_process(0.15)
  check(Vector2(a.visual.rotation.x, a.visual.rotation.z).length() > 0.12, "Camera-relative Tilt visibly leans the body")
  check(a.limb_rig.fingers.size() == 10 and a.limb_rig.shins.size() == 2, "Refined model includes fingers and articulated lower legs")
- var upper := a.visual.to_local(a.elbows[1]).distance_to(Vector3(0.3, 1.45, 0))
+ var upper := a.visual.to_local(a.elbows[1]).distance_to(a.limb_rig.motion.shoulder(1))
  var lower := a.elbows[1].distance_to(a.wrists[1])
  check(absf(upper - 0.44) < 0.005 and absf(lower - 0.42) < 0.005, "Arm joints keep anatomical segment lengths")
  var axes := a.arms[2].basis

@@ -40,7 +40,7 @@ func update(dt: float) -> void:
  var air := a.airborne()
  var aim := a.action_tilt(kind)
  var phase := clampf(a.action_time / maxf(a.strike_duration, 0.01), 0, 1)
- var jumping_spike := kind == 2 and (air if a.action == VolleyAthlete.Action.PREPARE else a.air_attack)
+ var jumping_spike := kind in [2, 4] and (air if a.action == VolleyAthlete.Action.PREPARE else a.air_attack)
  var state := "%d:%d:%s:%s:%s:%s" % [a.action, kind, a.holding_ball, a.approach_armed, a.attack_ready, jumping_spike]
  if state != previous_state:
   origins = wrists.duplicate()
@@ -50,9 +50,12 @@ func update(dt: float) -> void:
   previous_state = state
  transition += dt
  var windup := float(a.mechanic(kind).windup)
+ var coordination := float(a.mechanic(kind).get("coordination", 1.0)) if kind == 4 else 1.0
  var twist := 0.0
  var bend := 0.0
- var crouch := a.landing_load * 0.16 + a.approach_blend * 0.10
+ var crouch := 0.055 + a.landing_load * 0.19 + a.approach_blend * 0.12
+ var readiness := clampf(speed / maxf(0.1, float(a.style_stats.movement().speed)), 0, 1)
+ bend = -0.035 - readiness * 0.035
  if kind in [2, 3, 4, 9] and a.action != VolleyAthlete.Action.IDLE and not a.holding_ball:
   twist = -0.22 if a.action == VolleyAthlete.Action.PREPARE else lerpf(-0.22, 0.18, smoothstep(0, 0.70, phase))
   bend = -0.055 if a.action == VolleyAthlete.Action.PREPARE else sin(phase * PI) * 0.07
@@ -60,17 +63,17 @@ func update(dt: float) -> void:
    var recovery := 1.0 - smoothstep(0, float(a.mechanic(kind).recovery), a.action_time)
    twist = 0.18 * recovery
    bend *= recovery
-  if kind == 2:
+  if kind in [2, 4]:
    var load := 1.0 if a.action == VolleyAthlete.Action.PREPARE else 1.0 - smoothstep(0, float(a.mechanic(kind).recovery), a.action_time) if a.action == VolleyAthlete.Action.RECOVER else 1.0
    twist = (-0.38 if a.action == VolleyAthlete.Action.PREPARE else lerpf(-0.38, 0.30, smoothstep(0, 0.72, phase))) * load if jumping_spike else (-0.10 if a.action == VolleyAthlete.Action.PREPARE else lerpf(-0.10, 0.12, phase)) * load
    bend = (-0.16 if a.action == VolleyAthlete.Action.PREPARE else lerpf(-0.16, 0.20, smoothstep(0, 0.65, phase))) * load if jumping_spike else bend * 0.45
  elif kind == 1 and a.action != VolleyAthlete.Action.IDLE:
-  crouch += 0.035
+  crouch += 0.055
   bend = 0.055
  var local_accel := a.visual.global_basis.inverse() * acceleration.limit_length(20)
  bend += clampf(-local_accel.z * 0.002, -0.025, 0.025)
  body_offset = Vector3(0, -crouch + sin(clock * 2.0) * 0.002, 0)
- torso_basis = Basis.from_euler(Vector3(bend, twist + aim.x * 0.04, 0))
+ torso_basis = Basis.from_euler(Vector3(bend, twist * coordination + aim.x * 0.04, 0))
  if dt > 0:
   torso_basis = torso_origin.slerp(torso_basis, smoothstep(0, 0.10, transition))
   body_offset = offset_origin.lerp(body_offset, smoothstep(0, 0.10, transition))
@@ -80,8 +83,8 @@ func update(dt: float) -> void:
  for i in range(2):
   var side := -1.0 if i == 0 else 1.0
   var run_swing := sin(a.gait + i * PI) * minf(0.29, speed * 0.055)
-  var idle := Vector3(side * 0.33, 0.99 + absf(run_swing) * 0.10, -0.10 + run_swing)
-  var pole := Vector3(side * 0.42, 1.13, 0.03)
+  var idle := Vector3(side * lerpf(0.28, 0.33, readiness), 1.08 - readiness * 0.09 + absf(run_swing) * 0.10, -0.28 + readiness * 0.18 + run_swing)
+  var pole := Vector3(side * 0.38, 1.16, 0.015)
   var draw := idle
   var contact := idle
   var follow := idle
@@ -109,12 +112,16 @@ func update(dt: float) -> void:
      contact = Vector3(-0.34, 1.43, -0.12)
      follow = Vector3(-0.37, 1.12, 0.02)
      pole = Vector3(-0.40, 1.46, -0.19)
-    if kind == 2:
+    if kind in [2, 4]:
      if jumping_spike:
       if i == 1:
        draw = Vector3(0.43, 2.05, 0.27)
        contact = Vector3(0.22, 2.25, -0.30)
        follow = Vector3(-0.10, 1.36, -0.67)
+       if kind == 4:
+        draw = Vector3(0.42, 2.02, 0.29)
+        contact = Vector3(0.24, 2.27, -0.42)
+        follow = Vector3(-0.22, 1.20, -0.58)
        pole = Vector3(0.47, 1.79, 0.24).lerp(Vector3(0.39, 1.63, -0.35), smoothstep(0.15, 0.8, phase))
       else:
        draw = Vector3(-0.20, 1.91, -0.40)
@@ -171,7 +178,7 @@ func update(dt: float) -> void:
   var travel := local_motion.normalized() if speed > 0.1 else Vector3.FORWARD
   var walk_phase := a.gait + i * PI
   var swing := sin(walk_phase)
-  var foot := Vector3(side * 0.15, 0.11, 0) + travel * swing * minf(0.24, speed * 0.05)
+  var foot := Vector3(side * lerpf(0.20, 0.15, readiness), 0.11, side * 0.045 * (1.0 - readiness)) + travel * swing * minf(0.24, speed * 0.05)
   foot.y += maxf(0, cos(walk_phase)) * minf(0.16, speed * 0.032)
   var on_stance := cos(walk_phase) <= 0 and not air and a.dive_time < 0 and speed > 0.25
   if on_stance:

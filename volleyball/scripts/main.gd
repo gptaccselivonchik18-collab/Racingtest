@@ -29,6 +29,7 @@ func _ready() -> void:
  add_child(ball)
  ball.position = Vector3(0, 0.2, 1)
  athlete.serve_solver = ball.solve_launch
+ athlete.power_serve_solver = ball.solve_power_serve
  var preview := VolleyTossPreview.new()
  preview.ball = ball
  add_child(preview)
@@ -152,6 +153,8 @@ func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
   rules.serve_contact(actor.jump_origin if kind == VolleyAthlete.Technique.JUMP_SERVE else actor.position)
   serving = false
+  if lan.active and lan.serve_flags.has(id):
+   lan.serve_flags[id] = false
 
 func holding_ball() -> bool:
  return ball.held and ball.athlete == athlete

@@ -103,6 +103,51 @@ func solve_launch(start: Vector3, destination: Vector3, apex: float) -> Vector3:
   speed += correction
  return speed
 
+func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dictionary:
+ var at := start
+ var net_height := INF
+ for tick in range(600):
+  velocity += (Vector3.DOWN * 9.81 + aero_force(velocity, spin) / mass) / 120.0
+  spin *= 1.0 - angular_damp / 120.0
+  var previous := at
+  at += velocity / 120.0
+  if previous.z * at.z < 0:
+   net_height = previous.lerp(at, previous.z / (previous.z - at.z)).y
+  if at.y <= VolleyAthlete.BALL_RADIUS:
+   break
+ return {"landing": at, "net_height": net_height}
+
+func power_serve_landing(start: Vector3, velocity: Vector3, spin: Vector3) -> Vector3:
+ return power_serve_flight(start, velocity, spin).landing
+
+func solve_power_serve(start: Vector3, destination: Vector3, speed: float, spin: Vector3) -> Vector3:
+ # Skill/charge set available pace. A low contact cannot physically deliver
+ # maximum pace over a 2.43 m net and still land inside an 18 m court.
+ # Ease that pace before contact; never steer or accelerate a ball in flight.
+ var horizontal := destination - start
+ horizontal.y = 0
+ var distance := horizontal.length()
+ horizontal = horizontal.normalized()
+ var launch := Vector3.ZERO
+ for attempt in range(9):
+  var low := deg_to_rad(-24.0)
+  var high := deg_to_rad(34.0)
+  for iteration in range(12):
+   var angle := (low + high) * 0.5
+   var velocity := (horizontal * cos(angle) + Vector3.UP * sin(angle)) * speed
+   var landing := power_serve_landing(start, velocity, spin)
+   var travelled := Vector3(landing.x - start.x, 0, landing.z - start.z).dot(horizontal)
+   if travelled < distance:
+    low = angle
+   else:
+    high = angle
+  var angle := (low + high) * 0.5
+  launch = (horizontal * cos(angle) + Vector3.UP * sin(angle)) * speed
+  if start.z * destination.z >= 0 or power_serve_flight(start, launch, spin).net_height >= 2.70:
+   break
+  speed *= 0.94
+ return launch
+
 func aero_force(speed: Vector3, spin: Vector3) -> Vector3:
  var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
  return (spin.cross(speed) * magnus_coefficient).limit_length(magnus_force_limit) - speed * speed.length() * 0.5 * air_density * drag_coefficient * area

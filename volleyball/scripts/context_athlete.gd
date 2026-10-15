@@ -6,6 +6,7 @@ signal touched(kind: int, point: Vector3, outgoing: Vector3)
 @export var contact_ball_radius := 0.38
 @export var serve_contact_radius := 0.64
 var serve_solver: Callable
+var power_serve_solver: Callable
 var style_stats := VolleyStyleStats.new()
 var landing_cooldown := 0.0
 
@@ -107,7 +108,9 @@ func receive_speed(kind: int, elevation_degrees: float, strength_input: float) -
  # Horizontal shots trade height for pace; soft holds scale the whole curve.
  var loft := smoothstep(5.0, 78.0, elevation_degrees)
  var maximum := lerpf(15.6 if kind == Technique.UNDERHAND else 14.8, 8.4 if kind == Technique.UNDERHAND else 7.8, loft)
- return maximum * lerpf(0.36, 1.0, clampf((strength_input - 0.18) / 0.82, 0, 1))
+ var p := mechanic(kind)
+ maximum *= lerpf(1.0, float(p.lift if kind == Technique.UNDERHAND else p.arc), loft)
+ return maximum * lerpf(float(p.soft_floor), 1.0, clampf((strength_input - 0.18) / 0.82, 0, 1))
 
 func serve_target(point: Vector3) -> Vector3:
  var side := 1.0 if global_position.z >= 0 else -1.0
@@ -117,6 +120,21 @@ func serve_target(point: Vector3) -> Vector3:
  var z := -side * depth
  var x := point.x + forward.x / maxf(0.25, absf(forward.z)) * absf(z - point.z) + visual.global_basis.x.x * input.x * 3.7
  return Vector3(x, BALL_RADIUS, z)
+
+func power_serve_speed() -> float:
+ # Serve owns delivery/control; Spike contributes only strike efficiency.
+ var amount := power if action == Action.PREPARE else strike_power
+ return lerpf(17.0, 26.0, amount) * float(mechanic(Technique.JUMP_SERVE).power_speed) * lerpf(0.92, 1.08, style_stats.n("spike")) * (1.0 + minf(takeoff_speed, 5.0) * 0.012)
+
+func power_serve_target(point: Vector3) -> Vector3:
+ var aim := serve_target(point)
+ var side := 1.0 if global_position.z >= 0 else -1.0
+ # A hard baseline serve needs the longer diagonal/deep court to clear the net.
+ var amount := power if action == Action.PREPARE else strike_power
+ aim.z = -side * clampf(6.6 + amount * 1.5 + body_tilt().y * 1.8, 4.4, 8.8)
+ var forward := -visual.global_basis.z
+ aim.x = point.x + forward.x / maxf(0.25, absf(forward.z)) * absf(aim.z - point.z) + visual.global_basis.x.x * body_tilt().x * 3.7
+ return aim
 
 func serve_apex() -> float:
  var input := body_tilt()
@@ -173,7 +191,7 @@ func release() -> void:
  if is_receive(strike_technique):
   power = receive_power(charged_for)
  strike_power = power
- air_attack = strike_technique in [Technique.SPIKE, TIP] and airborne()
+ air_attack = strike_technique in [Technique.SPIKE, TIP, Technique.JUMP_SERVE] and airborne()
  if strike_technique == Technique.SPIKE and charged_for < 0.13:
   strike_technique = TIP
  strike_direction = direction_for(strike_technique)
@@ -564,7 +582,16 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    outgoing = direction * speed + carry * (1.0 - float(p.control)) * 0.12
   elif strike_technique in [Technique.UNDERHAND, DIVE]:
    outgoing.y *= float(p.lift)
- if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] and serve_solver.is_valid():
+ if strike_technique == Technique.JUMP_SERVE and power_serve_solver.is_valid():
+  var power_spin := outgoing_spin(Vector3.ZERO, Vector3.ZERO)
+  var side := 1.0 if global_position.z >= 0 else -1.0
+  var launch: Vector3 = power_serve_solver.call(last_contact_point, power_serve_target(last_contact_point), power_serve_speed() * lerpf(0.84, 1.0, quality), power_spin)
+  if strike_direction.z * side < -0.25:
+   outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
+  else:
+   outgoing = outgoing.normalized() * power_serve_speed() * lerpf(0.84, 1.0, quality)
+  strike_direction = outgoing.normalized()
+ elif strike_technique == Technique.SERVE and serve_solver.is_valid():
   var side := 1.0 if global_position.z >= 0 else -1.0
   var horizontal := Vector3(strike_direction.x, 0, strike_direction.z).normalized()
   if horizontal.z * side < -0.25:
@@ -580,6 +607,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
 
 func outgoing_spin(incoming_spin: Vector3, delta_v: Vector3) -> Vector3:
  var p := mechanic(strike_technique)
+ if strike_technique == Technique.JUMP_SERVE:
+  var amount := power if action == Action.PREPARE else strike_power
+  return (-Vector3(strike_direction.x, 0, strike_direction.z).normalized().cross(Vector3.UP) * float(p.topspin) * lerpf(0.65, 1.0, amount)).limit_length(45)
  if strike_technique in [Technique.SPIKE, TIP]:
   return (incoming_spin * float(p.spin) - Vector3(strike_direction.x, 0, strike_direction.z).normalized().cross(Vector3.UP) * float(p.topspin) * strike_power * (1.15 if air_attack else 0.75)).limit_length(50)
  # A cleaner platform absorbs incoming rotation rather than adding random spin.

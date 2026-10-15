@@ -30,7 +30,12 @@ func _physics_process(dt: float) -> void:
  if kind == 2 and (a.airborne() if a.action == VolleyAthlete.Action.PREPARE else a.air_attack):
   speed *= 1.07 + minf(a.takeoff_speed, 5.0) * 0.018
  var spin := -Vector3(direction.x, 0, direction.z).normalized().cross(Vector3.UP) * float(a.mechanic(kind).topspin) * power if kind in [2, 9] else VolleyBall.FEED_SPIN
- if kind in [3, 4]:
+ if kind == 4:
+  spin = a.outgoing_spin(Vector3.ZERO, Vector3.ZERO)
+  speed = direction * a.power_serve_speed() * 0.97
+  if direction.z * (1.0 if a.position.z >= 0 else -1.0) < -0.25:
+   speed = ball.solve_power_serve(at, a.power_serve_target(at), a.power_serve_speed() * 0.97, spin)
+ elif kind == 3:
   speed = ball.solve_launch(at, a.serve_target(at), a.serve_apex())
  if a.is_receive(kind):
   speed = direction * a.receive_speed(kind, a.receive_elevation(kind), power) * strength * 0.97

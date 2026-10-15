@@ -66,7 +66,7 @@ func run() -> void:
  a._update_pose(0.1)
  game.rig._process(0)
  check(game.camera.global_position.distance_to(a.eye_transform().origin) < 0.001 and game.camera.global_position.distance_to(a.head_position()) < 0.24, "First-person camera is at the eyes with no orbit distance")
- check(absf(game.camera.position.y - 1.835) < 0.04, "Standing eye height is anatomically aligned with the head")
+ check(absf(game.camera.position.y - a.head_position().y - 0.035) < 0.005, "Standing eye height is anatomically aligned with the head")
  var all_visible := true
  for node in a.visual.get_children():
   if node is GeometryInstance3D:
