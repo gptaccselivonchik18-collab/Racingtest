@@ -108,7 +108,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.8"
+ title.text = "   VOLLEY / LAB  0.9"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -591,6 +591,7 @@ func _look_or_aim(relative: Vector2) -> void:
    game.ball.throw_target = start + offset.limit_length(14)
    game.ball.throw_target.y = VolleyAthlete.BALL_RADIUS
   else:
+   game.rig.look(relative)
    game.ball.aim_toss(relative)
  else:
   game.rig.look(relative)
@@ -701,11 +702,11 @@ func _draw() -> void:
  if game.athlete.action == VolleyAthlete.Action.PREPARE and not game.athlete.attack_ready and not edit_mode:
   var at := Vector2(size.x * 0.5 - 90, size.y - 108)
   draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.8)), Rect2(at - Vector2(10, 23), Vector2(200, 48)))
-  draw_string(font, at - Vector2(0, 5), "СИЛА  %d%%" % int(game.athlete.power * 100), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color("f4cf77"))
+  draw_string(font, at - Vector2(0, 5), ("ДОЛЬШЕ → МЯГЧЕ  %d%%" if game.athlete.is_receive(game.athlete.technique) else "СИЛА  %d%%") % int(game.athlete.power * 100), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color("f4cf77"))
   draw_line(at + Vector2(0, 12), at + Vector2(180, 12), Color("334d5c"), 5)
   draw_line(at + Vector2(0, 12), at + Vector2(180 * game.athlete.power, 12), Color("f4cf77"), 5)
  draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
- if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and not edit_mode:
+ if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and game.athlete.tilt_affects(game.athlete.technique) and not edit_mode:
   var at := Vector2(size.x * 0.5, size.y - 168)
   draw_circle(at, 23, Color(0.03, 0.09, 0.14, 0.65))
   draw_arc(at, 23, 0, TAU, 32, Color("8eaebc"), 1, true)

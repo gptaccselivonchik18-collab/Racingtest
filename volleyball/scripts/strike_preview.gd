@@ -15,7 +15,7 @@ func _ready() -> void:
 func _physics_process(dt: float) -> void:
  var a: ContextAthlete = game.athlete
  var kind: int = a.technique if a.action == VolleyAthlete.Action.PREPARE else a.strike_technique
- visible = not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (a.action == VolleyAthlete.Action.PREPARE or not a.hit_used) and kind in [2, 3, 4, 9]
+ visible = not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (a.action == VolleyAthlete.Action.PREPARE or not a.hit_used) and kind in [0, 1, 2, 3, 4, 8, 9]
  if not visible:
   return
  elapsed += dt
@@ -32,6 +32,9 @@ func _physics_process(dt: float) -> void:
  var spin := -Vector3(direction.x, 0, direction.z).normalized().cross(Vector3.UP) * float(a.mechanic(kind).topspin) * power if kind in [2, 9] else VolleyBall.FEED_SPIN
  if kind in [3, 4]:
   speed = ball.solve_launch(at, a.serve_target(at), a.serve_apex())
+ if a.is_receive(kind):
+  speed = direction * a.receive_speed(kind, a.receive_elevation(kind), power) * strength * 0.97
+  spin = Vector3.ZERO
  var points: Array[Vector3] = [at]
  var landed := false
  for tick in range(240):
@@ -51,7 +54,7 @@ func _physics_process(dt: float) -> void:
  if landed:
   landing.global_position = Vector3(at.x, 0.055, at.z)
   title.global_position = landing.global_position + Vector3.UP * 0.25
-  title.text = "ПОДАЧА" if kind in [3, 4] else "АТАКА"
+  title.text = "ПОДАЧА" if kind in [3, 4] else "ПАС" if kind in [0, 8] else "ПРИЁМ" if kind == 1 else "АТАКА"
   if absf(at.x) > 4.5 or absf(at.z) > 9:
    title.text += " • АУТ"
   title.modulate = Color("f4cf77") if absf(at.x) <= 4.5 and absf(at.z) <= 9 else Color("f29981")

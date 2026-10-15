@@ -70,7 +70,7 @@ func upward_for_height(height: float) -> float:
 func toss_velocity() -> Vector3:
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
- forward = forward.normalized().rotated(Vector3.UP, toss_yaw)
+ forward = -Basis(Vector3.UP, athlete.camera_yaw).z if athlete is ContextAthlete else forward.normalized().rotated(Vector3.UP, toss_yaw)
  var drift: float = athlete.mechanic(VolleyAthlete.Technique.SERVE).toss_drift if athlete is ContextAthlete else 0.35
  return forward * drift + Vector3.UP * upward_for_height(release_height()) + athlete.velocity
 

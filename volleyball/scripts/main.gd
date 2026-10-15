@@ -202,9 +202,9 @@ func start_drill() -> void:
  athlete.position = training.start_position()
  athlete.visual.rotation.y = 0
  rig.yaw = 0
- rig.pitch = -0.24
+ rig.pitch = 0.18
  rig.rendered_yaw = 0
- rig.rendered_pitch = -0.24
+ rig.rendered_pitch = 0.18
  rig.followed = athlete.position + Vector3.UP * 1.45
  repeat_drill()
 

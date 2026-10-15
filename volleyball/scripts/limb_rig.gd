@@ -68,14 +68,7 @@ func apply_pose(dt := 0.0) -> void:
  a.visual.get_child(1).position = Vector3(0, 0.86, 0) + motion.body_offset * 0.75
  var number := a.visual.get_child(4) as Label3D
  number.transform = Transform3D(motion.torso_basis, Vector3(0, 1.23, 0) + motion.body_offset + motion.torso_basis * Vector3(0, 0.02, 0.16))
- var head_basis := motion.torso_basis
- if a.look_target_valid:
-  var look := a.visual.to_local(a.look_target) - Vector3(0, 1.78, 0)
-  if look.length() > 0.05:
-   head_basis = Basis.from_euler(Vector3(clampf(atan2(look.y, maxf(0.1, Vector2(look.x, look.z).length())), -0.35, 0.35), clampf(atan2(-look.x, -look.z), -0.7, 0.7), 0))
- var head_at := Vector3(0, 1.78, -0.015) + motion.body_offset
- a.visual.get_child(2).position = head_at
- a.visual.get_child(3).transform = Transform3D(head_basis, head_at + head_basis * Vector3(0, 0.09, 0.035))
+ update_head()
  var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.technique
  for i in range(2):
   var side := -1.0 if i == 0 else 1.0
@@ -110,3 +103,12 @@ func apply_pose(dt := 0.0) -> void:
   if not a.airborne() and a.dive_time < 0:
    shoe_basis = Basis(Vector3.UP, a.visual.global_rotation.y)
   shoes[i].global_transform = Transform3D(shoe_basis, a.visual.to_global(foot) + shoe_basis * Vector3(0, -0.035, -0.05))
+
+func update_head() -> void:
+ var a := athlete
+ var head_at := Vector3(0, 1.78, -0.015) + motion.body_offset
+ # Counter-rotate body lean: the head points where the player aims, while the
+ # torso retains its Tilt and action animation. Nothing is hidden or recast.
+ var head_basis := a.visual.global_basis.inverse() * a.view_basis()
+ a.visual.get_child(2).transform = Transform3D(head_basis, head_at)
+ a.visual.get_child(3).transform = Transform3D(head_basis, head_at + head_basis * Vector3(0, 0.09, 0.035))

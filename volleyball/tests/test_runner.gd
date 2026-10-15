@@ -40,11 +40,11 @@ func run() -> void:
  game.hud.set_process(false)
  await frames(20)
  check(a.is_on_floor(), "Player stands on court")
- check(game.camera.current and game.rig != null, "Orbit camera is active")
+ check(game.camera.current and game.rig != null, "First-person camera is active")
  var wall := VolleyGeometry.collider(game, Vector3(0, 1.6, 6), Vector3(4, 4, 0.2))
  await frames(3)
  game.rig._process(0.05)
- check(game.camera.global_position.z < 6, "Camera stops before solid geometry")
+ check(game.camera.global_position.distance_to(a.eye_transform().origin) < 0.001, "Camera remains attached to the eyes beside solid geometry")
  wall.queue_free()
  await frames(3)
  # Compare original and extended controller's actual resource properties.
@@ -83,12 +83,14 @@ func run() -> void:
  a.hit_used = false
  a.reset_seed(123)
  check(first.is_equal_approx(a.try_contact(a.wrists[0], Vector3(0, -8, 2))), "Random error applied once reproducibly")
- # Directions depend on body and tilt, not teleporting to camera orientation.
+ # Pass direction now follows the view independently of the bounded body turn.
  a.visual.rotation = Vector3.ZERO
  for direction in [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]:
-  a.tilt = direction
+  a.tilt = Vector2.ZERO
+  a.camera_yaw = atan2(-direction.x, -direction.y)
   var result := a.direction_for(0)
   check(Vector2(result.x, result.z).normalized().dot(direction) > 0.99, "Forward/back/side set: " + str(direction))
+ a.camera_yaw = 0
  a.tilt = Vector2(0, -1)
  a.position.y = 1
  var steep := a.direction_for(2).y

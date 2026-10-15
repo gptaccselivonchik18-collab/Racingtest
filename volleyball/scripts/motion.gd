@@ -38,7 +38,7 @@ func update(dt: float) -> void:
  var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.technique
  var speed := Vector2(a.velocity.x, a.velocity.z).length()
  var air := a.airborne()
- var aim := a.body_tilt()
+ var aim := a.action_tilt(kind)
  var phase := clampf(a.action_time / maxf(a.strike_duration, 0.01), 0, 1)
  var jumping_spike := kind == 2 and (air if a.action == VolleyAthlete.Action.PREPARE else a.air_attack)
  var state := "%d:%d:%s:%s:%s:%s" % [a.action, kind, a.holding_ball, a.approach_armed, a.attack_ready, jumping_spike]

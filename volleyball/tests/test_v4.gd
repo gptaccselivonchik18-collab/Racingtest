@@ -94,7 +94,7 @@ func run() -> void:
  a.action = VolleyAthlete.Action.IDLE
  a.tilt = Vector2(1, -1).normalized()
  a._physics_process(0.15)
- check(absf(a.visual.rotation.x) > 0.08 and absf(a.visual.rotation.z) > 0.07, "Tilt visibly leans the body forward and sideways")
+ check(Vector2(a.visual.rotation.x, a.visual.rotation.z).length() > 0.12, "Camera-relative Tilt visibly leans the body")
  check(a.limb_rig.fingers.size() == 10 and a.limb_rig.shins.size() == 2, "Refined model includes fingers and articulated lower legs")
  var upper := a.visual.to_local(a.elbows[1]).distance_to(Vector3(0.3, 1.45, 0))
  var lower := a.elbows[1].distance_to(a.wrists[1])
@@ -120,7 +120,7 @@ func run() -> void:
  hud._touch_move(71, Vector2(730, 280), Vector2(130, 80))
  var aimed := b.toss_velocity()
  check(aimed.x > initial.x + 0.1 and is_equal_approx(aimed.y, initial.y), "Free screen swipe aims direction without fighting the height slider")
- check(game.rig.yaw == yaw and hud.move_id == 70, "Toss aiming preserves camera and movement finger")
+ check(game.rig.yaw != yaw and hud.move_id == 70, "First-person toss aiming turns the view while preserving the movement finger")
  hud._touch_up(70)
  hud._touch_up(71)
  var points := b.preview_points()

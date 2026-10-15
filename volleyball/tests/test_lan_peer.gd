@@ -18,6 +18,10 @@ var pickup_tick := 0.0
 var client_passed := false
 var reported := false
 var stats_seen := false
+var view_seen := false
+var hold_seen := false
+var bump_started := false
+var bump_released := false
 var port := 24702
 
 func _initialize() -> void:
@@ -72,6 +76,10 @@ func _process(dt: float) -> bool:
    var a: ContextAthlete = game.lan.players[id].actor
    if a.stats.values.set == 136 and a.stats.values.spike == 250:
     stats_seen = true
+   if absf(a.camera_pitch - 0.6) < 0.01:
+    view_seen = true
+   if a.strike_technique == 1 and a.action == VolleyAthlete.Action.STRIKE and not a.lower_serve_active and a.strike_power > 0.35 and a.strike_power < 0.85:
+    hold_seen = true
    if a.move_axis.x > 0.9 and a.velocity.x > 0.5:
     moved = true
    if a.velocity.y > 1.0:
@@ -90,8 +98,8 @@ func _process(dt: float) -> bool:
   if saw_full and game.lan.players.size() == 11:
    disconnected = true
   if elapsed > 14:
-   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen
-   print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen])
+   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen and view_seen and hold_seen
+   print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s view=%s hold=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen, view_seen, hold_seen])
    quit(0 if ok else 1)
  else:
   if index == 1 and not drive and game.lan.discovery.rooms.has("127.0.0.1"):
@@ -109,9 +117,19 @@ func _process(dt: float) -> bool:
    for entry in game.lan.players.values():
     if entry.actor.stats.values.set == 136 and entry.actor.stats.values.spike == 250:
      stats_seen = true
+     var actor: ContextAthlete = entry.actor
+     if absf(actor.camera_pitch - 0.6) < 0.01 and (-actor.visual.get_child(2).global_basis.z).dot(-actor.view_basis().z) > 0.99:
+      view_seen = true
    if game.lan.players.size() == 12:
     saw_full = true
    if index == 1:
+    game.rig.pitch = 0.6
+    if age > 1.2 and not bump_started:
+     bump_started = true
+     game.lan.local_action("bump")
+    if age > 1.8 and not bump_released:
+     bump_released = true
+     game.lan.local_action("bump", "release")
     game.athlete.move_axis = Vector2(1, 0) if age < 0.55 else Vector2.ZERO
     if age > 0.7 and not sent_jump:
      sent_jump = true
@@ -132,7 +150,7 @@ func _process(dt: float) -> bool:
    if age > 8 and not reported:
     reported = true
     client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
-    client_passed = client_passed and stats_seen
+    client_passed = client_passed and stats_seen and view_seen
     if index == 1:
      client_passed = client_passed and not game.frontend.visible
     print("LAN_CLIENT_RESULT %d snapshots=%d peers=%d" % [index, game.lan.snapshot_count, game.lan.players.size()])

@@ -33,7 +33,7 @@ const TIP := 9
 const NAMES := ["Пас", "Приём", "Атака", "Подача", "Подача в прыжке", "Бросок", "Блок", "Подкат", "Пас в прыжке", "Скидка"]
 var tilt := Vector2.ZERO
 var camera_yaw := 0.0
-var camera_pitch := -0.24
+var camera_pitch := 0.18
 var shift_lock := true
 var charged_for := 0.0
 var dive_time := -1.0
@@ -62,6 +62,52 @@ func body_tilt() -> Vector2:
  var direction := Basis(Vector3.UP, camera_yaw) * Vector3(tilt.x, 0, tilt.y)
  var local := Basis(Vector3.UP, visual.global_rotation.y).inverse() * direction
  return Vector2(local.x, local.z).limit_length()
+
+func view_basis() -> Basis:
+ return Basis(Vector3.UP, camera_yaw) * Basis(Vector3.RIGHT, camera_pitch)
+
+func head_position() -> Vector3:
+ var offset := limb_rig.motion.body_offset if is_instance_valid(limb_rig) else Vector3.ZERO
+ return visual.to_global(Vector3(0, 1.78, -0.015) + offset)
+
+func eye_transform() -> Transform3D:
+ # The view stays just in front of the existing head, with every mesh visible.
+ # A fixed face offset avoids looking through the skull/torso when looking down.
+ var eyes := head_position() + Basis(Vector3.UP, camera_yaw) * Vector3(0, 0.035, -0.225)
+ # Looking down rotates the existing hair cap toward the face. Keep the
+ # lens outside that mesh rather than hiding the head or changing cull layers.
+ var front := -Basis(Vector3.UP, camera_yaw).z
+ var hair_at := head_position() + view_basis() * Vector3(0, 0.09, 0.035)
+ if eyes.distance_to(hair_at) < 0.195:
+  eyes += front * maxf(0, 0.195 - (eyes - hair_at).dot(front))
+ return Transform3D(view_basis(), eyes)
+
+func tilt_affects(kind: int) -> bool:
+ return not lower_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.SERVE, Technique.JUMP_SERVE, Technique.SPIKE, TIP, BLOCK]
+
+func action_tilt(kind: int) -> Vector2:
+ return body_tilt() if tilt_affects(kind) else Vector2.ZERO
+
+func is_receive(kind: int) -> bool:
+ return not lower_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.UNDERHAND]
+
+static func receive_power(held_seconds: float) -> float:
+ # Short deliberate taps retain maximum strength. After 1.15 seconds the
+ # minimum remains stable, so a long hold never cycles into a hard pass.
+ return lerpf(1.0, 0.18, smoothstep(0.10, 1.15, held_seconds))
+
+func receive_elevation(kind: int) -> float:
+ var angle := rad_to_deg(camera_pitch)
+ if kind in [Technique.OVERHEAD, JUMP_SET]:
+  angle -= tilt.y * 11.0
+ return clampf(angle, -20.0, 84.0)
+
+func receive_speed(kind: int, elevation_degrees: float, strength_input: float) -> float:
+ # At 0/30/60/84 degrees a full set is about 14.8/13.0/9.3/7.8 m/s.
+ # Horizontal shots trade height for pace; soft holds scale the whole curve.
+ var loft := smoothstep(5.0, 78.0, elevation_degrees)
+ var maximum := lerpf(15.6 if kind == Technique.UNDERHAND else 14.8, 8.4 if kind == Technique.UNDERHAND else 7.8, loft)
+ return maximum * lerpf(0.36, 1.0, clampf((strength_input - 0.18) / 0.82, 0, 1))
 
 func serve_target(point: Vector3) -> Vector3:
  var side := 1.0 if global_position.z >= 0 else -1.0
@@ -114,7 +160,7 @@ func begin_action(kind: int) -> bool:
  action = Action.PREPARE
  action_time = 0
  charged_for = 0
- power = 0.82
+ power = receive_power(0) if is_receive(kind) else 0.82
  return true
 
 func prepare() -> void:
@@ -124,6 +170,8 @@ func release() -> void:
  if action != Action.PREPARE or holding_ball:
   return
  strike_technique = technique
+ if is_receive(strike_technique):
+  power = receive_power(charged_for)
  strike_power = power
  air_attack = strike_technique in [Technique.SPIKE, TIP] and airborne()
  if strike_technique == Technique.SPIKE and charged_for < 0.13:
@@ -201,7 +249,7 @@ func dive() -> bool:
  return true
 
 func direction_for(kind: int, contact_height := -1.0) -> Vector3:
- var input := body_tilt()
+ var input := action_tilt(kind)
  var forward := -visual.global_basis.z
  forward.y = 0
  forward = forward.normalized()
@@ -211,9 +259,10 @@ func direction_for(kind: int, contact_height := -1.0) -> Vector3:
  var horizontal := forward
  var angle := 55.0
  if kind in [Technique.OVERHEAD, JUMP_SET, Technique.UNDERHAND]:
-  if input.length() > 0.18:
-   horizontal = (forward * -input.y + right * input.x).normalized()
-  angle = lerpf(74, 43, power) + (mechanic(kind).weight - 0.5) * 8 if kind != Technique.UNDERHAND else lerpf(67, 41, power) + (mechanic(kind).weight - 0.5) * 6
+  horizontal = -Basis(Vector3.UP, camera_yaw).z
+  if kind in [Technique.OVERHEAD, JUMP_SET] and not lower_serve_active:
+   horizontal = horizontal.rotated(Vector3.UP, -tilt.x * deg_to_rad(18))
+  angle = receive_elevation(kind)
  elif kind in [Technique.SPIKE, TIP]:
   horizontal = forward.rotated(Vector3.UP, -input.x * deg_to_rad(mechanic(kind).angle))
   # Low contact really is shallow; there is no correction to clear the net.
@@ -312,7 +361,7 @@ func _physics_process(dt: float) -> void:
     horizontal *= exp(-1.6 * dt)
   velocity.x = horizontal.x
   velocity.z = horizontal.y
-  lean = lean.lerp(tilt if not holding_ball else Vector2.ZERO, 1.0 - exp(-9.0 * dt))
+  lean = lean.lerp(Vector2.ZERO if lower_serve_active else body_tilt(), 1.0 - exp(-9.0 * dt))
   visual.rotation.x = lean.y * 0.20
   visual.rotation.z = -lean.x * 0.17
  var fall_speed := velocity.y
@@ -337,7 +386,7 @@ func _physics_process(dt: float) -> void:
  if action == Action.PREPARE and not attack_ready:
   charged_for += dt
   # Predictable, monotonic power control, clamped at the minimum. No cycling.
-  power = maxf(0.16, 0.82 - maxf(0, charged_for - 0.12) * 0.65)
+  power = receive_power(charged_for) if is_receive(technique) else maxf(0.16, 0.82 - maxf(0, charged_for - 0.12) * 0.65)
  if action == Action.STRIKE and action_time >= strike_duration:
   action = Action.RECOVER
   action_time = 0
@@ -407,7 +456,8 @@ func _adapt_platform(dt: float) -> void:
   var side := -1.0 if i == 0 else 1.0
   var e := visual.to_local(elbows[i])
   var w := visual.to_local(wrists[i])
-  w += Vector3(tilt.x * 0.05, tilt.x * side * 0.09, tilt.y * 0.06)
+  var platform_tilt := action_tilt(mode)
+  w += Vector3(platform_tilt.x * 0.05, platform_tilt.x * side * 0.09, platform_tilt.y * 0.06)
   if action == Action.PREPARE:
    e = Vector3(side * 0.36, 1.12, -0.03).lerp(e, approach)
    w = Vector3(side * 0.32, 0.88, -0.08).lerp(w, approach)
@@ -500,12 +550,19 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    Technique.SERVE: speed = lerpf(9, 22, strike_power)
    Technique.JUMP_SERVE: speed = lerpf(13, 29, strike_power)
    DIVE: speed = lerpf(5, 10, strike_power)
+  if is_receive(strike_technique):
+   speed = receive_speed(strike_technique, receive_elevation(strike_technique), strike_power)
   speed *= strength * (0.7 + quality * 0.3) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
   if strike_technique == Technique.SPIKE and air_attack:
    speed *= 1.07 + minf(takeoff_speed, 5.0) * 0.018
   direction = direction.rotated(visual.global_basis.x, deg_to_rad(rng.randf_range(-spread, spread) * 0.5))
   outgoing = direction * speed + incoming * float(p.carry) + velocity * (0.12 * (1.0 - float(p.control)))
-  if strike_technique in [Technique.UNDERHAND, DIVE]:
+  if is_receive(strike_technique):
+   # Controlled receives follow the view. Skill still controls residual drift,
+   # impact quality, angular/speed error and absorption of incoming spin.
+   var carry := incoming * float(p.carry)
+   outgoing = direction * speed + carry * (1.0 - float(p.control)) * 0.12
+  elif strike_technique in [Technique.UNDERHAND, DIVE]:
    outgoing.y *= float(p.lift)
  if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] and serve_solver.is_valid():
   var side := 1.0 if global_position.z >= 0 else -1.0

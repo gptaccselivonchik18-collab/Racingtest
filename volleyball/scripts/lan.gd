@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 8
+const PROTOCOL := 9
 var game: Node3D
 var active := false
 var hosting := false
@@ -189,7 +189,7 @@ func hello(version: int, skills: Dictionary) -> void:
   return
  var id := multiplayer.get_remote_sender_id()
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.8." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.9." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -317,7 +317,7 @@ func _apply_input(id: int, axis: Vector2, tilt: Vector2, yaw: float, pitch: floa
  actor.move_axis = axis.limit_length()
  actor.tilt = tilt.limit_length()
  actor.camera_yaw = wrapf(yaw, -PI, PI)
- actor.camera_pitch = clampf(pitch, -0.85, 0.95)
+ actor.camera_pitch = clampf(pitch, -1.48, 1.48)
  last_input[id] = Time.get_ticks_msec()
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -494,7 +494,7 @@ func _process(dt: float) -> void:
    var a: ContextAthlete = players[id].actor
    if game.ball.held and game.ball.athlete == a:
     held_by = id
-   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack])
+   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for])
   # Stay below the ENet MTU at 12 players; one large unreliable packet
   # would fragment and magnify loss on mobile Wi-Fi.
   for first in range(0, poses.size(), 2):
@@ -537,6 +537,12 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
   a.contact_flash = pose[21]
   a.lower_serve_active = pose[22]
   a.air_attack = pose[23]
+  if a != game.athlete:
+   a.camera_yaw = pose[24]
+   a.camera_pitch = pose[25]
+  a.lean = pose[26]
+  a.landing_load = pose[27]
+  a.charged_for = pose[28]
   a.holding_ball = held_by == pose[0]
   a.previous_wrists = a.wrists.duplicate()
   a.previous_elbows = a.elbows.duplicate()
