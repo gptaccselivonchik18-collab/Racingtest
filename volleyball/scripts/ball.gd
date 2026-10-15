@@ -17,25 +17,87 @@ var feed_position := Vector3.ZERO
 var feed_velocity := Vector3.ZERO
 var held := false
 var toss_yaw := 0.0
-var toss_elevation := deg_to_rad(86.0)
 var jump_toss := false
+enum HeldMode { TOSS, THROW }
+var held_mode := HeldMode.TOSS
+var standing_height := 1.5
+var jumping_height := 2.35
+var throw_height := 1.0
+var throw_target := Vector3.ZERO
 const FEED_SPIN := Vector3(2.3, 0.6, 1.1)
+
+func release_height() -> float:
+ if held_mode == HeldMode.THROW:
+  return throw_height
+ return jumping_height if jump_toss else standing_height
+
+func set_release_height(value: float) -> void:
+ value = clampf(value, 0.35, 3.5)
+ if held_mode == HeldMode.THROW:
+  throw_height = value
+ elif jump_toss:
+  jumping_height = value
+ else:
+  standing_height = value
+
+func toggle_held_mode() -> void:
+ held_mode = HeldMode.THROW if held_mode == HeldMode.TOSS else HeldMode.TOSS
+
+func aim_throw_at(camera: Camera3D, screen: Vector2) -> bool:
+ var ray := camera.project_ray_normal(screen)
+ if ray.y >= -0.025:
+  return false
+ var origin := camera.project_ray_origin(screen)
+ var target := origin + ray * ((VolleyAthlete.BALL_RADIUS - origin.y) / ray.y)
+ var offset := target - athlete.hold_position()
+ offset.y = 0
+ throw_target = athlete.hold_position() + offset.limit_length(14)
+ throw_target.y = VolleyAthlete.BALL_RADIUS
+ return true
 
 func aim_toss(relative: Vector2) -> void:
  toss_yaw = clampf(toss_yaw - relative.x * 0.0035, -PI / 3, PI / 3)
- toss_elevation = clampf(toss_elevation - relative.y * 0.0025, deg_to_rad(50), deg_to_rad(88))
+ set_release_height(release_height() - relative.y * 0.012)
+
+func upward_for_height(height: float) -> float:
+ # Integrate quadratic vertical drag analytically to reach the chosen apex.
+ var drag := 0.5 * air_density * drag_coefficient * PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS / mass
+ if drag < 0.00001:
+  return sqrt(2.0 * 9.81 * height)
+ return sqrt(9.81 / drag * (exp(2.0 * drag * height) - 1.0))
 
 func toss_velocity() -> Vector3:
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
  forward = forward.normalized().rotated(Vector3.UP, toss_yaw)
- return (forward * cos(toss_elevation) + Vector3.UP * sin(toss_elevation)) * (6.8 if jump_toss else 5.4) + athlete.velocity
+ return forward * 0.35 + Vector3.UP * upward_for_height(release_height()) + athlete.velocity
 
 func aiming_throw() -> bool:
- return held and athlete.technique == VolleyAthlete.Technique.THROW and athlete.action == VolleyAthlete.Action.PREPARE
+ return held and held_mode == HeldMode.THROW
 
 func throw_velocity() -> Vector3:
- return athlete.desired_direction() * lerpf(2.0, 12.0, athlete.power) + athlete.velocity
+ var start := athlete.hold_position()
+ var upward := upward_for_height(throw_height)
+ var flight_time := (upward + sqrt(upward * upward + 2 * 9.81 * maxf(0, start.y - VolleyAthlete.BALL_RADIUS))) / 9.81
+ var offset := throw_target - start
+ offset.y = 0
+ var speed := offset / flight_time + Vector3.UP * upward
+ # Solve launch velocity before release. The free ball receives no guidance.
+ for iteration in range(3):
+  var at := start
+  var v := speed
+  var step := 1.0 / 120.0
+  var time := 0.0
+  for tick in range(360):
+   v += (Vector3.DOWN * 9.81 + aero_force(v, FEED_SPIN) / mass) * step
+   at += v * step
+   time += step
+   if at.y <= VolleyAthlete.BALL_RADIUS:
+    break
+  var correction := (throw_target - at) / maxf(time, 0.1)
+  correction.y = 0
+  speed += correction
+ return speed
 
 func aero_force(speed: Vector3, spin: Vector3) -> Vector3:
  var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
@@ -48,7 +110,7 @@ func preview_points() -> PackedVector3Array:
  var spin := FEED_SPIN
  var step := 1.0 / 120.0
  points.append(at)
- for tick in range(240):
+ for tick in range(360):
   speed += (Vector3.DOWN * 9.81 + aero_force(speed, spin) / mass) * step
   spin *= 1.0 - angular_damp * step
   var next := at + speed * step
@@ -74,8 +136,12 @@ func pick_up() -> bool:
   athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
   return false
  held = true
+ held_mode = HeldMode.TOSS
+ var forward := -athlete.visual.global_basis.z
+ forward.y = 0
+ throw_target = athlete.hold_position() + forward.normalized() * 6.0
+ throw_target.y = VolleyAthlete.BALL_RADIUS
  toss_yaw = 0
- toss_elevation = deg_to_rad(86)
  athlete.holding_ball = true
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE

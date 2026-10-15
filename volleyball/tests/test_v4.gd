@@ -118,12 +118,12 @@ func run() -> void:
  hud._touch_down(71, Vector2(600, 200))
  hud._touch_move(71, Vector2(730, 280), Vector2(130, 80))
  var aimed := b.toss_velocity()
- check(aimed.x > initial.x + 0.5 and aimed.y < initial.y - 0.1, "Free screen swipe changes toss direction and elevation")
+ check(aimed.x > initial.x + 0.1 and aimed.y < initial.y - 0.1, "Free screen swipe changes toss direction and release height")
  check(game.rig.yaw == yaw and hud.move_id == 70, "Toss aiming preserves camera and movement finger")
  hud._touch_up(70)
  hud._touch_up(71)
  var points := b.preview_points()
- check(points.size() > 12 and points[6].y > points[0].y + 0.6, "Held ball displays a rising ballistic preview")
+ check(points.size() > 12 and points[6].y > points[0].y + 0.35, "Held ball displays a rising ballistic preview")
  var expected := points[6]
  a.technique = VolleyAthlete.Technique.SERVE
  b.toss()
@@ -139,9 +139,9 @@ func run() -> void:
  hud._look_or_aim(Vector2(120, -80))
  game.rig._process(0.1)
  a.visual.rotation.y = game.rig.yaw
- check(b.aiming_throw() and b.throw_velocity().distance_to(throw_before) > 1, "Held secondary throw retains free camera aiming")
- game.finish_action("secondary")
- check(not b.held and b.pending_feed, "Releasing secondary launches the aimed free throw")
+ check(b.aiming_throw() and b.throw_velocity().distance_to(throw_before) > 1, "Throw mode supports independent landing target aiming")
+ game.begin_primary()
+ check(not b.held and b.pending_feed, "Primary launches the aimed throw with one tap")
  check(hud.buttons.size() == 9, "Aiming and Tilt do not add permanent control buttons")
  game.queue_free()
  await process_frame

@@ -171,40 +171,63 @@ func reset_player() -> void:
  athlete.action = VolleyAthlete.Action.IDLE
  action_owner = ""
 
-func begin_primary() -> void:
+func running_approach() -> bool:
+ return not ball.held and not athlete.airborne() and athlete.move_axis.length() > 0.65 and Vector2(athlete.velocity.x, athlete.velocity.z).length() > 1.0
+
+func begin_approach() -> bool:
+ if not action_owner.is_empty() or ball.held or not athlete.arm_approach(VolleyAthlete.Technique.JUMP_SERVE if serving else VolleyAthlete.Technique.SPIKE):
+  return false
+ action_owner = "approach"
+ return true
+
+func begin_primary() -> bool:
  if not action_owner.is_empty():
-  return
+  return false
  if ball.held:
+  if ball.held_mode == VolleyBall.HeldMode.THROW:
+   ball.throw_held()
+   return true
   athlete.technique = VolleyAthlete.Technique.JUMP_SERVE if training.selected == 6 else VolleyAthlete.Technique.SERVE
   ball.toss()
   serving = true
   rules.reset(true)
-  return
+  return true
+ if athlete.attack_ready:
+  return athlete.hit_approach()
+ if running_approach() and athlete.arm_approach(VolleyAthlete.Technique.JUMP_SERVE if serving else VolleyAthlete.Technique.SPIKE):
+  action_owner = "primary"
+  return true
  var kind := VolleyAthlete.Technique.SPIKE if athlete.airborne() else VolleyAthlete.Technique.UNDERHAND
  if serving:
   kind = VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE
  if athlete.begin_action(kind):
   action_owner = "primary"
+  return true
+ return false
 
-func begin_secondary() -> void:
+func begin_secondary() -> bool:
  if not action_owner.is_empty():
-  return
+  return false
  if ball.held:
-  athlete.technique = VolleyAthlete.Technique.THROW
-  athlete.action = VolleyAthlete.Action.PREPARE
-  athlete.action_time = 0
-  athlete.charged_for = 0
-  athlete.power = 0.82
-  action_owner = "secondary"
+  ball.toggle_held_mode()
+  return true
  elif athlete.begin_action(ContextAthlete.BLOCK if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD):
   action_owner = "secondary"
+  return true
+ return false
 
-func begin_jump_set() -> void:
+func begin_jump_set() -> bool:
  if action_owner.is_empty() and athlete.airborne() and athlete.begin_action(ContextAthlete.JUMP_SET):
   action_owner = "jump_set"
+  return true
+ return false
 
 func finish_action(role: String) -> void:
  if action_owner != role:
+  return
+ if athlete.approach_armed:
+  athlete.launch_approach()
+  action_owner = ""
   return
  if ball.held and role == "secondary":
   ball.throw_held()
@@ -222,6 +245,7 @@ func cancel_action(role: String) -> void:
   action_owner = ""
 
 func pickup_or_drop() -> void:
+ cancel_action("")
  if ball.held:
   ball.drop()
  else:

@@ -4,7 +4,12 @@ extends VolleyAthlete
 # The base resources stay intact; the additive rig refines limbs and poses.
 signal touched(kind: int, point: Vector3, outgoing: Vector3)
 @export var contact_ball_radius := 0.26
-@export var air_acceleration := 1.2
+@export var air_acceleration := 0.65
+var approach_armed := false
+var jump_windup := 0.0
+var attack_ready := false
+var approach_kind := Technique.SPIKE
+var approach_blend := 0.0
 var limb_rig: VolleyLimbRig
 var lean := Vector2.ZERO
 var landing_load := 0.0
@@ -38,7 +43,7 @@ func airborne() -> bool:
  return not is_on_floor() or velocity.y > 0.1
 
 func can_act() -> bool:
- return dive_time < 0 and action == Action.IDLE and not holding_ball
+ return dive_time < 0 and action == Action.IDLE and not holding_ball and not approach_armed and jump_windup <= 0
 
 func begin_action(kind: int) -> bool:
  if not can_act():
@@ -77,6 +82,35 @@ func cancel_input() -> void:
  super.cancel_input()
  tilt = Vector2.ZERO
  charged_for = 0
+ approach_armed = false
+ jump_windup = 0
+ attack_ready = false
+
+func arm_approach(kind := Technique.SPIKE) -> bool:
+ if not can_act() or airborne():
+  return false
+ approach_armed = true
+ approach_kind = kind
+ technique = kind
+ last_result = "Разбег • отпустите на АТАКЕ для прыжка"
+ return true
+
+func launch_approach() -> void:
+ if not approach_armed or airborne():
+  approach_armed = false
+  return
+ approach_armed = false
+ jump_windup = 0.10
+ last_result = "Прыжок с замахом • нажмите АТАКА для удара"
+
+func hit_approach() -> bool:
+ if not attack_ready or not airborne():
+  return false
+ attack_ready = false
+ charged_for = 0.2
+ power = 0.82
+ release()
+ return action == Action.STRIKE
 
 func jump() -> void:
  if is_on_floor() and dive_time < 0:
@@ -158,6 +192,16 @@ func _physics_process(dt: float) -> void:
  previous_wrists = wrists.duplicate()
  previous_elbows = elbows.duplicate()
  dive_cooldown = maxf(0, dive_cooldown - dt)
+ if jump_windup > 0:
+  jump_windup = maxf(0, jump_windup - dt)
+  if jump_windup == 0:
+   jump()
+   if velocity.y > 0.1:
+    action = Action.PREPARE
+    technique = approach_kind
+    strike_technique = approach_kind
+    attack_ready = true
+    action_time = 0
  var target_yaw := camera_yaw
  if not shift_lock and move_axis.length() > 0.15:
   target_yaw = atan2(-move_axis.x, -move_axis.y)
@@ -190,11 +234,19 @@ func _physics_process(dt: float) -> void:
    # Keep takeoff momentum; small corrections cannot reverse flight instantly.
    if move_axis.length() > 0.1:
     horizontal = horizontal.move_toward(move_axis * speed, air_acceleration * dt)
+   horizontal *= 1.0 / (1.0 + 0.018 * horizontal.length() * dt)
   else:
-   var acceleration := lerpf(7.0, 14.0, stats.n("agility"))
-   if move_axis.length() < 0.1 or horizontal.dot(move_axis) < 0:
-    acceleration = lerpf(5.0, 8.0, stats.n("agility"))
-   horizontal = horizontal.move_toward(move_axis * speed, acceleration * dt)
+   var acceleration := lerpf(8.0, 13.0, stats.n("agility"))
+   var braking := lerpf(16.0, 22.0, stats.n("agility"))
+   if move_axis.length() < 0.1:
+    horizontal = horizontal.move_toward(Vector2.ZERO, braking * dt)
+   elif horizontal.dot(move_axis) < -0.15:
+    horizontal = horizontal.move_toward(Vector2.ZERO, braking * dt)
+   else:
+    var turn := 1.0 - maxf(0, horizontal.normalized().dot(move_axis.normalized()))
+    horizontal = horizontal.move_toward(move_axis * speed, lerpf(acceleration, braking, turn) * dt)
+   if jump_windup > 0:
+    horizontal *= exp(-1.6 * dt)
   velocity.x = horizontal.x
   velocity.z = horizontal.y
   lean = lean.lerp(tilt if not holding_ball else Vector2.ZERO, 1.0 - exp(-9.0 * dt))
@@ -209,11 +261,16 @@ func _physics_process(dt: float) -> void:
   landing_load = clampf(-fall_speed / 9.0, 0, 0.7)
  landing_load = move_toward(landing_load, 0, dt * 2.0)
  visual.position.y = -landing_load * 0.07
+ approach_blend = lerpf(approach_blend, 1.0 if approach_armed or jump_windup > 0 else 0.0, 1.0 - exp(-18.0 * dt))
+ visual.position.y -= approach_blend * 0.12
+ if attack_ready and is_on_floor() and velocity.y <= 0 and jump_windup == 0:
+  attack_ready = false
+  action = Action.IDLE
  position.x = clampf(position.x, -8, 8)
  position.z = clampf(position.z, -12, 12)
  energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -0.018 * (1.2 - stats.n("stamina"))), 0, 1)
  action_time += dt
- if action == Action.PREPARE:
+ if action == Action.PREPARE and not attack_ready:
   charged_for += dt
   # Predictable, monotonic power control, clamped at the minimum. No cycling.
   power = maxf(0.16, 0.82 - maxf(0, charged_for - 0.12) * 0.65)

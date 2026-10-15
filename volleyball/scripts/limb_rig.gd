@@ -66,7 +66,13 @@ func apply_pose() -> void:
   var shoulder := Vector3(side * 0.3, 1.45, 0)
   var wrist := a.visual.to_local(a.wrists[i])
   var elbow := a.visual.to_local(a.elbows[i])
-  if a.action == VolleyAthlete.Action.IDLE and not a.holding_ball:
+  if a.approach_armed or a.jump_windup > 0:
+   wrist = wrist.lerp(Vector3(side * 0.35, 1.02, 0.26), a.approach_blend)
+   elbow = elbow.lerp(Vector3(side * 0.39, 1.18, 0.12), a.approach_blend)
+  elif a.attack_ready:
+   wrist = Vector3(side * 0.35, 1.02, 0.26).lerp(wrist, smoothstep(0, 0.09, a.action_time))
+   elbow = Vector3(side * 0.39, 1.18, 0.12).lerp(elbow, smoothstep(0, 0.09, a.action_time))
+  if a.action == VolleyAthlete.Action.IDLE and not a.holding_ball and not a.approach_armed and a.jump_windup == 0:
    var swing := sin(a.gait + i * PI) * minf(0.28, speed * 0.055)
    wrist = Vector3(side * 0.33, 0.99 + absf(swing) * 0.12, -0.10 + swing)
   wrist = shoulder + (wrist - shoulder).limit_length(0.855)
@@ -93,6 +99,7 @@ func apply_pose() -> void:
    foot.y += 0.14
    foot.z = 0.13 if a.velocity.y > 0 else -0.06
   foot.y += a.landing_load * 0.10
+  foot.y += a.approach_blend * 0.12
   var hip := Vector3(side * 0.14, 0.83, 0)
   var knee := joint(hip, foot, hip + Vector3(0, -0.3, -0.4), 0.39, 0.38)
   segment(a.legs[i], hip, knee, 0.094)
