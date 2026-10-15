@@ -33,6 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/logs
+          python3 ci/verify_models.py
           godot --headless --path . --editor --import 2>&1 | tee build/logs/import.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' build/logs/import.log; then exit 1; fi
           godot --headless --path . --script tests/test_runner.gd 2>&1 | tee build/logs/tests.log
@@ -41,6 +42,9 @@ jobs:
           godot --headless --path . --script tests/test_mobile_v2.gd 2>&1 | tee build/logs/mobile-v2-tests.log
           if grep -E 'SCRIPT ERROR|ERROR:' build/logs/mobile-v2-tests.log; then exit 1; fi
           grep -q 'V2 TESTS PASSED' build/logs/mobile-v2-tests.log
+          godot --headless --path . --script tests/test_playability.gd 2>&1 | tee build/logs/playability.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/playability.log; then exit 1; fi
+          grep -q 'PLAYABILITY PASSED' build/logs/playability.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -150,4 +154,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
-          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.1' --notes-file release-notes.txt --prerelease
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.3' --notes-file release-notes.txt --prerelease

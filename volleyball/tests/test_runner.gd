@@ -1,184 +1,220 @@
 extends SceneTree
-
 var checks := 0
 var failures := 0
+var game: Node3D
+var a: ContextAthlete
+var b: VolleyBall
 
 func _initialize() -> void:
  call_deferred("run")
 
-func check(ok: bool, message: String) -> void:
+func check(ok: bool, text: String) -> void:
  checks += 1
- if not ok:
-  failures += 1
-  push_error("FAIL: " + message)
+ if ok:
+  print("PASS: ", text)
  else:
-  print("PASS: " + message)
+  failures += 1
+  push_error("FAIL: " + text)
 
 func frames(count: int) -> void:
  for i in range(count):
   await physics_frame
 
+func swing(kind: int) -> void:
+ a.action = VolleyAthlete.Action.IDLE
+ a.holding_ball = false
+ a.begin_action(kind)
+ a.charged_for = 0.20
+ a.release()
+ a.action_time = a.strike_duration * 0.47
+ a._update_pose(0.0)
+ a.previous_wrists = a.wrists.duplicate()
+ a.previous_elbows = a.elbows.duplicate()
+
 func run() -> void:
- var scene := load("res://scenes/Main.tscn") as PackedScene
- check(scene != null, "Main scene loads")
- var game := scene.instantiate()
+ game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ a = game.athlete
+ b = game.ball
+ game.hud.set_process(false)
  await frames(20)
- var a: VolleyAthlete = game.athlete
- var b: VolleyBall = game.ball
- var ui: VolleyHUD = game.hud
- check(a.is_on_floor(), "Athlete stands on court")
- check(game.camera.current, "Third person camera active")
- # Empty release must execute, finish, and report a miss without changing ball.
- a.prepare()
- a.release()
- check(a.action == VolleyAthlete.Action.STRIKE and a.strike_count == 1, "Release starts empty swing immediately")
- await frames(70)
- check(a.action == VolleyAthlete.Action.IDLE and not a.hit_used, "Empty swing finishes as miss")
- check(a.contact_count == 0, "No phantom impulse")
- # Test real contact geometry and debounce with known ball centers.
- a.prepare()
- a.release()
- a.action_time = a.strike_duration * 0.48
- a._update_pose(1.0 / 120.0)
- var incoming := Vector3(0, -4, 2)
- check(a.try_contact(a.wrists[0] + Vector3(0.5, 0, 0), incoming) == Vector3.ZERO, "Spatial miss never assisted")
- var delta := a.try_contact(a.wrists[0], incoming)
- check(delta.length() > 0.1, "Overhead hand overlap transfers impulse")
- check(a.try_contact(a.wrists[0], incoming) == Vector3.ZERO, "Only one impulse per swing")
- a.action = VolleyAthlete.Action.IDLE
- a.technique = VolleyAthlete.Technique.UNDERHAND
- a.prepare()
- a.release()
- a.action_time = a.strike_duration * 0.48
- a._update_pose(1.0 / 120.0)
- var forearm := (a.elbows[0] + a.wrists[0]) * 0.5
- check(a.try_contact(forearm, incoming).length() > 0, "Underhand forearm overlap transfers impulse")
- a.hit_used = false
- a.action_time = 0
- check(a.try_contact(a.wrists[0], incoming) == Vector3.ZERO, "Overlap outside active stroke does not hit")
- # Seed reproduces both direction and power, given the same physical input.
- a.action_time = a.strike_duration * 0.48
- a.reset_seed(12345)
- var first := a.try_contact(a.wrists[0], incoming)
- a.hit_used = false
- a.reset_seed(12345)
- var second := a.try_contact(a.wrists[0], incoming)
- check(first.is_equal_approx(second), "Seed reproduces contact randomness")
- a.action = VolleyAthlete.Action.IDLE
- # Multitouch routing: releasing aim must not release movement or sprint.
- ui._touch_down(11, ui.left_center + Vector2(30, 0))
- ui._touch_down(22, ui.right_center + Vector2(0, -60))
- ui._touch_down(33, ui.buttons.sprint.rect.get_center())
- check(ui.move_id == 11 and ui.aim_id == 22 and ui.mobile_sprint, "Three simultaneous fingers independently captured")
- var swings_before := a.strike_count
- ui._touch_up(22)
- check(a.strike_count == swings_before + 1, "Aim finger release triggers stroke")
- check(ui.move_id == 11 and ui.mobile_sprint, "Aim release preserves other fingers")
- ui._touch_up(11)
- ui._touch_up(33)
- check(ui.move_value == Vector2.ZERO and not ui.mobile_sprint, "Movement and sprint release reset state")
- a.action = VolleyAthlete.Action.IDLE
- ui._touch_down(44, ui.right_center)
- ui._cancel()
- check(a.action == VolleyAthlete.Action.IDLE and ui.aim_id == -1, "Focus/menu cancellation cannot leave held input")
- var touch := InputEventScreenTouch.new()
- touch.index = 55
- touch.position = ui.right_center + Vector2(0, -50)
- touch.pressed = true
- ui._input(touch)
- check(ui.aim_id == 55, "ScreenTouch event enters aim router")
- touch.pressed = false
- touch.canceled = true
- swings_before = a.strike_count
- ui._input(touch)
- check(a.strike_count == swings_before and a.action == VolleyAthlete.Action.IDLE, "OS touch cancellation does not execute stroke")
- var mouse := InputEventMouseButton.new()
- mouse.button_index = MOUSE_BUTTON_RIGHT
- mouse.position = Vector2(600, 300)
- mouse.pressed = true
- ui._input(mouse)
- mouse.pressed = false
- ui._input(mouse)
- check(a.strike_count == swings_before + 1, "Right mouse release executes stroke")
- a.action = VolleyAthlete.Action.IDLE
- # All feeds are fixed world trajectories; moving athlete does not move launcher.
- for i in range(6):
-  game.training.selected = i
-  game.training.launch(b, a)
-  var origin: Vector3 = b.feed_position
-  var velocity: Vector3 = b.feed_velocity
-  a.position.x = 3
-  game.training.launch(b, a)
-  check(b.feed_position == origin and b.feed_velocity == velocity, "Drill %d fixed launch independent of athlete" % i)
-  await frames(3)
-  check(not b.pending_feed and b.linear_velocity.length() > 0.1, "Drill %d enters physics simulation" % i)
- a.position = Vector3(0, 0.02, 4)
- # Actual engine integration: a falling ball bounces from the ground.
- b.feed(Vector3(2, 0.3, 4), Vector3(0, -3, 0))
+ check(a.is_on_floor(), "Player stands on court")
+ check(game.camera.current and game.rig != null, "Orbit camera is active")
+ var wall := VolleyGeometry.collider(game, Vector3(0, 1.6, 6), Vector3(4, 4, 0.2))
  await frames(3)
+ game.rig._process(0.05)
+ check(game.camera.global_position.z < 6, "Camera stops before solid geometry")
+ wall.queue_free()
+ await frames(3)
+ # Compare original and extended controller's actual resource properties.
+ var original := VolleyAthlete.new()
+ root.add_child(original)
+ original.set_physics_process(false)
+ check(original.visual.get_child_count() == a.visual.get_child_count(), "Original player node count preserved")
+ for i in range(original.visual.get_child_count()):
+  var old_node := original.visual.get_child(i)
+  var new_node := a.visual.get_child(i)
+  if old_node is MeshInstance3D:
+   check(old_node.mesh.get_class() == new_node.mesh.get_class() and old_node.material_override.albedo_color == new_node.material_override.albedo_color, "Original mesh and material %d preserved" % i)
+ original.queue_free()
+ check(is_equal_approx(b.mass, 0.27) and b.continuous_cd, "Real ball mass and CCD")
+ check(PhysicsServer3D.area_get_param(root.world_3d.space, PhysicsServer3D.AREA_PARAM_GRAVITY) > 0, "Physics world gravity is active")
+ # Empty swings, strict geometry, single contact, timing and seeded errors.
+ for kind in [0, 1, 2, 3, 4, ContextAthlete.JUMP_SET, ContextAthlete.TIP]:
+  swing(kind)
+  var hand: Vector3 = a.wrists[1] if kind in [2, 3, 4, ContextAthlete.TIP] else a.wrists[0]
+  var incoming := Vector3(0, -4, 3)
+  check(a.try_contact(hand + Vector3(0.5, 0, 0), incoming) == Vector3.ZERO, "Spatial miss is never assisted: %d" % kind)
+  a.action_time = 0
+  check(a.try_contact(hand, incoming) == Vector3.ZERO, "Early overlap does not hit: %d" % kind)
+  a.action_time = a.strike_duration * 0.47
+  check(a.try_contact(hand, incoming).length() > 0.1, "Real hand overlap transfers impulse: %d" % kind)
+  check(a.try_contact(hand, incoming) == Vector3.ZERO, "One impulse per action: %d" % kind)
+ swing(VolleyAthlete.Technique.UNDERHAND)
+ var forearm := (a.elbows[0] + a.wrists[0]) * 0.5
+ check(a.try_contact(forearm, Vector3.DOWN * 8).length() > 0, "Bump contacts the visible forearm platform")
+ swing(0)
+ var center := a.wrists[0]
+ check(a.try_swept_contact(center + Vector3(0, 0, -0.6), center + Vector3(0, 0, 0.6), Vector3(0, 0, 40)).length() > 0, "Fast ball sweep catches a real hand crossing")
+ swing(0)
+ a.reset_seed(123)
+ var first := a.try_contact(a.wrists[0], Vector3(0, -8, 2))
+ a.hit_used = false
+ a.reset_seed(123)
+ check(first.is_equal_approx(a.try_contact(a.wrists[0], Vector3(0, -8, 2))), "Random error applied once reproducibly")
+ # Directions depend on body and tilt, not teleporting to camera orientation.
+ a.visual.rotation = Vector3.ZERO
+ for direction in [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]:
+  a.tilt = direction
+  var result := a.direction_for(0)
+  check(Vector2(result.x, result.z).normalized().dot(direction) > 0.99, "Forward/back/side set: " + str(direction))
+ a.tilt = Vector2(0, -1)
+ a.position.y = 1
+ var steep := a.direction_for(2).y
+ a.tilt = Vector2(0, 1)
+ check(a.direction_for(2).y > steep + 0.2, "W attack steeper than S attack")
+ a.camera_yaw = PI
+ var body_before := a.visual.rotation.y
+ a._physics_process(1.0 / 120)
+ check(absf(angle_difference(body_before, a.visual.rotation.y)) < 0.06, "Body turn is bounded after instant camera input")
+ a.camera_yaw = 0
+ a.tilt = Vector2.ZERO
+ a.position = Vector3(0, 0.02, 4)
+ a.velocity = Vector3.ZERO
+ a.action = VolleyAthlete.Action.IDLE
+ await frames(20)
+ # Whole physics: floor and net cannot be passed through.
+ b.feed(Vector3(2, 0.4, 4), Vector3(0, -6, 0))
  var bounced := false
  for i in range(35):
   await physics_frame
   if b.linear_velocity.y > 1:
    bounced = true
- check(bounced, "Rigid ball bounces from court")
- b.feed(Vector3(2, 1.9, -0.5), Vector3(0, 0, 6))
- await frames(3)
+ check(bounced, "Ball bounces off the floor")
+ b.feed(Vector3(2, 1.9, -0.5), Vector3(0, 0, 30))
  var net_bounce := false
  for i in range(20):
   await physics_frame
   if b.linear_velocity.z < -0.5:
    net_bounce = true
- check(net_bounce, "Net physically rejects incoming ball")
- # Integrator path, not merely direct try_contact calls.
+ check(net_bounce, "CCD net collision rejects a fast ball")
+ b.feed(Vector3(3, 8, 4), Vector3(20, 0, 0))
+ await frames(4)
+ var speed_before := b.linear_velocity.x
+ await frames(20)
+ check(b.linear_velocity.x < speed_before and b.linear_velocity.y < -1, "Aerodynamic drag and gravity act during free flight")
+ # Block reflects incoming velocity; dedicated jump set stays a set.
  a.action = VolleyAthlete.Action.IDLE
- a.technique = VolleyAthlete.Technique.OVERHEAD
- a.prepare()
- a.release()
- a.action_time = a.strike_duration * 0.35
- a._update_pose(1.0 / 120.0)
- var count_before := a.contact_count
- b.feed(a.wrists[0], Vector3(0, -1, 0))
- await frames(5)
- check(a.contact_count == count_before + 1, "Live physics integrator produces exactly one hand contact")
- # A complete feed-to-contact path: no ball teleport to hands, only timed input.
- for mode in range(2):
-  a.position = Vector3(0, 0.01, 4)
-  a.velocity = Vector3.ZERO
-  a.visual.rotation = Vector3.ZERO
-  a.action = VolleyAthlete.Action.IDLE
-  a.technique = mode
-  a.prepare()
-  await frames(10)
-  game.training.selected = 4 + mode
-  count_before = a.contact_count
-  game.repeat_drill()
-  await frames(54 if mode == 0 else 36)
-  a.release()
-  await frames(40)
-  check(a.contact_count == count_before + 1, "Convenient drill %d hittable from start with timed release" % mode)
- # Motion/attribute changes: compare actual jump velocities and sprint stamina.
- a.position = Vector3(0, 0.01, 4)
+ a.jump()
+ await frames(12)
+ swing(ContextAthlete.BLOCK)
+ var incoming := Vector3(1, -3, 20)
+ var outgoing := incoming + a.try_contact(a.wrists[0], incoming)
+ check(outgoing.z < 0 and outgoing.length() > 5, "Airborne block rebounds the incoming ball")
+ swing(ContextAthlete.JUMP_SET)
+ check(a.strike_technique == ContextAthlete.JUMP_SET, "Dedicated Jump Set cannot become block")
+ a.action = VolleyAthlete.Action.IDLE
+ await frames(130)
+ a.move_axis = Vector2(1, 0)
+ check(a.dive(), "Grounded dive starts")
+ check(a.dive_direction.x > 0.9 and not a.dive(), "Dive uses chosen direction and cannot repeat immediately")
+ await frames(24)
+ check(a.visual.rotation.x < -0.8 and a.wrists[0].y < 1.1, "Dive lowers the actual visible hands")
+ await frames(150)
+ check(a.dive_time < 0 and a.visual.rotation.x == 0, "Dive finishes with recovery to standing")
+ # Context actions select on ground / in air, charging clamps monotonically.
+ a.position = Vector3(0, 0.02, 4)
  a.velocity = Vector3.ZERO
- await frames(15)
- a.stats.set_stat("jump", 1)
+ a.move_axis = Vector2.ZERO
+ a.action = VolleyAthlete.Action.IDLE
+ await frames(20)
+ game.begin_primary()
+ check(a.technique == 1, "Ground primary is Bump")
+ await frames(20)
+ var initial_power := a.power
+ await frames(50)
+ check(a.power < initial_power and a.power >= 0.16, "Holding lowers power without oscillation")
+ game.cancel_action("primary")
+ game.begin_secondary()
+ check(a.technique == 0, "Ground secondary is Set")
+ game.cancel_action("secondary")
  a.jump()
- var low_jump := a.velocity.y
- a.stats.set_stat("jump", 100)
- a.jump()
- check(a.velocity.y > low_jump, "Jump stat changes launch velocity")
- for key in a.stats.values:
-  a.stats.set_stat(key, 500)
-  check(a.stats.values[key] == 100, "Stat bound: " + key)
- ui.toggle_menu()
- check(paused, "Menu pauses physics")
- ui.toggle_menu()
- check(not paused, "Menu resumes physics")
- if failures == 0:
-  print("ALL TESTS PASSED (%d checks)" % checks)
- else:
-  print("FAILED: %d / %d" % [failures, checks])
+ game.begin_secondary()
+ check(a.technique == ContextAthlete.BLOCK, "Air secondary is Block")
+ game.cancel_action("secondary")
+ game.begin_jump_set()
+ check(a.technique == ContextAthlete.JUMP_SET, "E is explicit Jump Set")
+ game.cancel_action("jump_set")
+ game.begin_primary()
+ game.finish_action("primary")
+ check(a.strike_technique == ContextAthlete.TIP, "Short airborne tap is distinct Tip")
+ a.action = VolleyAthlete.Action.IDLE
+ game.begin_primary()
+ a.charged_for = 0.2
+ game.finish_action("primary")
+ check(a.strike_technique == 2, "Held airborne action is power Spike")
+ # Rules are independent of the single-player training controller.
+ var rules := VolleyRules.new()
+ rules.strict = true
+ check(rules.touch(0, 1, 0, 1), "First team touch allowed")
+ check(not rules.touch(0, 1, 0, 2) and rules.ended, "Separate consecutive contacts are a fault")
+ rules.reset()
+ for i in range(3):
+  check(rules.touch(0, i, 0, i), "Team touch %d allowed" % (i + 1))
+ check(not rules.touch(0, 4, 0, 4), "Fourth team touch fault")
+ rules.reset()
+ rules.touch(0, 1, ContextAthlete.BLOCK, 1)
+ check(rules.touches == 0 and rules.touch(0, 1, 0, 2), "Block excluded from count and blocker can play next")
+ check(rules.touch(0, 1, 0, 2), "Same first action is not counted twice")
+ rules.reset()
+ rules.floor_contact(Vector3(4.55, 0, 9.02))
+ check(rules.message == "Мяч в площадке", "Ball touching boundary is in")
+ rules.reset()
+ rules.floor_contact(Vector3(5, 0, 2))
+ check(rules.message == "Аут", "Outside ball is out")
+ rules.reset(true)
+ rules.serve_contact(Vector3(0, 0, 8.9))
+ check(rules.ended, "Service foot fault")
+ rules.reset(true)
+ rules.net_contact(false)
+ check(not rules.ended, "Ball net touch alone is legal")
+ rules.crossing(Vector3(0, 3, 1), Vector3(0, 3, -1))
+ check(rules.serve_crossed and not rules.ended, "Valid service crosses above net")
+ rules.reset()
+ rules.crossing(Vector3(4.7, 3, 1), Vector3(4.7, 3, -1))
+ check(rules.ended, "Crossing outside antennas is a fault")
+ rules.reset()
+ rules.net_contact(true)
+ check(rules.ended, "Player net contact is a fault")
+ # All drills are physically launched from fixed world coordinates.
+ for i in range(VolleyTraining.NAMES.size()):
+  game.training.selected = i
+  game.repeat_drill()
+  var origin := b.feed_position
+  a.position.x += 1
+  game.repeat_drill()
+  check(b.feed_position == origin, "Drill %d never follows player" % i)
+ print("ALL TESTS PASSED (%d checks)" % checks if failures == 0 else "FAILED %d / %d" % [failures, checks])
  game.queue_free()
  await process_frame
  quit(0 if failures == 0 else 1)

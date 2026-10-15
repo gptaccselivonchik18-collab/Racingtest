@@ -1,6 +1,14 @@
 class_name VolleyBall
 extends RigidBody3D
 
+signal surface_contact(surface: String)
+@export var air_density := 1.2
+@export var drag_coefficient := 0.20
+@export var magnus_coefficient := 0.0004
+@export var magnus_force_limit := 0.15
+var previous_center := Vector3.ZERO
+var previous_center_valid := false
+
 var athlete: VolleyAthlete
 var acceleration := Vector3.ZERO
 var last_velocity := Vector3.ZERO
@@ -48,7 +56,7 @@ func toss() -> bool:
   return false
  var upward := 6.8 if athlete.technique == VolleyAthlete.Technique.JUMP_SERVE else 5.4
  feed(athlete.hold_position(), Vector3.UP * upward + athlete.velocity)
- athlete.last_result = "Подброс • прыгните / отпустите правый стик для удара"
+ athlete.last_result = "Подброс • удержать и отпустить основную кнопку для удара"
  return true
 
 func throw_held() -> bool:
@@ -67,8 +75,11 @@ func _ready() -> void:
  continuous_cd = true
  collision_layer = 4
  collision_mask = 1
- linear_damp = 0.025
+ linear_damp = 0.0
  angular_damp = 0.15
+ contact_monitor = true
+ max_contacts_reported = 8
+ body_entered.connect(func(body: Node): surface_contact.emit(str(body.get_meta("surface", "world"))))
  var mat := PhysicsMaterial.new()
  mat.bounce = 0.73
  mat.friction = 0.45
@@ -94,6 +105,7 @@ func feed(at: Vector3, speed: Vector3) -> void:
  feed_velocity = speed
  pending_feed = true
  sleeping = false
+ previous_center_valid = false
 
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
  if pending_feed:
@@ -102,13 +114,30 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   state.angular_velocity = Vector3(2.3, 0.6, 1.1)
   pending_feed = false
   last_velocity = feed_velocity
+  previous_center = feed_position
+  previous_center_valid = true
   return
  if is_instance_valid(athlete):
-  var delta_v := athlete.try_contact(state.transform.origin, state.linear_velocity)
+  var center := state.transform.origin
+  var from := previous_center if previous_center_valid else center
+  # Clip swept hand checks at solid world geometry so a fast ball cannot hit
+  # hands through the net. The rigid-body CCD handles the world collision.
+  var ray := PhysicsRayQueryParameters3D.create(from, center, 1)
+  var obstacle := get_world_3d().direct_space_state.intersect_ray(ray) if from.distance_to(center) > 0.001 else {}
+  var delta_v := Vector3.ZERO
+  if obstacle.is_empty():
+   if athlete is ContextAthlete:
+    delta_v = athlete.try_swept_contact(from, center, state.linear_velocity)
+   else:
+    delta_v = athlete.try_contact(center, state.linear_velocity)
   if delta_v != Vector3.ZERO:
    state.apply_central_impulse(delta_v * mass)
-   state.angular_velocity += athlete.hand_velocity.cross(delta_v) * 0.12
+   state.angular_velocity = (state.angular_velocity + athlete.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
+  previous_center = center
+  previous_center_valid = true
  # Approximate, bounded Magnus force; no target or player tracking.
- state.apply_central_force((state.angular_velocity.cross(state.linear_velocity) * 0.0004).limit_length(0.15))
+ state.apply_central_force((state.angular_velocity.cross(state.linear_velocity) * magnus_coefficient).limit_length(magnus_force_limit))
+ var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
+ state.apply_central_force(-state.linear_velocity * state.linear_velocity.length() * 0.5 * air_density * drag_coefficient * area)
  acceleration = (state.linear_velocity - last_velocity) / state.step
  last_velocity = state.linear_velocity

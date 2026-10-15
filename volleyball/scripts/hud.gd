@@ -1,183 +1,211 @@
 class_name VolleyHUD
 extends Control
 
-const DEFAULT_CONFIG := {"sensitivity": 1.0, "stick_size": 1.0, "left_x": 0.0, "left_y": 0.0, "right_x": 0.0, "right_y": 0.0, "button_size": 1.0, "jump_y": 0.0, "power": 65.0, "orientation": 4.0}
-var config := DEFAULT_CONFIG.duplicate()
 var game: Node3D
+var settings := VolleySettings.new()
+var buttons: Dictionary = {}
+var fingers: Dictionary = {}
 var move_id := -1
-var aim_id := -1
-var sprint_id := -1
-var power_id := -1
-var angle_id := -1
+var camera_id := -1
 var move_value := Vector2.ZERO
-var aim_value := Vector2.ZERO
-var mouse_aim := false
-var mouse_origin := Vector2.ZERO
+var left_center := Vector2.ZERO
+var radius := 68.0
 var menu: PanelContainer
 var menu_blocker: ColorRect
 var tabs: TabContainer
 var status: Label
-var debug_label: Label
-var buttons: Dictionary = {}
-var left_center := Vector2.ZERO
-var right_center := Vector2.ZERO
-var power_rect := Rect2()
-var angle_rect := Rect2()
-var radius := 74.0
-var mobile_sprint := false
 var font: Font
-var stat_sliders: Dictionary = {}
-var control_sliders: Dictionary = {}
+var key_capture := ""
+var key_buttons := {}
+var edit_mode := false
+var edit_selected := "primary"
+var editor_bar: PanelContainer
+var editor_scale: HSlider
+var stat_sliders := {}
+var control_sliders := {}
 
 func _ready() -> void:
  process_mode = Node.PROCESS_MODE_ALWAYS
- set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  mouse_filter = Control.MOUSE_FILTER_IGNORE
+ set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  font = ThemeDB.fallback_font
- _load_config()
- game.athlete.power = float(config.power) / 100.0
- _orientation(int(config.orientation))
- var title := _label("VOLLEY / LAB  0.2", 25, Color("f8d376"))
- title.position = Vector2(56, 25)
- status = _label("", 15, Color.WHITE)
- status.position = Vector2(56, 65)
- status.size = Vector2(315, 54)
- status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- debug_label = _label("", 13, Color("b5cbd6"))
- debug_label.position = Vector2(56, 122)
- for i in range(6):
-  _button("tech_%d" % i, VolleyAthlete.TECHNIQUE_NAMES[i])
- for entry in [["menu", "МЕНЮ  Esc"], ["drill", ""], ["feed", "ЗАПУСТИТЬ  R"], ["jump", "ПРЫЖОК"], ["sprint", "СПРИНТ"], ["pickup", "ПОДОБРАТЬ  F"], ["toss", "ПОДБРОС  T"], ["serve_start", "НА ПОДАЧУ"]]:
-  _button(entry[0], entry[1])
+ settings.load_settings(game.athlete)
+ game.athlete.shift_lock = settings.shift_lock
+ game.rig.sensitivity = settings.sensitivity
+ _orientation(settings.orientation)
+ status = Label.new()
+ status.add_theme_font_size_override("font_size", 16)
+ status.add_theme_color_override("font_color", Color("e3ebed"))
+ status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ add_child(status)
+ for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context"]:
+  buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
- resized.connect(_on_resize)
- _layout()
-
-func _load_config() -> void:
- var saved := ConfigFile.new()
- if saved.load("user://controls.cfg") != OK:
-  return
- for key in config:
-  config[key] = float(saved.get_value("controls", key, config[key]))
- config.power = clampf(config.power, 5, 100)
- config.sensitivity = clampf(config.sensitivity, 0.6, 1.4)
- config.stick_size = clampf(config.stick_size, 0.8, 1.15)
- config.button_size = clampf(config.button_size, 0.8, 1.2)
- for key in ["left_x", "left_y", "right_x", "right_y", "jump_y"]:
-  config[key] = clampf(config[key], -30, 30)
- for key in game.athlete.stats.values:
-  game.athlete.stats.set_stat(key, float(saved.get_value("stats", key, game.athlete.stats.values[key])))
- game.athlete.reset_seed(int(saved.get_value("training", "seed", 20261014)))
-
-func _label(text: String, font_size: int, color: Color) -> Label:
- var node := Label.new()
- node.text = text
- node.mouse_filter = Control.MOUSE_FILTER_IGNORE
- node.add_theme_font_size_override("font_size", font_size)
- node.add_theme_color_override("font_color", color)
- add_child(node)
- return node
-
-func _button(key: String, text: String) -> void:
- buttons[key] = {"text": text, "rect": Rect2()}
-
-func _on_resize() -> void:
- _cancel()
+ _editor()
+ resized.connect(func(): _cancel(); _layout())
  _layout()
 
 func _layout() -> void:
  if not is_instance_valid(menu):
   return
- radius = 74.0 * float(config.stick_size)
- left_center = Vector2(145 + float(config.left_x), size.y - 145 + float(config.left_y))
- right_center = Vector2(size.x - 150 + float(config.right_x), size.y - 145 + float(config.right_y))
- left_center.x = clampf(left_center.x, radius + 48, 230)
- right_center.x = clampf(right_center.x, size.x - 230, size.x - radius - 48)
- left_center.y = clampf(left_center.y, size.y - 180, size.y - radius - 44)
- right_center.y = clampf(right_center.y, size.y - 180, size.y - radius - 44)
- for i in range(6):
-  buttons["tech_%d" % i].rect = Rect2(400 + (i % 3) * 190, 20 + (i / 3) * 62, 180, 52)
- buttons.menu.rect = Rect2(size.x - 208, 20, 160, 52)
- buttons.drill.rect = Rect2(400, 152, 360, 48)
- buttons.feed.rect = Rect2(780, 152, 180, 48)
- power_rect = Rect2(size.x - 445, size.y - 490, 395, 64)
- angle_rect = Rect2(size.x - 445, size.y - 402, 395, 64)
- var jump_size := Vector2(110, 72) * float(config.button_size)
- buttons.jump.rect = Rect2(right_center - Vector2(radius + 16 + jump_size.x, 18) + Vector2(0, config.jump_y), jump_size)
- buttons.sprint.rect = Rect2(left_center.x - 85, left_center.y - radius - 64, 170, 48)
- buttons.pickup.rect = Rect2(size.x - 570, size.y - 240, 150, 56)
- buttons.toss.rect = Rect2(size.x - 410, size.y - 240, 140, 56)
- buttons.serve_start.rect = Rect2(size.x - 570, size.y - 172, 150, 48)
- menu.position = Vector2(110, 30)
- menu.size = Vector2(size.x - 220, size.y - 60)
- menu_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
- queue_redraw()
+ var margin := 40.0
+ if OS.get_name() in ["iOS", "Android"]:
+  var safe := DisplayServer.get_display_safe_area()
+  var screen := DisplayServer.screen_get_size()
+  if screen.x > 0:
+   margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
+ var defaults := {"primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ for key in defaults:
+  var at: Vector2 = defaults[key]
+  var scale_value := settings.button_scale
+  if settings.layout.has(key):
+   var saved: Vector3 = settings.layout[key]
+   at = Vector2(saved.x * size.x, saved.y * size.y)
+   scale_value *= saved.z
+  if key == "move":
+   radius = 68 * scale_value
+   left_center = Vector2(clampf(at.x, margin + radius, size.x - margin - radius), clampf(at.y, radius + 80, size.y - radius - 18))
+   continue
+  var side := 88.0 * scale_value
+  if key == "primary":
+   side = 98 * scale_value
+  elif key == "jump_set":
+   side = 68 * scale_value
+  elif key in ["menu", "lock", "next"]:
+   side = 46
+  var dimensions := Vector2(side, side)
+  if key == "context":
+   dimensions = Vector2(190, 44)
+  at.x = clampf(at.x, margin + dimensions.x * 0.5, size.x - margin - dimensions.x * 0.5)
+  at.y = clampf(at.y, 18 + dimensions.y * 0.5, size.y - dimensions.y * 0.5 - 12)
+  buttons[key].rect = Rect2(at - dimensions * 0.5, dimensions)
+ status.position = Vector2(margin + 70, 28)
+ status.size = Vector2(size.x - margin * 2 - 260, 44)
+ menu.position = Vector2(size.x * 0.08, size.y * 0.07)
+ menu.size = Vector2(size.x * 0.84, size.y * 0.86)
+ if is_instance_valid(editor_bar):
+  editor_bar.position = Vector2(size.x * 0.16, 16)
+  editor_bar.size = Vector2(size.x * 0.68, 64)
 
 func _menu() -> void:
  menu_blocker = ColorRect.new()
- menu_blocker.color = Color(0.01, 0.02, 0.04, 0.8)
+ menu_blocker.color = Color(0.02, 0.05, 0.08, 0.88)
+ menu_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  menu_blocker.visible = false
  add_child(menu_blocker)
  menu = PanelContainer.new()
- menu.add_theme_stylebox_override("panel", _panel(Color("102536")))
+ menu.add_theme_stylebox_override("panel", _panel(Color("132b3c")))
  menu.visible = false
  add_child(menu)
- var layout := VBoxContainer.new()
- layout.add_theme_constant_override("separation", 10)
- menu.add_child(layout)
- var close := _native_button(layout, "ВЕРНУТЬСЯ НА ПЛОЩАДКУ", toggle_menu)
- close.name = "Resume"
+ var content := VBoxContainer.new()
+ content.add_theme_constant_override("separation", 12)
+ menu.add_child(content)
+ var title := Label.new()
+ title.text = "   VOLLEY / LAB  0.3"
+ title.add_theme_font_size_override("font_size", 24)
+ content.add_child(title)
  tabs = TabContainer.new()
  tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
- tabs.add_theme_font_size_override("font_size", 22)
- layout.add_child(tabs)
- var player := _tab("Игрок")
- for key in AthleteStats.LABELS:
-  stat_sliders[key] = _slider(player, AthleteStats.LABELS[key], 1, 100, game.athlete.stats.values[key], func(v: float): game.athlete.stats.set_stat(key, v); _save())
+ content.add_child(tabs)
+ var practice := _tab("Тренировка")
+ var list := OptionButton.new()
+ list.custom_minimum_size.y = 52
+ for name_value in VolleyTraining.NAMES:
+  list.add_item(name_value)
+ list.item_selected.connect(func(index: int): game.training.selected = index)
+ practice.add_child(list)
+ _native_button(practice, "Начать упражнение / следующий мяч", func(): toggle_menu(); game.start_drill())
+ _native_button(practice, "Вернуть игрока в центр", func(): game.reset_player(); toggle_menu())
+ var strict_box := CheckButton.new()
+ strict_box.text = "Правила команды: двойное и максимум три касания"
+ strict_box.toggled.connect(func(on: bool): game.rules.strict = on; game.rules.reset())
+ practice.add_child(strict_box)
+ var help := Label.new()
+ help.text = "ЛКМ: приём / атака. Q: пас / блок. E: пас в прыжке.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч.\nУдерживайте действие для меньшей силы, отпустите для касания.\nВ воздухе: короткое ЛКМ — скидка; удержание ≥ 0.13 с — атака.\nПодача: основная кнопка — подброс, затем удержать и отпустить.\nF: подобрать / опустить. Shift: фиксация корпуса. Мышь / свайп: камера."
+ help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ practice.add_child(help)
  var controls := _tab("Управление")
- var hint := Label.new()
- hint.text = "Сила задаётся отдельно и не меняется от правого стика.\nПрыжок — слева от правого стика. Подбор и подброс — рядом."
- controls.add_child(hint)
+ control_sliders.sensitivity = _slider(controls, "Чувствительность камеры", 0.3, 2.5, settings.sensitivity, func(v: float): settings.sensitivity = v; game.rig.sensitivity = v; _save(), 0.05)
+ control_sliders.size = _slider(controls, "Размер кнопок", 0.7, 1.4, settings.button_scale, func(v: float): settings.button_scale = v; _layout(); _save(), 0.05)
+ var lock := CheckButton.new()
+ lock.text = "Фиксация направления корпуса за камерой"
+ lock.button_pressed = settings.shift_lock
+ lock.toggled.connect(func(on: bool): settings.shift_lock = on; game.athlete.shift_lock = on; _save())
+ controls.add_child(lock)
+ var jump_set := CheckButton.new()
+ jump_set.text = "Показывать компактную кнопку паса в прыжке"
+ jump_set.button_pressed = settings.show_jump_set
+ jump_set.toggled.connect(func(on: bool): settings.show_jump_set = on; _save())
+ controls.add_child(jump_set)
+ _native_button(controls, "Редактор расположения и размеров кнопок", start_editor)
+ _native_button(controls, "Сбросить расположение", func(): settings.layout.clear(); settings.button_scale = 1; _layout(); _save())
  var orientation := OptionButton.new()
- orientation.name = "Orientation"
- orientation.custom_minimum_size.y = 54
- for label in ["Поворот: автоматически", "Поворот: альбомная сторона 1", "Поворот: альбомная сторона 2"]:
-  orientation.add_item(label)
- orientation.select([4, 0, 2].find(int(config.orientation)))
+ for text in ["Поворот: автоматически", "Альбомный", "Альбомный: другая сторона"]:
+  orientation.add_item(text)
+ orientation.select([4, 0, 2].find(settings.orientation))
  orientation.item_selected.connect(func(i: int): _orientation([4, 0, 2][i]); _save())
  controls.add_child(orientation)
- var labels := {"sensitivity": "Чувствительность", "stick_size": "Размер стиков", "left_x": "Левый стик: X", "left_y": "Левый стик: Y", "right_x": "Правый стик: X", "right_y": "Правый стик: Y", "button_size": "Размер прыжка", "jump_y": "Прыжок: выше / ниже"}
- for key in labels:
-  var scale_value: bool = key in ["sensitivity", "stick_size", "button_size"]
-  var low := 0.6 if key == "sensitivity" else 0.8
-  var high := 1.4 if key == "sensitivity" else (1.15 if key == "stick_size" else 1.2)
-  control_sliders[key] = _slider(controls, labels[key], low if scale_value else -30.0, high if scale_value else 30.0, config[key], func(v: float): config[key] = v; _layout(); _save(), 0.05 if scale_value else 1.0)
- _native_button(controls, "СБРОСИТЬ РАСПОЛОЖЕНИЕ УПРАВЛЕНИЯ", func():
-  for key in control_sliders:
-   control_sliders[key].value = DEFAULT_CONFIG[key]
-  _layout()
-  _save())
- var training := _tab("Тренировка")
- var help := Label.new()
- help.text = "ПОДАЧА: На подачу → Подобрать → Подброс → правый стик.\nВ ПРЫЖКЕ: подбросьте, прыгните и ударьте по мячу в воздухе.\nБРОСОК: подберите мяч, выберите «Бросок», направление и силу,\nзатем отпустите правый стик. Угол регулируется от −60° до 85°.\n\nWASD — ходьба; Shift — спринт; Space — прыжок.\n1–6 — техника; F — подобрать/опустить; T — подброс.\nПКМ — прицел; отпускание — удар/бросок.\nQ/E — угол; Z/X — сила; R — упражнение; Esc — меню."
- training.add_child(help)
- _native_button(training, "Вернуть игрока в центр", func(): game.reset_player(); toggle_menu())
- _native_button(training, "Перейти за заднюю линию для подачи", func(): game.serve_start(); toggle_menu())
- var seed_edit := SpinBox.new()
- seed_edit.prefix = "Seed: "
- seed_edit.max_value = 2147483647
- seed_edit.value = game.athlete.random_seed
- seed_edit.custom_minimum_size = Vector2(260, 52)
- training.add_child(seed_edit)
- _native_button(training, "Применить seed заново", func(): game.athlete.reset_seed(int(seed_edit.value)); _save())
+ var bindings := _tab("Клавиши")
+ for key in settings.keys:
+  var key_name: String = key
+  var button := _native_button(bindings, "", func(): key_capture = key_name; key_buttons[key_name].text = "Нажмите клавишу • Esc — отмена")
+  key_buttons[key] = button
+ _refresh_keys()
+ _native_button(bindings, "Приём / атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
+ var testing := _tab("Спортсмен")
+ for key in game.athlete.stats.values:
+  var stat_key: String = key
+  stat_sliders[key] = _slider(testing, AthleteStats.LABELS[key], 1, 100, game.athlete.stats.values[key], func(v: float): game.athlete.stats.set_stat(stat_key, v); _save())
+ _native_button(content, "Продолжить", toggle_menu)
 
-func _native_button(parent: Node, title: String, callback: Callable) -> Button:
- var b := Button.new()
- b.text = title
- b.custom_minimum_size.y = 56
- b.pressed.connect(callback)
- parent.add_child(b)
- return b
+func _editor() -> void:
+ editor_bar = PanelContainer.new()
+ editor_bar.add_theme_stylebox_override("panel", _panel(Color("163748")))
+ editor_bar.visible = false
+ add_child(editor_bar)
+ var row := HBoxContainer.new()
+ editor_bar.add_child(row)
+ var title := Label.new()
+ title.text = " Перетащите кнопку • размер: "
+ row.add_child(title)
+ editor_scale = HSlider.new()
+ editor_scale.min_value = 0.65
+ editor_scale.max_value = 1.45
+ editor_scale.step = 0.05
+ editor_scale.value = 1
+ editor_scale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ editor_scale.custom_minimum_size = Vector2(150, 50)
+ editor_scale.value_changed.connect(func(v: float):
+  var center: Vector2 = left_center if edit_selected == "move" else buttons[edit_selected].rect.get_center()
+  settings.layout[edit_selected] = Vector3(center.x / size.x, center.y / size.y, v)
+  _layout())
+ row.add_child(editor_scale)
+ _native_button(row, "Сохранить", end_editor)
+
+func start_editor() -> void:
+ _cancel()
+ menu.visible = false
+ menu_blocker.visible = false
+ edit_mode = true
+ editor_bar.visible = true
+ get_tree().paused = true
+ Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func end_editor() -> void:
+ edit_mode = false
+ editor_bar.visible = false
+ _save()
+ menu.visible = true
+ menu_blocker.visible = true
+ _cancel()
+
+func _native_button(parent: Node, text: String, callback: Callable) -> Button:
+ var button := Button.new()
+ button.text = text
+ button.custom_minimum_size.y = 50
+ button.pressed.connect(callback)
+ parent.add_child(button)
+ return button
 
 func _tab(title: String) -> VBoxContainer:
  var scroll := ScrollContainer.new()
@@ -186,257 +214,248 @@ func _tab(title: String) -> VBoxContainer:
  tabs.add_child(scroll)
  var list := VBoxContainer.new()
  list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
- list.add_theme_constant_override("separation", 14)
+ list.add_theme_constant_override("separation", 12)
  scroll.add_child(list)
  return list
 
 func _slider(parent: Node, title: String, low: float, high: float, value: float, callback: Callable, step_value := 1.0) -> HSlider:
- var row := HBoxContainer.new()
- row.custom_minimum_size.y = 56
- parent.add_child(row)
+ var row := VBoxContainer.new()
  var label := Label.new()
- label.text = "  " + title
- label.custom_minimum_size.x = 265
+ label.text = "  %s: %.2f" % [title, value]
  row.add_child(label)
  var slider := HSlider.new()
  slider.min_value = low
  slider.max_value = high
  slider.step = step_value
  slider.value = value
- slider.custom_minimum_size = Vector2(280, 52)
- slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ slider.custom_minimum_size = Vector2(300, 44)
+ slider.value_changed.connect(func(v: float): label.text = "  %s: %.2f" % [title, v]; callback.call(v))
  row.add_child(slider)
- var readout := Label.new()
- readout.custom_minimum_size.x = 70
- readout.text = "%.2f" % value if step_value < 1 else str(int(value))
- row.add_child(readout)
- slider.value_changed.connect(func(v: float):
-  readout.text = "%.2f" % v if step_value < 1 else str(int(v))
-  callback.call(v))
+ parent.add_child(row)
  return slider
 
+func _refresh_keys() -> void:
+ for key in key_buttons:
+  key_buttons[key].text = "%s: %s" % [VolleySettings.KEY_LABELS[key], "ЛКМ" if settings.keys[key] < 0 else OS.get_keycode_string(settings.keys[key])]
+
 func _orientation(value: int) -> void:
- if value not in [0, 2, 4]:
-  value = 4
- config.orientation = float(value)
- _cancel()
+ settings.orientation = value
  if OS.get_name() in ["iOS", "Android"]:
   DisplayServer.screen_set_orientation(value)
 
 func _save() -> void:
- config.power = roundf(game.athlete.power * 100)
- var file := ConfigFile.new()
- for key in config:
-  file.set_value("controls", key, config[key])
- for key in game.athlete.stats.values:
-  file.set_value("stats", key, game.athlete.stats.values[key])
- file.set_value("training", "seed", game.athlete.random_seed)
- file.save("user://controls.cfg")
+ settings.save(game.athlete)
 
 func toggle_menu() -> void:
+ if edit_mode:
+  end_editor()
+  return
  menu.visible = not menu.visible
  menu_blocker.visible = menu.visible
  get_tree().paused = menu.visible
+ Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if menu.visible else Input.MOUSE_MODE_CAPTURED if OS.get_name() not in ["iOS", "Android"] else Input.MOUSE_MODE_VISIBLE
  _cancel()
 
 func _cancel() -> void:
+ fingers.clear()
  move_id = -1
- aim_id = -1
- sprint_id = -1
- power_id = -1
- angle_id = -1
- mouse_aim = false
- mobile_sprint = false
+ camera_id = -1
  move_value = Vector2.ZERO
- aim_value = Vector2.ZERO
- if is_instance_valid(game) and is_instance_valid(game.athlete):
-  game.athlete.cancel_input()
+ game.athlete.cancel_input()
+ game.cancel_action("")
 
 func _notification(what: int) -> void:
- if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+ if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_instance_valid(game):
   _cancel()
 
 func _input(event: InputEvent) -> void:
- if event is InputEventKey and event.pressed and not event.echo:
-  if event.physical_keycode == KEY_ESCAPE:
+ if event is InputEventKey and not event.echo:
+  if not key_capture.is_empty() and event.pressed:
+   if event.physical_keycode != KEY_ESCAPE:
+    if not settings.rebind(key_capture, event.physical_keycode):
+     key_buttons[key_capture].text = "Клавиша уже занята • выберите другую"
+     return
+    _save()
+   key_capture = ""
+   _refresh_keys()
+   get_viewport().set_input_as_handled()
+   return
+  if event.is_action_pressed("volley_pause"):
    toggle_menu()
    get_viewport().set_input_as_handled()
    return
-  if menu.visible:
+  if menu.visible or edit_mode:
    return
-  if event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_6:
-   game.athlete.select_technique(event.physical_keycode - KEY_1)
-  match event.physical_keycode:
-   KEY_SPACE: game.athlete.jump()
-   KEY_R: game.repeat_drill()
-   KEY_F: game.pickup_or_drop()
-   KEY_T: game.ball.toss()
-   KEY_Z: _set_power(game.athlete.power - 0.05); _save()
-   KEY_X: _set_power(game.athlete.power + 0.05); _save()
- # Native GUI receives emulated mouse events in menus. Gameplay never counts
- # an emulated mouse as a second copy of the same finger.
+  for key in ["primary", "secondary", "jump", "dive", "jump_set", "next", "pickup", "lock"]:
+   if event.is_action_pressed("volley_" + key):
+    _press(key)
+   elif event.is_action_released("volley_" + key):
+    _release(key)
  if menu.visible:
   return
  if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
   return
  if event is InputEventScreenTouch:
   if event.canceled:
-   _touch_cancel(event.index)
+   _touch_up(event.index, true)
   elif event.pressed:
    _touch_down(event.index, event.position)
   else:
    _touch_up(event.index)
  elif event is InputEventScreenDrag:
-  _touch_move(event.index, event.position)
- elif event is InputEventMouseButton:
-  if event.button_index == MOUSE_BUTTON_RIGHT:
-   if event.pressed:
-    mouse_aim = true
-    mouse_origin = event.position
-    aim_value = Vector2.ZERO
-    game.athlete.prepare()
-   elif mouse_aim:
-    mouse_aim = false
-    game.release_action()
-  elif event.button_index == MOUSE_BUTTON_LEFT:
+  _touch_move(event.index, event.position, event.relative)
+ elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+  if edit_mode or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
    if event.pressed:
     _touch_down(1000, event.position)
+    if fingers.get(1000) == "camera" and not edit_mode:
+     fingers[1000] = "primary"
+     camera_id = -1
+     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+     if settings.keys.primary < 0:
+      _press("primary")
    else:
     _touch_up(1000)
+  elif event.pressed and settings.keys.primary < 0:
+   _press("primary")
+  elif not event.pressed and settings.keys.primary < 0:
+   _release("primary")
  elif event is InputEventMouseMotion:
-  if mouse_aim:
-   _aim((event.position - mouse_origin) / (120.0 / float(config.sensitivity)))
-  _touch_move(1000, event.position)
+  if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not edit_mode:
+   game.rig.look(event.relative)
+  else:
+   _touch_move(1000, event.position, event.relative)
+
+func _press(role: String) -> void:
+ match role:
+  "primary": game.begin_primary()
+  "secondary": game.begin_secondary()
+  "jump_set": game.begin_jump_set()
+  "jump": game.athlete.jump()
+  "dive": game.athlete.dive()
+  "menu": toggle_menu()
+  "next": game.repeat_drill()
+  "context", "pickup": game.pickup_or_drop()
+  "lock":
+   settings.shift_lock = not settings.shift_lock
+   game.athlete.shift_lock = settings.shift_lock
+   _save()
+
+func _release(role: String) -> void:
+ if role in ["primary", "secondary", "jump_set"]:
+  game.finish_action(role)
 
 func _touch_down(id: int, pos: Vector2) -> void:
- if power_rect.has_point(pos) and power_id == -1:
-  power_id = id
-  _touch_move(id, pos)
+ if fingers.has(id):
   return
- if angle_rect.has_point(pos) and angle_id == -1:
-  angle_id = id
-  _touch_move(id, pos)
+ if edit_mode and editor_bar.get_global_rect().has_point(pos):
   return
  for key in buttons:
-  if buttons[key].rect.has_point(pos):
-   if key.begins_with("tech_"):
-    game.athlete.select_technique(int(key.trim_prefix("tech_")))
-   match key:
-    "menu": toggle_menu()
-    "feed": game.repeat_drill()
-    "drill": game.training.selected = (game.training.selected + 1) % 6
-    "jump": game.athlete.jump()
-    "pickup": game.pickup_or_drop()
-    "toss": game.ball.toss()
-    "serve_start": game.serve_start()
-    "sprint":
-     if sprint_id == -1:
-      sprint_id = id
-      mobile_sprint = true
+  if (buttons[key].visible or edit_mode) and buttons[key].rect.has_point(pos):
+   if edit_mode:
+    edit_selected = key
+    editor_scale.set_value_no_signal(settings.layout.get(key, Vector3(0, 0, 1)).z)
+    fingers[id] = "edit:" + key
+   elif key not in fingers.values():
+    fingers[id] = key
+    _press(key)
    return
- if pos.distance_to(left_center) < radius * 1.1 and move_id == -1:
-  move_id = id
-  _touch_move(id, pos)
- elif pos.distance_to(right_center) < radius * 1.1 and aim_id == -1 and not mouse_aim:
-  aim_id = id
-  game.athlete.prepare()
-  _touch_move(id, pos)
+ if pos.distance_to(left_center) < radius * 1.2 and move_id == -1:
+  if edit_mode:
+   edit_selected = "move"
+   editor_scale.set_value_no_signal(settings.layout.get("move", Vector3(0, 0, 1)).z)
+   fingers[id] = "edit:move"
+  else:
+   move_id = id
+   fingers[id] = "move"
+   _touch_move(id, pos)
+ elif camera_id == -1 and not edit_mode:
+  camera_id = id
+  fingers[id] = "camera"
 
-func _touch_move(id: int, pos: Vector2) -> void:
- if id == move_id:
+func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
+ var role: String = fingers.get(id, "")
+ if role == "move":
   move_value = ((pos - left_center) / radius).limit_length()
-  if move_value.length() < 0.12:
+  if move_value.length() < 0.10:
    move_value = Vector2.ZERO
- if id == aim_id:
-  _aim((pos - right_center) / radius * float(config.sensitivity))
- if id == power_id:
-  _set_power(_range_fraction(power_rect, pos))
- if id == angle_id:
-  game.athlete.elevation = snappedf(lerpf(-60, 85, _range_fraction(angle_rect, pos)), 1)
+ elif role == "camera":
+  game.rig.look(relative)
+ elif role.begins_with("edit:"):
+  var key := role.trim_prefix("edit:")
+  settings.layout[key] = Vector3(clampf(pos.x / size.x, 0.04, 0.96), clampf(pos.y / size.y, 0.1, 0.94), editor_scale.value)
+  _layout()
 
-func _range_fraction(rect: Rect2, pos: Vector2) -> float:
- return clampf((pos.x - rect.position.x - 20) / (rect.size.x - 40), 0, 1)
-
-func _set_power(value: float) -> void:
- game.athlete.power = clampf(snappedf(value, 0.05), 0.05, 1)
-
-func _aim(value: Vector2) -> void:
- aim_value = value.limit_length()
- if aim_value.length() > 0.18:
-  game.athlete.aim = aim_value.normalized()
-
-func _touch_up(id: int) -> void:
- if id == move_id:
+func _touch_up(id: int, canceled := false) -> void:
+ if not fingers.has(id):
+  return
+ var role: String = fingers.get(id, "")
+ fingers.erase(id)
+ if role == "move":
   move_id = -1
   move_value = Vector2.ZERO
- if id == aim_id:
-  aim_id = -1
-  game.release_action()
-  aim_value = Vector2.ZERO
- if id == sprint_id:
-  sprint_id = -1
-  mobile_sprint = false
- if id == power_id:
-  power_id = -1
-  _save()
- if id == angle_id:
-  angle_id = -1
+ elif role == "camera":
+  camera_id = -1
+ elif canceled:
+  game.cancel_action(role)
+ elif not edit_mode:
+  _release(role)
 
-func _touch_cancel(id: int) -> void:
- if id == aim_id:
-  aim_id = -1
-  aim_value = Vector2.ZERO
-  if game.athlete.action == VolleyAthlete.Action.PREPARE:
-   game.athlete.action = VolleyAthlete.Action.IDLE
- _touch_up(id)
-
-func _process(dt: float) -> void:
- if not menu.visible:
-  var keyboard := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)), float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
-  game.athlete.move_axis = (keyboard + move_value).limit_length()
-  game.athlete.sprint = mobile_sprint or Input.is_physical_key_pressed(KEY_SHIFT)
-  var angle_change := float(Input.is_physical_key_pressed(KEY_E)) - float(Input.is_physical_key_pressed(KEY_Q))
-  game.athlete.elevation = clampf(game.athlete.elevation + angle_change * dt * 35, -60, 85)
- var a: VolleyAthlete = game.athlete
- status.text = a.last_result
- debug_label.text = "Мяч %.1f м/с • %d FPS\nКасание %d%% • %+.1f° • %s" % [game.ball.linear_velocity.length(), Engine.get_frames_per_second(), int(a.quality * 100), a.deviation, ["ПОКОЙ", "ПРИЦЕЛ", "УДАР", "ВОЗВРАТ"][a.action]]
- buttons.drill.text = "Упражнение: " + VolleyTraining.NAMES[game.training.selected] + "  ›"
- buttons.pickup.text = "ОПУСТИТЬ  F" if game.ball.held else "ПОДОБРАТЬ  F"
+func _process(_dt: float) -> void:
+ var a: ContextAthlete = game.athlete
+ if not menu.visible and not edit_mode:
+  var keyboard := Input.get_vector("volley_left", "volley_right", "volley_forward", "volley_back")
+  var axis := (keyboard + move_value).limit_length()
+  a.move_axis = game.rig.movement(axis)
+  a.tilt = axis
+ buttons.primary.text = "ПОДБРОС" if game.ball.held else "ПОДАЧА" if game.serving and not a.airborne() else "АТАКА" if a.airborne() else "ПРИЁМ"
+ buttons.secondary.text = "БЛОК" if a.airborne() else "ПАС"
+ buttons.jump.text = "ПРЫЖОК"
+ buttons.dive.text = "ПОДКАТ"
+ buttons.jump_set.text = "ПАС ↑"
+ buttons.menu.text = "≡"
+ buttons.next.text = "↻"
+ buttons.lock.text = "●" if a.shift_lock else "○"
+ buttons.context.text = "ОПУСТИТЬ • F" if game.ball.held else "ПОДОБРАТЬ • F"
+ buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.ball.held
+ buttons.context.visible = game.ball.held or game.ball.can_pick_up()
+ status.text = VolleyTraining.NAMES[game.training.selected] + "  •  " + (game.rules.message if game.rules.ended else a.last_result)
+ if edit_mode:
+  status.text = ""
  queue_redraw()
 
 func _draw() -> void:
- if not is_instance_valid(game) or buttons.is_empty():
+ if buttons.is_empty():
   return
- draw_style_box(_panel(Color("102536")), Rect2(40, 16, 340, 151))
- for center in [left_center, right_center]:
-  draw_circle(center, radius, Color(0.04, 0.1, 0.16, 0.85))
-  draw_arc(center, radius, 0, TAU, 64, Color("62889b"), 2, true)
- draw_circle(left_center + move_value * radius * 0.65, radius * 0.28, Color("c1d5dd"))
- draw_circle(right_center + aim_value * radius * 0.65, radius * 0.28, Color("f5cf70"))
- for center in [left_center, right_center]:
-  draw_style_box(_panel(Color("102536")), Rect2(center + Vector2(-86, radius + 5), Vector2(172, 28)))
- draw_string(font, left_center + Vector2(-55, radius + 25), "ДВИЖЕНИЕ", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("c1d5dd"))
- draw_string(font, right_center + Vector2(-70, radius + 25), "НАПРАВЛЕНИЕ", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("f5cf70"))
+ draw_circle(left_center, radius, Color(0.04, 0.10, 0.15, 0.48))
+ draw_arc(left_center, radius, 0, TAU, 60, Color(0.7, 0.83, 0.88, 0.6), 2, true)
+ draw_circle(left_center + move_value * radius * 0.6, radius * 0.31, Color(0.8, 0.89, 0.91, 0.75))
  for key in buttons:
+  if not buttons[key].visible and not edit_mode:
+   continue
   var rect: Rect2 = buttons[key].rect
-  var selected: bool = key == "tech_%d" % game.athlete.technique
-  var color := Color("a87535") if selected or key == "jump" else Color("26485d")
-  draw_style_box(_panel(color), rect)
-  draw_string(font, rect.position + Vector2(8, rect.size.y * 0.5 + 6), buttons[key].text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 16, 16, Color.WHITE)
- _draw_range(power_rect, game.athlete.power, "СИЛА  %d%%  •  фиксирована" % int(game.athlete.power * 100), Color("f4cb6b"))
- _draw_range(angle_rect, (game.athlete.elevation + 60) / 145.0, "УГОЛ  %d°  •  вниз / вверх" % int(game.athlete.elevation), Color("a1dbe3"))
- draw_rect(Rect2(left_center.x - 75, left_center.y - radius - 12, 150 * game.athlete.energy, 4), Color("e4bd61"))
+  var active: bool = key in fingers.values() or (edit_mode and key == edit_selected)
+  var color := Color(0.14, 0.27, 0.34, 0.66)
+  if key in ["primary", "jump"]:
+   color = Color(0.75, 0.57, 0.25, 0.72)
+  if active:
+   color = Color("b78d45")
+  draw_style_box(_panel(color, int(rect.size.y * 0.38)), rect)
+  draw_string(font, rect.position + Vector2(4, rect.size.y * 0.5 + 5), buttons[key].text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8, 14 if key not in ["menu", "next", "lock"] else 25, Color("f2f1e9"))
+ if game.athlete.action == VolleyAthlete.Action.PREPARE and not edit_mode:
+  var at := Vector2(size.x * 0.5 - 90, size.y - 108)
+  draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.8)), Rect2(at - Vector2(10, 23), Vector2(200, 48)))
+  draw_string(font, at - Vector2(0, 5), "СИЛА  %d%%" % int(game.athlete.power * 100), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color("f4cf77"))
+  draw_line(at + Vector2(0, 12), at + Vector2(180, 12), Color("334d5c"), 5)
+  draw_line(at + Vector2(0, 12), at + Vector2(180 * game.athlete.power, 12), Color("f4cf77"), 5)
+ draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
 
-func _draw_range(rect: Rect2, fraction: float, title: String, color: Color) -> void:
- draw_style_box(_panel(Color("102536")), rect)
- draw_string(font, rect.position + Vector2(18, 23), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, color)
- var start := rect.position + Vector2(20, 46)
- draw_line(start, start + Vector2(rect.size.x - 40, 0), Color("425969"), 6, true)
- draw_line(start, start + Vector2((rect.size.x - 40) * fraction, 0), color, 6, true)
- draw_circle(start + Vector2((rect.size.x - 40) * fraction, 0), 12, color)
-
-func _panel(color: Color) -> StyleBoxFlat:
+func _panel(color: Color, corners := 12) -> StyleBoxFlat:
  var style := StyleBoxFlat.new()
  style.bg_color = color
- style.set_corner_radius_all(10)
+ style.set_corner_radius_all(corners)
+ style.content_margin_left = 12
+ style.content_margin_right = 12
+ style.content_margin_top = 8
+ style.content_margin_bottom = 8
  return style
