@@ -7,6 +7,7 @@ func capture() -> void:
  var scene := load("res://scenes/Main.tscn") as PackedScene
  var game := scene.instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  if OS.get_environment("VOLLEY_CAPTURE_SERVE") == "1":
   game.training.selected = 5
   game.start_drill()

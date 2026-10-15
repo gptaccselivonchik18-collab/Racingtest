@@ -71,6 +71,7 @@ func serve_trial(jumping: bool, release_frame: int) -> bool:
 func run() -> void:
  game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  game.hud.set_process(false)
  await frames(20)
  for drill in [0, 1, 2, 3, 4, 7]:

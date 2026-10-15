@@ -9,6 +9,8 @@ signal surface_contact(surface: String)
 var previous_center := Vector3.ZERO
 var previous_center_valid := false
 
+var contact_athletes: Array = []
+var replica := false
 var athlete: VolleyAthlete
 var acceleration := Vector3.ZERO
 var last_velocity := Vector3.ZERO
@@ -76,10 +78,12 @@ func aiming_throw() -> bool:
  return held and held_mode == HeldMode.THROW
 
 func throw_velocity() -> Vector3:
- var start := athlete.hold_position()
- var upward := upward_for_height(throw_height)
+ return solve_launch(athlete.hold_position(), throw_target, throw_height)
+
+func solve_launch(start: Vector3, destination: Vector3, apex: float) -> Vector3:
+ var upward := upward_for_height(apex)
  var flight_time := (upward + sqrt(upward * upward + 2 * 9.81 * maxf(0, start.y - VolleyAthlete.BALL_RADIUS))) / 9.81
- var offset := throw_target - start
+ var offset := destination - start
  offset.y = 0
  var speed := offset / flight_time + Vector3.UP * upward
  # Solve launch velocity before release. The free ball receives no guidance.
@@ -94,7 +98,7 @@ func throw_velocity() -> Vector3:
    time += step
    if at.y <= VolleyAthlete.BALL_RADIUS:
     break
-  var correction := (throw_target - at) / maxf(time, 0.1)
+  var correction := (destination - at) / maxf(time, 0.1)
   correction.y = 0
   speed += correction
  return speed
@@ -123,12 +127,15 @@ func preview_points() -> PackedVector3Array:
  return points
 
 func can_pick_up() -> bool:
- if held or pending_feed or linear_velocity.length() > 3.0:
+ return can_pick_up_for(athlete)
+
+func can_pick_up_for(candidate: VolleyAthlete) -> bool:
+ if held or pending_feed or (last_velocity if replica else linear_velocity).length() > 3.0:
   return false
- var offset := global_position - athlete.global_position
+ var offset := global_position - candidate.global_position
  if Vector2(offset.x, offset.z).length() > 1.15 or offset.y > 1.8 or offset.y < -0.2:
   return false
- var ray := PhysicsRayQueryParameters3D.create(athlete.global_position + Vector3(0, 1.0, 0), global_position, 1)
+ var ray := PhysicsRayQueryParameters3D.create(candidate.global_position + Vector3(0, 1.0, 0), global_position, 1)
  return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 
 func pick_up() -> bool:
@@ -154,7 +161,7 @@ func pick_up() -> bool:
  return true
 
 func _physics_process(_dt: float) -> void:
- if held:
+ if held and not replica:
   global_position = athlete.hold_position()
 
 func drop() -> void:
@@ -208,6 +215,8 @@ func _ready() -> void:
  ball_mesh.material_override = material
 
 func feed(at: Vector3, speed: Vector3) -> void:
+ if replica:
+  return
  held = false
  athlete.holding_ball = false
  freeze = false
@@ -219,6 +228,8 @@ func feed(at: Vector3, speed: Vector3) -> void:
  previous_center_valid = false
 
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+ if replica:
+  return
  if pending_feed:
   state.transform = Transform3D(Basis.IDENTITY, feed_position)
   state.linear_velocity = feed_velocity
@@ -235,15 +246,16 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   # hands through the net. The rigid-body CCD handles the world collision.
   var ray := PhysicsRayQueryParameters3D.create(from, center, 1)
   var obstacle := get_world_3d().direct_space_state.intersect_ray(ray) if from.distance_to(center) > 0.001 else {}
-  var delta_v := Vector3.ZERO
   if obstacle.is_empty():
-   if athlete is ContextAthlete:
-    delta_v = athlete.try_swept_contact(from, center, state.linear_velocity)
-   else:
-    delta_v = athlete.try_contact(center, state.linear_velocity)
-  if delta_v != Vector3.ZERO:
-   state.apply_central_impulse(delta_v * mass)
-   state.angular_velocity = (state.angular_velocity + athlete.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
+   var candidates: Array = contact_athletes if not contact_athletes.is_empty() else [athlete]
+   for candidate in candidates:
+    if not is_instance_valid(candidate) or (candidate is ContextAthlete and candidate.lower_serve_active):
+     continue
+    var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
+    if delta_v != Vector3.ZERO:
+     state.apply_central_impulse(delta_v * mass)
+     state.angular_velocity = (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
+     break
   previous_center = center
   previous_center_valid = true
  # Approximate, bounded Magnus force; no target or player tracking.

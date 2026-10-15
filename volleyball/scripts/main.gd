@@ -12,6 +12,9 @@ var previous_ball := Vector3.ZERO
 var previous_ball_valid := false
 var hud: VolleyHUD
 var ball_shadow: MeshInstance3D
+var lan: VolleyLAN
+var frontend: VolleyFrontend
+var lower_serve: VolleyLowerServe
 
 func _ready() -> void:
  if OS.get_name() in ["iOS", "Android"]:
@@ -25,6 +28,7 @@ func _ready() -> void:
  ball.athlete = athlete
  add_child(ball)
  ball.position = Vector3(0, 0.2, 1)
+ athlete.serve_solver = ball.solve_launch
  var preview := VolleyTossPreview.new()
  preview.ball = ball
  add_child(preview)
@@ -42,6 +46,15 @@ func _ready() -> void:
  hud = VolleyHUD.new()
  hud.game = self
  layer.add_child(hud)
+ lan = VolleyLAN.new()
+ lan.game = self
+ add_child(lan)
+ lower_serve = VolleyLowerServe.new()
+ lower_serve.game = self
+ layer.add_child(lower_serve)
+ frontend = VolleyFrontend.new()
+ frontend.game = self
+ layer.add_child(frontend)
 
 func _court() -> void:
  var world := WorldEnvironment.new()
@@ -98,10 +111,12 @@ func _court() -> void:
 
 func _process(_dt: float) -> void:
  ball_shadow.position = Vector3(ball.position.x, 0.037, ball.position.z)
- if ball.position.y < -3 or ball.position.length() > 45:
+ if (not lan.active or lan.hosting) and (ball.position.y < -3 or ball.position.length() > 45):
   ball.feed(Vector3(0, 0.3, 1), Vector3.ZERO)
 
 func _physics_process(_dt: float) -> void:
+ if lan.active and not lan.hosting:
+  return
  if not ball.held and not ball.pending_feed:
   if previous_ball_valid:
    rules.crossing(previous_ball, ball.global_position)
@@ -118,20 +133,45 @@ func _physics_process(_dt: float) -> void:
    if absf(wrist.z) < VolleyAthlete.HAND_RADIUS + 0.025 and absf(wrist.x) < 4.5 and wrist.y >= 1.43 and wrist.y <= 2.49:
     rules.net_contact(true)
 
-func _on_touch(kind: int, _point: Vector3, _outgoing: Vector3) -> void:
- var side := 0 if athlete.position.z >= 0 else 1
- rules.touch(side, 0, kind, athlete.strike_count)
+func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
+ _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
+
+func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
+ var side: int = lan.players[id].team if lan.active and lan.players.has(id) else (0 if actor.position.z >= 0 else 1)
+ rules.touch(side, id, kind, actor.strike_count)
+ if lan.active:
+  lan.last_touch_team = side
+  lan.round_live = true
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
-  rules.serve_contact(athlete.jump_origin if kind == VolleyAthlete.Technique.JUMP_SERVE else athlete.position)
+  rules.serve_contact(actor.jump_origin if kind == VolleyAthlete.Technique.JUMP_SERVE else actor.position)
   serving = false
 
+func holding_ball() -> bool:
+ return ball.held and ball.athlete == athlete
+
+func begin_bump() -> bool:
+ if not action_owner.is_empty() or holding_ball():
+  return false
+ if athlete.begin_action(VolleyAthlete.Technique.UNDERHAND):
+  action_owner = "bump"
+  return true
+ return false
+
 func _on_surface(surface: String) -> void:
+ if lan.active and not lan.hosting:
+  return
  if surface == "floor":
   rules.floor_contact(ball.global_position)
+  if lan.active and lan.round_live:
+   lan.award_floor(ball.global_position)
  elif surface == "antenna":
   rules.net_contact(false, true)
 
 func repeat_drill() -> void:
+ if lan.active:
+  lan.local_action("next")
+  return
+ lower_serve.cancel_sequence()
  action_owner = ""
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE
@@ -142,6 +182,9 @@ func repeat_drill() -> void:
  training.launch(ball, athlete)
 
 func start_drill() -> void:
+ if lan.active:
+  repeat_drill()
+  return
  athlete.dive_time = -1
  athlete.dive_cooldown = 0
  athlete.visual.rotation.x = 0
@@ -159,6 +202,8 @@ func start_drill() -> void:
  repeat_drill()
 
 func reset_player() -> void:
+ if lan.active:
+  return
  athlete.position = Vector3(0, 0.02, 4)
  athlete.velocity = Vector3.ZERO
  athlete.visual.rotation = Vector3.ZERO
@@ -172,9 +217,11 @@ func reset_player() -> void:
  action_owner = ""
 
 func running_approach() -> bool:
- return not ball.held and not athlete.airborne() and athlete.move_axis.length() > 0.65 and Vector2(athlete.velocity.x, athlete.velocity.z).length() > 1.0
+ return not holding_ball() and not athlete.airborne() and athlete.move_axis.length() > 0.65 and Vector2(athlete.velocity.x, athlete.velocity.z).length() > 1.0
 
 func begin_approach() -> bool:
+ if lan.active and not lan.executing:
+  return lan.local_action("approach")
  if not action_owner.is_empty() or ball.held or not athlete.arm_approach(VolleyAthlete.Technique.JUMP_SERVE if serving else VolleyAthlete.Technique.SPIKE):
   return false
  action_owner = "approach"
@@ -223,6 +270,9 @@ func begin_jump_set() -> bool:
  return false
 
 func finish_action(role: String) -> void:
+ if lan.active and not lan.executing:
+  lan.local_action(role, "release")
+  return
  if action_owner != role:
   return
  if athlete.approach_armed:
@@ -240,6 +290,9 @@ func finish_action(role: String) -> void:
  action_owner = ""
 
 func cancel_action(role: String) -> void:
+ if is_instance_valid(lan) and lan.active and not lan.executing:
+  lan.local_action("cancel" if role.is_empty() else role, "cancel")
+  return
  if role.is_empty() or role == action_owner:
   athlete.cancel_input()
   action_owner = ""

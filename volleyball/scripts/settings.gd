@@ -1,8 +1,8 @@
 class_name VolleySettings
 extends RefCounted
 const PATH := "user://context_controls.cfg"
-const DEFAULT_KEYS := {"forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "primary": -MOUSE_BUTTON_LEFT, "secondary": KEY_Q, "jump": KEY_SPACE, "dive": KEY_CTRL, "jump_set": KEY_E, "pause": KEY_ESCAPE, "next": KEY_R, "pickup": KEY_F, "lock": KEY_SHIFT}
-const KEY_LABELS := {"forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Приём / атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
+const DEFAULT_KEYS := {"bump": KEY_X, "lower_serve": KEY_V, "forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "primary": -MOUSE_BUTTON_LEFT, "secondary": KEY_Q, "jump": KEY_SPACE, "dive": KEY_CTRL, "jump_set": KEY_E, "pause": KEY_ESCAPE, "next": KEY_R, "pickup": KEY_F, "lock": KEY_SHIFT}
+const KEY_LABELS := {"bump": "Нижний приём", "lower_serve": "Нижняя подача", "forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Приём / атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
 var keys := DEFAULT_KEYS.duplicate()
 var layout := {}
 var sensitivity := 1.0

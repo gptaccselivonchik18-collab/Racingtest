@@ -37,6 +37,7 @@ func swing() -> void:
 func run() -> void:
  game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  a = game.athlete
  b = game.ball
  game.hud.set_process(false)
@@ -72,7 +73,7 @@ func run() -> void:
  var near := a.wrists[1] + Vector3(0, 0, 0.28)
  check(a.try_contact(near, Vector3.DOWN * 4).length() > 0.1, "Previously missed 28 cm offset now produces contact")
  swing()
- check(a.try_contact(a.wrists[1] + Vector3(0, 0, 0.5), Vector3.DOWN * 4) == Vector3.ZERO, "50 cm offset still misses without attraction")
+ check(a.try_contact(a.wrists[1] + Vector3(0, 0, 0.8), Vector3.DOWN * 4) == Vector3.ZERO, "80 cm offset still misses without attraction")
  swing()
  var hand := a.wrists[1]
  var obstacle := VolleyGeometry.collider(game, hand + Vector3(0, 0, 0.14), Vector3(1, 1, 0.035))
@@ -142,7 +143,7 @@ func run() -> void:
  check(b.aiming_throw() and b.throw_velocity().distance_to(throw_before) > 1, "Throw mode supports independent landing target aiming")
  game.begin_primary()
  check(not b.held and b.pending_feed, "Primary launches the aimed throw with one tap")
- check(hud.buttons.size() == 9, "Aiming and Tilt do not add permanent control buttons")
+ check(hud.buttons.size() == 11, "Explicit lower receive and contextual lower serve are present")
  game.queue_free()
  await process_frame
  print("V4 TESTS PASSED (%d checks)" % checks if failures == 0 else "V4 TESTS FAILED %d" % failures)

@@ -16,6 +16,7 @@ func frames(n: int) -> void:
 func run() -> void:
  var game: Node3D = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  await frames(20)
  var ui: VolleyHUD = game.hud
  var a: ContextAthlete = game.athlete

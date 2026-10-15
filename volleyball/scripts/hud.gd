@@ -43,7 +43,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context"]:
+ for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -59,7 +59,7 @@ func _layout() -> void:
   var screen := DisplayServer.screen_get_size()
   if screen.x > 0:
    margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
- var defaults := {"primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ var defaults := {"bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
  for key in defaults:
   var at: Vector2 = defaults[key]
   var scale_value := settings.button_scale
@@ -74,7 +74,7 @@ func _layout() -> void:
   var side := 88.0 * scale_value
   if key == "primary":
    side = 98 * scale_value
-  elif key == "jump_set":
+  elif key in ["jump_set", "bump"]:
    side = 68 * scale_value
   elif key in ["menu", "lock", "next"]:
    side = 46
@@ -116,7 +116,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.5"
+ title.text = "   VOLLEY / LAB  0.6"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -136,7 +136,7 @@ func _menu() -> void:
  strict_box.toggled.connect(func(on: bool): game.rules.strict = on; game.rules.reset())
  practice.add_child(strict_box)
  var help := Label.new()
- help.text = "ЛКМ: приём / атака. Q: пас / блок. E: пас в прыжке.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: перевести палец с джойстика на АТАКУ и отпустить → прыжок.\nИли на бегу нажать и отпустить АТАКУ другим пальцем. Следующий нажим → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
+ help.text = "ЛКМ: приём / атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: перевести палец с джойстика на АТАКУ и отпустить → прыжок.\nИли на бегу нажать и отпустить АТАКУ другим пальцем. Следующий нажим → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
  help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  help.text += "\nНа ПК высота: колесо мыши. Tilt: джойстик / WASD до контакта.\nОбычный удар без комбинации: удерживать для меньшей силы, отпустить для касания."
  practice.add_child(help)
@@ -172,7 +172,17 @@ func _menu() -> void:
  for key in game.athlete.stats.values:
   var stat_key: String = key
   stat_sliders[key] = _slider(testing, AthleteStats.LABELS[key], 1, 100, game.athlete.stats.values[key], func(v: float): game.athlete.stats.set_stat(stat_key, v); _save())
- _native_button(content, "Продолжить", toggle_menu)
+ _native_button(content, "Главное меню / выйти из комнаты", func():
+  _cancel()
+  menu.hide()
+  menu_blocker.hide()
+  get_tree().paused = false
+  game.lan.leave()
+  game.frontend.show_home())
+ _native_button(content, "Продолжить", func():
+  toggle_menu()
+  if game.frontend.in_home:
+   game.frontend.show_home())
 
 func _editor() -> void:
  editor_bar = PanelContainer.new()
@@ -204,7 +214,7 @@ func start_editor() -> void:
  menu_blocker.visible = false
  edit_mode = true
  editor_bar.visible = true
- get_tree().paused = true
+ get_tree().paused = not game.lan.active
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func end_editor() -> void:
@@ -268,7 +278,7 @@ func toggle_menu() -> void:
   return
  menu.visible = not menu.visible
  menu_blocker.visible = menu.visible
- get_tree().paused = menu.visible
+ get_tree().paused = menu.visible and not game.lan.active
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if menu.visible else Input.MOUSE_MODE_CAPTURED if OS.get_name() not in ["iOS", "Android"] else Input.MOUSE_MODE_VISIBLE
  _cancel()
 
@@ -288,6 +298,8 @@ func _notification(what: int) -> void:
   _cancel()
 
 func _input(event: InputEvent) -> void:
+ if not visible or (is_instance_valid(game.frontend) and game.frontend.blocks_input()):
+  return
  if event is InputEventKey and not event.echo:
   if not key_capture.is_empty() and event.pressed:
    if event.physical_keycode != KEY_ESCAPE:
@@ -305,7 +317,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["primary", "secondary", "jump", "dive", "jump_set", "next", "pickup", "lock"]:
+  for key in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -324,7 +336,7 @@ func _input(event: InputEvent) -> void:
    _touch_up(event.index)
  elif event is InputEventScreenDrag:
   _touch_move(event.index, event.position, event.relative)
- elif event is InputEventMouseButton and event.pressed and game.ball.held and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+ elif event is InputEventMouseButton and event.pressed and game.holding_ball() and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
   game.ball.set_release_height(game.ball.release_height() + (0.1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -0.1))
  elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
   if edit_mode or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -355,13 +367,18 @@ func _press(role: String, source := -2) -> bool:
  role_owners[role] = source
  queued.erase(role)
  var accepted := _perform(role)
- if not accepted and role in ["primary", "secondary", "jump_set", "jump"] and game.action_owner.is_empty():
+ if not accepted and role in ["primary", "secondary", "jump_set", "bump", "jump"] and game.action_owner.is_empty():
   if game.athlete.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] or game.athlete.jump_windup > 0 or (role == "jump" and game.athlete.velocity.y < 0):
    queued[role] = {"source": source, "remaining": 0.16, "released": false}
  return accepted
 
 func _perform(role: String) -> bool:
+ if role == "lower_serve":
+  return game.lower_serve.open()
+ if game.lan.active and role not in ["menu", "lock"]:
+  return game.lan.local_action(role)
  match role:
+  "bump": return game.begin_bump()
   "primary": return game.begin_primary()
   "secondary": return game.begin_secondary()
   "jump_set": return game.begin_jump_set()
@@ -371,7 +388,7 @@ func _perform(role: String) -> bool:
    game.athlete.jump()
    return game.athlete.velocity.y > 0.1
   "dive":
-   if game.ball.held:
+   if game.holding_ball():
     return false
    var did_dive: bool = game.athlete.dive()
    if did_dive:
@@ -399,7 +416,7 @@ func _release(role: String, source := -2, canceled := false) -> void:
  if canceled:
   game.cancel_action(role)
   return
- if role in ["primary", "secondary", "jump_set"]:
+ if role in ["primary", "secondary", "jump_set", "bump"]:
   game.finish_action(role)
 
 func _advance_buffers(dt: float) -> void:
@@ -413,7 +430,7 @@ func _advance_buffers(dt: float) -> void:
   if _perform(role):
    var released: bool = queued[role].released
    queued.erase(role)
-   if released and role in ["primary", "secondary", "jump_set"]:
+   if released and role in ["primary", "secondary", "jump_set", "bump"]:
     game.finish_action(role)
 
 func _button_at(pos: Vector2, padding := 12.0) -> String:
@@ -435,10 +452,13 @@ func _sync_axes() -> void:
  game.athlete.tilt = axis
 
 func _refresh_context() -> void:
+ buttons.next.visible = not game.lan.active or game.lan.hosting
+ buttons.bump.visible = not game.holding_ball()
+ buttons.lower_serve.visible = game.holding_ball()
  var a: ContextAthlete = game.athlete
- buttons.dive.visible = not game.ball.held
- buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.ball.held
- buttons.context.visible = game.ball.held or game.ball.can_pick_up()
+ buttons.dive.visible = not game.holding_ball()
+ buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.holding_ball()
+ buttons.context.visible = game.holding_ball() or game.ball.can_pick_up_for(game.athlete)
 
 func _touch_down(id: int, pos: Vector2) -> void:
  _sync_held_state()
@@ -449,7 +469,7 @@ func _touch_down(id: int, pos: Vector2) -> void:
  if edit_mode and editor_bar.get_global_rect().has_point(pos):
   return
  finger_positions[id] = pos
- if game.ball.held and not edit_mode and height_rect.grow(12).has_point(pos) and "height" not in fingers.values():
+ if game.holding_ball() and not edit_mode and height_rect.grow(12).has_point(pos) and "height" not in fingers.values():
   fingers[id] = "height"
   _touch_move(id, pos)
   return
@@ -482,7 +502,7 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   return
  finger_positions[id] = pos
  if role == "move":
-  if not game.ball.held and game.running_approach() and buttons.primary.rect.grow(16).has_point(pos) and game.begin_approach():
+  if not game.holding_ball() and game.running_approach() and buttons.primary.rect.grow(16).has_point(pos) and game.begin_approach():
    fingers[id] = "approach"
    return
   if pos.distance_to(left_center) > radius * 1.7 and move_value.length() > 0.65:
@@ -501,17 +521,17 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   game.ball.set_release_height(lerpf(0.35, 3.5, fraction))
  elif role == "camera":
   var next := _button_at(pos, 0)
-  if next in ["primary", "secondary", "jump", "dive", "jump_set"] and not role_owners.has(next) and not game.ball.held:
+  if next in ["primary", "secondary", "jump", "dive", "jump_set", "bump"] and not role_owners.has(next) and not game.holding_ball():
    camera_id = -1
    fingers[id] = next
    _press(next, id)
-  elif game.ball.aiming_throw():
+  elif (game.holding_ball() and game.ball.aiming_throw()):
    game.ball.aim_throw_at(game.camera, pos)
   else:
    _look_or_aim(relative)
- elif role in ["primary", "secondary", "jump", "dive", "jump_set"]:
+ elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump"]:
   var next := _button_at(pos, 0)
-  if not next.is_empty() and next != role and next in ["primary", "secondary", "jump", "dive", "jump_set"] and not role_owners.has(next):
+  if not next.is_empty() and next != role and next in ["primary", "secondary", "jump", "dive", "jump_set", "bump"] and not role_owners.has(next):
    _release(role, id, true)
    fingers[id] = next
    _press(next, id)
@@ -521,8 +541,8 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   _layout()
 
 func _look_or_aim(relative: Vector2) -> void:
- if game.ball.held:
-  if game.ball.aiming_throw():
+ if game.holding_ball():
+  if (game.holding_ball() and game.ball.aiming_throw()):
    # On desktop the captured mouse moves the landing target on the floor.
    var right: Vector3 = game.rig.camera.global_basis.x
    var forward: Vector3 = -game.rig.camera.global_basis.z
@@ -561,43 +581,45 @@ func _touch_up(id: int, canceled := false) -> void:
   _sync_axes()
  elif role == "camera":
   camera_id = -1
-  if not canceled and game.ball.aiming_throw():
+  if not canceled and (game.holding_ball() and game.ball.aiming_throw()):
    game.ball.aim_throw_at(game.camera, pos)
  elif not edit_mode:
   var outside: bool = buttons.has(role) and not buttons[role].rect.grow(24).has_point(pos)
   _release(role, id, canceled or outside)
 
 func _sync_held_state() -> void:
- if held_snapshot != game.ball.held:
-  held_snapshot = game.ball.held
+ if held_snapshot != game.holding_ball():
+  held_snapshot = game.holding_ball()
   queued.clear()
   for id in fingers.keys():
-   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "height", "approach"]:
+   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "height", "approach"]:
     _touch_up(id, true)
   for role in role_owners.keys():
-   if role in ["primary", "secondary", "dive", "jump_set"]:
+   if role in ["primary", "secondary", "dive", "jump_set", "bump"]:
     _release(role, role_owners[role], true)
 
 func _process(dt: float) -> void:
  var a: ContextAthlete = game.athlete
  _sync_held_state()
- if not menu.visible and not edit_mode:
+ if not menu.visible and not edit_mode and visible and (not is_instance_valid(game.frontend) or not game.frontend.blocks_input()) and not is_instance_valid(game.lower_serve.busy_actor):
   _sync_axes()
   _advance_buffers(dt)
  _refresh_context()
- buttons.primary.text = ("БРОСИТЬ" if game.ball.aiming_throw() else "ПОДБРОС") if game.ball.held else "АТАКА" if a.airborne() or game.running_approach() or a.approach_armed or a.jump_windup > 0 else "ПОДАЧА" if game.serving else "ПРИЁМ"
- buttons.secondary.text = ("К ПОДАЧЕ" if game.ball.aiming_throw() else "ПРИЦЕЛ\nБРОСКА") if game.ball.held else "БЛОК" if a.airborne() else "ПАС"
+ buttons.primary.text = ("БРОСИТЬ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПОДБРОС") if game.holding_ball() else "АТАКА" if a.airborne() or game.running_approach() or a.approach_armed or a.jump_windup > 0 else "ПОДАЧА" if game.serving else "ПРИЁМ"
+ buttons.secondary.text = ("К ПОДАЧЕ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПРИЦЕЛ\nБРОСКА") if game.holding_ball() else "БЛОК" if a.airborne() else "ПАС"
+ buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
+ buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
  buttons.menu.text = "≡"
  buttons.next.text = "↻"
  buttons.lock.text = "●" if a.shift_lock else "○"
- buttons.context.text = "ОПУСТИТЬ • F" if game.ball.held else "ПОДОБРАТЬ • F"
+ buttons.context.text = "ОПУСТИТЬ • F" if game.holding_ball() else "ПОДОБРАТЬ • F"
  status.text = VolleyTraining.NAMES[game.training.selected] + "  •  " + (game.rules.message if game.rules.ended else a.last_result)
- if game.ball.held:
+ if game.holding_ball():
   status.text = "Подброс: +%.1f м над руками • высота ползунком • свайп: направление" % game.ball.release_height()
-  if game.ball.aiming_throw():
+  if (game.holding_ball() and game.ball.aiming_throw()):
    status.text = "Коснитесь места на площадке → БРОСИТЬ • высота ползунком"
  elif a.attack_ready or a.jump_windup > 0:
   status.text = "Прыжок с замахом • нажмите АТАКА для удара"
@@ -605,6 +627,8 @@ func _process(dt: float) -> void:
   status.text = "Отпустите на АТАКЕ → прыжок с замахом"
  elif game.running_approach():
   status.text = "Разбег: переведите палец на АТАКУ и отпустите → прыжок"
+ if game.lan.active:
+  status.text = "A %d : %d Б • %d/12 • " % [game.lan.scores[0], game.lan.scores[1], game.lan.players.size()] + (game.rules.message if game.rules.ended else a.last_result)
  if edit_mode:
   status.text = ""
  queue_redraw()
@@ -629,7 +653,7 @@ func _draw() -> void:
   var lines: PackedStringArray = buttons[key].text.split("\n")
   for line in range(lines.size()):
    draw_string(font, rect.position + Vector2(4, rect.size.y * 0.5 + 5 + (line - (lines.size() - 1) * 0.5) * 17), lines[line], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8, 14 if key not in ["menu", "next", "lock"] else 25, Color("f2f1e9"))
- if game.ball.held and not edit_mode:
+ if game.holding_ball() and not edit_mode:
   var fraction: float = (game.ball.release_height() - 0.35) / 3.15
   var middle := height_rect.get_center().x
   draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.75)), height_rect.grow(8))

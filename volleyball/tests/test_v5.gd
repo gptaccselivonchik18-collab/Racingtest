@@ -34,6 +34,7 @@ func reset() -> void:
 func run() -> void:
  game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  a = game.athlete
  b = game.ball
  ui = game.hud

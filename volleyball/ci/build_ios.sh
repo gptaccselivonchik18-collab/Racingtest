@@ -10,6 +10,19 @@ p = Path('export_presets.cfg')
 p.write_text(p.read_text().replace('application/app_store_team_id=""', 'application/app_store_team_id="0000000000"'))
 PY
 godot --headless --path . --export-release iOS build/ios/VolleyballSimulator.xcodeproj 2>&1 | tee build/logs/ios-export.log
+# Direct LAN UDP connections require the iOS local-network usage string.
+python3 - <<'PYPLIST'
+from pathlib import Path
+import plistlib
+for plist in Path('build/ios').rglob('*.plist'):
+    if 'Info' in plist.name:
+        try:
+            data = plistlib.loads(plist.read_bytes())
+        except Exception:
+            continue
+        data['NSLocalNetworkUsageDescription'] = 'Connect to a volleyball room on your Wi-Fi network or personal hotspot.'
+        plist.write_bytes(plistlib.dumps(data))
+PYPLIST
 xcodebuild -project build/ios/VolleyballSimulator.xcodeproj \
   -scheme VolleyballSimulator -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' -derivedDataPath build/ios/DerivedData \

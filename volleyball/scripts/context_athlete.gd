@@ -3,8 +3,12 @@ extends VolleyAthlete
 
 # The base resources stay intact; the additive rig refines limbs and poses.
 signal touched(kind: int, point: Vector3, outgoing: Vector3)
-@export var contact_ball_radius := 0.26
+@export var contact_ball_radius := 0.38
+@export var serve_contact_radius := 0.64
+var serve_solver: Callable
 @export var air_acceleration := 0.65
+var replica := false
+var lower_serve_active := false
 var approach_armed := false
 var jump_windup := 0.0
 var attack_ready := false
@@ -40,6 +44,8 @@ func _ready() -> void:
  last_result = "Выберите упражнение в меню • R — следующий мяч"
 
 func airborne() -> bool:
+ if replica:
+  return position.y > 0.06 or velocity.y > 0.1
  return not is_on_floor() or velocity.y > 0.1
 
 func can_act() -> bool:
@@ -72,6 +78,8 @@ func release() -> void:
   strike_duration = 0.46
  elif strike_technique == JUMP_SET:
   strike_duration = 0.24
+ elif strike_technique in [Technique.SERVE, Technique.JUMP_SERVE]:
+  strike_duration = 0.46
  action = Action.STRIKE
  action_time = 0
  hit_used = false
@@ -162,7 +170,7 @@ func direction_for(kind: int) -> Vector3:
   if kind == TIP:
    angle = 7 + tilt.y * 15
  elif kind in [Technique.SERVE, Technique.JUMP_SERVE]:
-  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(25))
+  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(12))
   angle = (16.0 if kind == Technique.SERVE else 7.0) + tilt.y * 12
  else:
   angle = clampf(rad_to_deg(camera_pitch), -45, 80) if kind == Technique.THROW else elevation
@@ -177,6 +185,8 @@ func contact_active() -> bool:
  if strike_technique == DIVE:
   return dive_time >= 0.10 and dive_time <= 0.56
  var phase := action_time / strike_duration
+ if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE]:
+  return phase >= 0.02 and phase <= 0.98
  if strike_technique == BLOCK:
   return phase >= 0.20 and phase <= 0.92 and airborne()
  return phase >= 0.12 and phase <= 0.90
@@ -358,17 +368,20 @@ func _adapt_platform(dt: float) -> void:
 func intersects_ball(center: Vector3) -> bool:
  return overlap_at(center, 1.0)
 
+func effective_contact_radius() -> float:
+ return serve_contact_radius if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] else contact_ball_radius
+
 func overlap_at(center: Vector3, fraction: float) -> bool:
  for i in range(2):
   if strike_technique in [Technique.SPIKE, Technique.SERVE, Technique.JUMP_SERVE, TIP] and i == 0:
    continue
   var wrist := previous_wrists[i].lerp(wrists[i], fraction)
-  if center.distance_to(wrist) <= contact_ball_radius + HAND_RADIUS and contact_clear(center, wrist):
+  if center.distance_to(wrist) <= effective_contact_radius() + HAND_RADIUS and contact_clear(center, wrist):
    return true
   if strike_technique in [Technique.UNDERHAND, DIVE]:
    var elbow := previous_elbows[i].lerp(elbows[i], fraction)
    var closest := Geometry3D.get_closest_point_to_segment(center, elbow, wrist)
-   if center.distance_to(closest) <= contact_ball_radius + FOREARM_RADIUS and contact_clear(center, closest):
+   if center.distance_to(closest) <= effective_contact_radius() + FOREARM_RADIUS and contact_clear(center, closest):
     return true
  return false
 
@@ -405,9 +418,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
  quality = clampf((0.45 + timing * 0.55) * lerpf(approach, 1, stats.n("control")) * lerpf(0.75, 1, stats.n("coordination")), 0.15, 1)
  var nearest := 1.0
  for i in range(2):
-  nearest = minf(nearest, last_contact_point.distance_to(wrists[i]) / (contact_ball_radius + HAND_RADIUS))
+  nearest = minf(nearest, last_contact_point.distance_to(wrists[i]) / (effective_contact_radius() + HAND_RADIUS))
   if strike_technique in [Technique.UNDERHAND, DIVE]:
-   nearest = minf(nearest, VolleyGeometry.distance_to_segment(last_contact_point, elbows[i], wrists[i]) / (contact_ball_radius + FOREARM_RADIUS))
+   nearest = minf(nearest, VolleyGeometry.distance_to_segment(last_contact_point, elbows[i], wrists[i]) / (effective_contact_radius() + FOREARM_RADIUS))
  quality *= lerpf(1.0, 0.65, clampf(nearest, 0, 1))
  var outgoing: Vector3
  if strike_technique == BLOCK:
@@ -431,6 +444,19 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    DIVE: speed = lerpf(5, 10, strike_power)
   speed *= strength * (0.7 + quality * 0.3) * rng.randf_range(0.98, 1.02)
   outgoing = direction * speed + incoming * (0.025 + (1 - stats.n("control")) * 0.13) + velocity * 0.12
+ if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] and serve_solver.is_valid():
+  var side := 1.0 if global_position.z >= 0 else -1.0
+  var horizontal := Vector3(strike_direction.x, 0, strike_direction.z).normalized()
+  if horizontal.z * side < -0.25:
+   # Choose the landing distance before contact instead of multiplying a
+   # fixed fast serve vector that overshoots the whole opponent court.
+   var depth := lerpf(2.0, 6.8, strike_power) + (stats.n("strength") - 0.5) * 0.8
+   var aim_z := -side * depth
+   var aim_x := last_contact_point.x + horizontal.x / absf(horizontal.z) * absf(aim_z - last_contact_point.z)
+   var aim := Vector3(aim_x, BALL_RADIUS, aim_z)
+   var apex := clampf((1.8 if strike_technique == Technique.JUMP_SERVE else 2.7) + tilt.y * 0.8, 1.0, 4.0)
+   var launch: Vector3 = serve_solver.call(last_contact_point, aim, apex)
+   outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(0.98, 1.02)
  last_result = "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]
  touched.emit(strike_technique, last_contact_point, outgoing)
  return outgoing - incoming

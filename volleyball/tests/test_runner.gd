@@ -34,6 +34,7 @@ func swing(kind: int) -> void:
 func run() -> void:
  game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ game.frontend.start_solo()
  a = game.athlete
  b = game.ball
  game.hud.set_process(false)
@@ -64,7 +65,7 @@ func run() -> void:
   swing(kind)
   var hand: Vector3 = a.wrists[1] if kind in [2, 3, 4, ContextAthlete.TIP] else a.wrists[0]
   var incoming := Vector3(0, -4, 3)
-  check(a.try_contact(hand + Vector3(0, 0, 0.7), incoming) == Vector3.ZERO, "Outside enlarged contact area remains a miss: %d" % kind)
+  check(a.try_contact(hand + Vector3(0, 0, 1.0), incoming) == Vector3.ZERO, "Outside enlarged contact area remains a miss: %d" % kind)
   a.action_time = 0
   check(a.try_contact(hand, incoming) == Vector3.ZERO, "Early overlap does not hit: %d" % kind)
   a.action_time = a.strike_duration * 0.47
