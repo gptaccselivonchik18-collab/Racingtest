@@ -15,7 +15,7 @@ func _ready() -> void:
 func _physics_process(dt: float) -> void:
  var a: ContextAthlete = game.athlete
  var kind: int = a.technique if a.action == VolleyAthlete.Action.PREPARE else a.strike_technique
- visible = not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (a.action == VolleyAthlete.Action.PREPARE or not a.hit_used) and kind in [0, 1, 2, 3, 4, 8, 9]
+ visible = not a.float_serve_active and not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (a.action == VolleyAthlete.Action.PREPARE or not a.hit_used) and kind in [0, 1, 2, 3, 4, 8, 9]
  if not visible:
   return
  elapsed += dt

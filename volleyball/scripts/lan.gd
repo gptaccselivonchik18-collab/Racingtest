@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 10
+const PROTOCOL := 11
 var game: Node3D
 var active := false
 var hosting := false
@@ -103,6 +103,11 @@ func join_room(address: String, port := PORT) -> Error:
  return OK
 
 func leave() -> void:
+ if is_instance_valid(game.float_serve):
+  game.float_serve.cancel_sequence()
+ if is_instance_valid(game.lower_serve):
+  game.lower_serve.cancel_sequence()
+ game.ball.clear_float()
  if is_instance_valid(discovery):
   discovery.stop_advertising()
   discovery.stop_search()
@@ -127,6 +132,8 @@ func leave() -> void:
  game.ball.freeze = false
  game.ball.collision_mask = 1
  game.athlete.holding_ball = false
+ game.athlete.float_serve_active = false
+ game.athlete.lower_serve_active = false
  game.athlete.replica = false
  game.athlete.set_physics_process(true)
  if game.athlete.has_node("TeamTag"):
@@ -190,7 +197,7 @@ func hello(version: int, skills: Dictionary) -> void:
   return
  var id := multiplayer.get_remote_sender_id()
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.10." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.11." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -249,8 +256,13 @@ func _remove(id: int) -> void:
  if not players.has(id):
   return
  var actor: ContextAthlete = players[id].actor
- if game.ball.held and game.ball.athlete == actor:
-  game.ball.drop()
+ if game.float_serve.busy_actor == actor:
+  game.float_serve.cancel_sequence()
+ if game.lower_serve.busy_actor == actor:
+  game.lower_serve.cancel_sequence()
+ if game.ball.athlete == actor:
+  if game.ball.held:
+   game.ball.drop()
   game.ball.athlete = game.athlete
  if actor != game.athlete:
   actor.queue_free()
@@ -337,7 +349,7 @@ func command(role: String, phase: String, payload: Dictionary) -> void:
  execute(id, role, phase, payload)
 
 func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> bool:
- if not hosting or not players.has(id) or role not in ["primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "stats"] or phase not in ["press", "release", "cancel"]:
+ if not hosting or not players.has(id) or role not in ["primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "float_serve", "stats"] or phase not in ["press", "release", "cancel"]:
   return false
  var actor: ContextAthlete = players[id].actor
  if role == "stats":
@@ -355,11 +367,12 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
   if id == 1:
    reset_round()
   return id == 1
- if role == "lower_serve":
+ if role in ["lower_serve", "float_serve"]:
   if game.ball.held and game.ball.athlete == actor and payload.get("aim") is Vector3:
-   return game.lower_serve.launch(actor, payload.aim, float(payload.get("apex", 3.0)))
+   var controller: VolleyLowerServe = game.float_serve if role == "float_serve" else game.lower_serve
+   return controller.launch(actor, payload.aim, float(payload.get("apex", controller.height)))
   return false
- if game.lower_serve.busy_actor == actor:
+ if game.lower_serve.busy_actor == actor or game.float_serve.busy_actor == actor:
   return false
  if role in ["pickup", "context"] and game.ball.held and game.ball.athlete != actor:
   return false
@@ -418,6 +431,7 @@ func reset_round() -> void:
  if not hosting:
   return
  game.lower_serve.cancel_sequence()
+ game.float_serve.cancel_sequence()
  round_live = false
  game.rules.reset()
  game.serving = false
@@ -497,7 +511,7 @@ func _process(dt: float) -> void:
    var a: ContextAthlete = players[id].actor
    if game.ball.held and game.ball.athlete == a:
     held_by = id
-   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false)])
+   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active])
   # Stay below the ENet MTU at 12 players; one large unreliable packet
   # would fragment and magnify loss on mobile Wi-Fi.
   for first in range(0, poses.size(), 2):
@@ -539,6 +553,7 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
   a.release_time = pose[20]
   a.contact_flash = pose[21]
   a.lower_serve_active = pose[22]
+  a.float_serve_active = pose[30]
   a.air_attack = pose[23]
   if a != game.athlete:
    a.camera_yaw = pose[24]

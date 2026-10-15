@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import socket
+import random
 import subprocess
 import sys
 import time
@@ -10,9 +11,19 @@ godot = sys.argv[1] if len(sys.argv) > 1 else "godot"
 root = Path(__file__).resolve().parents[1]
 logs = root / "build" / "logs"
 logs.mkdir(parents=True, exist_ok=True)
-with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-    probe.bind(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
+# Reserve-check both adjacent UDP ports; a random OS ephemeral port alone
+# may leave its discovery neighbour occupied on Windows.
+port = None
+for candidate in random.SystemRandom().sample(range(25000, 30000), 50):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as discovery_probe:
+            probe.bind(("0.0.0.0", candidate))
+            discovery_probe.bind(("0.0.0.0", candidate + 1))
+            port = candidate
+            break
+    except OSError:
+        continue
+assert port is not None, "No free adjacent LAN/discovery port pair"
 processes = []
 handles = []
 

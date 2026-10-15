@@ -19,6 +19,7 @@ func mechanic(kind: int) -> Dictionary:
 @export var air_acceleration := 0.65
 var replica := false
 var lower_serve_active := false
+var float_serve_active := false
 var approach_armed := false
 var jump_windup := 0.0
 var attack_ready := false
@@ -84,13 +85,13 @@ func eye_transform() -> Transform3D:
  return Transform3D(view_basis(), eyes)
 
 func tilt_affects(kind: int) -> bool:
- return not lower_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.SERVE, Technique.JUMP_SERVE, Technique.SPIKE, TIP, BLOCK]
+ return not lower_serve_active and not float_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.SERVE, Technique.JUMP_SERVE, Technique.SPIKE, TIP, BLOCK]
 
 func action_tilt(kind: int) -> Vector2:
  return body_tilt() if tilt_affects(kind) else Vector2.ZERO
 
 func is_receive(kind: int) -> bool:
- return not lower_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.UNDERHAND]
+ return not lower_serve_active and not float_serve_active and kind in [Technique.OVERHEAD, JUMP_SET, Technique.UNDERHAND]
 
 static func receive_power(held_seconds: float) -> float:
  # Short deliberate taps retain maximum strength. After 1.15 seconds the
@@ -379,7 +380,7 @@ func _physics_process(dt: float) -> void:
     horizontal *= exp(-1.6 * dt)
   velocity.x = horizontal.x
   velocity.z = horizontal.y
-  lean = lean.lerp(Vector2.ZERO if lower_serve_active else body_tilt(), 1.0 - exp(-9.0 * dt))
+  lean = lean.lerp(Vector2.ZERO if lower_serve_active or float_serve_active else body_tilt(), 1.0 - exp(-9.0 * dt))
   visual.rotation.x = lean.y * 0.20
   visual.rotation.z = -lean.x * 0.17
  var fall_speed := velocity.y

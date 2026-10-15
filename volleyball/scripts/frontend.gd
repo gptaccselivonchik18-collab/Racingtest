@@ -199,4 +199,4 @@ func start_solo() -> void:
  game.start_drill()
 
 func blocks_input() -> bool:
- return visible or game.lower_serve.visible
+ return visible or game.lower_serve.visible or game.float_serve.visible

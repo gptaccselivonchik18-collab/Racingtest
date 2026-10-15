@@ -81,7 +81,9 @@ func apply_pose(dt := 0.0) -> void:
   a.wrists[i] = a.visual.to_global(wrist)
   elbow_joints[i].global_position = a.elbows[i]
   var palm := Basis(Quaternion(Vector3.UP, (wrist - elbow).normalized()))
-  if kind in [2, 3, 4, 9] and a.action == VolleyAthlete.Action.STRIKE and i == 1:
+  if a.float_serve_active and i == 1:
+   palm = Basis.IDENTITY
+  if kind in [2, 3, 4, 9] and a.action == VolleyAthlete.Action.STRIKE and i == 1 and not a.float_serve_active:
    palm = palm * Basis(Vector3.RIGHT, -smoothstep(0.40, 0.72, a.action_time / a.strike_duration) * 0.65)
   a.hands[i].transform = Transform3D(palm.scaled_local(Vector3(0.86, 0.90, 0.48)), wrist)
   for j in range(5):

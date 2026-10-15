@@ -63,8 +63,17 @@ func _label(text: String) -> Label:
  content.add_child(label)
  return label
 
+func serve_title() -> String:
+ return "НИЖНЯЯ ПОДАЧА"
+
+func network_role() -> String:
+ return "lower_serve"
+
+func height_hint() -> String:
+ return "Низкая дуга может попасть в сетку. Направление выберете следующим касанием."
+
 func open() -> bool:
- if not game.holding_ball() or is_instance_valid(busy_actor):
+ if not game.holding_ball() or game.automatic_serve_busy() or game.athlete.airborne():
   return false
  game.hud._cancel()
  game.hud.hide()
@@ -73,7 +82,7 @@ func open() -> bool:
  show()
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
  _clear()
- _label("НИЖНЯЯ ПОДАЧА")
+ _label(serve_title())
  var value := _label("Высота дуги: +%.1f м от точки удара" % height)
  var slider := HSlider.new()
  slider.min_value = 0.8
@@ -83,7 +92,7 @@ func open() -> bool:
  slider.custom_minimum_size.y = 54
  slider.value_changed.connect(func(v: float): height = v; value.text = "Высота дуги: +%.1f м от точки удара" % v)
  content.add_child(slider)
- _label("Низкая дуга может попасть в сетку. Направление выберете следующим касанием.")
+ _label(height_hint())
  game.hud._native_button(content, "Выбрать место на стороне соперника →", choose_target)
  game.hud._native_button(content, "Отмена", close)
  _layout()
@@ -129,7 +138,7 @@ func _input(event: InputEvent) -> void:
   if point is Vector3:
    close()
    if game.lan.active:
-    game.lan.local_action("lower_serve", "press", {"aim": point, "apex": height})
+    game.lan.local_action(network_role(), "press", {"aim": point, "apex": height})
    else:
     launch(game.athlete, point, height)
   get_viewport().set_input_as_handled()
@@ -150,7 +159,7 @@ func sample_error(aim: Vector3, accuracy: float) -> Dictionary:
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  var side := 1.0 if actor.position.z >= 0 else -1.0
- if is_instance_valid(busy_actor) or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
+ if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
  var error := sample_error(aim, actor.style_stats.n("serve"))

@@ -15,6 +15,7 @@ var ball_shadow: MeshInstance3D
 var lan: VolleyLAN
 var frontend: VolleyFrontend
 var lower_serve: VolleyLowerServe
+var float_serve: VolleyFloatServe
 
 func _ready() -> void:
  if OS.get_name() in ["iOS", "Android"]:
@@ -57,9 +58,15 @@ func _ready() -> void:
  lower_serve = VolleyLowerServe.new()
  lower_serve.game = self
  layer.add_child(lower_serve)
+ float_serve = VolleyFloatServe.new()
+ float_serve.game = self
+ layer.add_child(float_serve)
  frontend = VolleyFrontend.new()
  frontend.game = self
  layer.add_child(frontend)
+
+func automatic_serve_busy() -> bool:
+ return (is_instance_valid(lower_serve) and is_instance_valid(lower_serve.busy_actor)) or (is_instance_valid(float_serve) and is_instance_valid(float_serve.busy_actor))
 
 func _court() -> void:
  var world := WorldEnvironment.new()
@@ -182,6 +189,7 @@ func repeat_drill() -> void:
   lan.local_action("next")
   return
  lower_serve.cancel_sequence()
+ float_serve.cancel_sequence()
  action_owner = ""
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE

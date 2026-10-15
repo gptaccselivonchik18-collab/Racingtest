@@ -146,6 +146,10 @@ func update(dt: float) -> void:
     draw = Vector3(0.18 + side * 0.1, 1.30, -0.50)
     contact = Vector3(side * 0.13, 1.57, -0.66)
     follow = Vector3(side * 0.17, 1.71, -0.60)
+  if a.float_serve_active and i == 1:
+   draw = Vector3(0.34, 1.99, 0.08)
+   contact = Vector3(0.22, 2.18, -0.39)
+   follow = Vector3(0.22, 1.98, -0.54)
   var wrist := idle
   if a.action == VolleyAthlete.Action.PREPARE:
    wrist = draw

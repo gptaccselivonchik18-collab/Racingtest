@@ -143,7 +143,7 @@ func run() -> void:
  check(b.aiming_throw() and b.throw_velocity().distance_to(throw_before) > 1, "Throw mode supports independent landing target aiming")
  game.begin_primary()
  check(not b.held and b.pending_feed, "Primary launches the aimed throw with one tap")
- check(hud.buttons.size() == 11, "Explicit lower receive and contextual lower serve are present")
+ check(hud.buttons.size() == 12, "Explicit lower receive and contextual lower serve are present")
  game.queue_free()
  await process_frame
  print("V4 TESTS PASSED (%d checks)" % checks if failures == 0 else "V4 TESTS FAILED %d" % failures)

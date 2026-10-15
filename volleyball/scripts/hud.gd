@@ -44,7 +44,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve"]:
+ for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -60,7 +60,7 @@ func _layout() -> void:
   var screen := DisplayServer.screen_get_size()
   if screen.x > 0:
    margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
- var defaults := {"bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ var defaults := {"float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
  for key in defaults:
   var at: Vector2 = defaults[key]
   var scale_value := settings.button_scale
@@ -108,7 +108,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.10"
+ title.text = "   VOLLEY / LAB  0.11"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -349,7 +349,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "next", "pickup", "lock"]:
+  for key in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -406,8 +406,12 @@ func _press(role: String, source := -2) -> bool:
  return accepted
 
 func _perform(role: String) -> bool:
+ if game.automatic_serve_busy() and role not in ["menu", "lock", "next"]:
+  return false
  if role == "lower_serve":
   return game.lower_serve.open()
+ if role == "float_serve":
+  return game.float_serve.open()
  if game.lan.active and role not in ["menu", "lock"]:
   return game.lan.local_action(role)
  match role:
@@ -491,6 +495,7 @@ func _refresh_context() -> void:
  buttons.next.visible = not game.lan.active or game.lan.hosting
  buttons.bump.visible = not game.holding_ball()
  buttons.lower_serve.visible = game.holding_ball()
+ buttons.float_serve.visible = game.holding_ball()
  var a: ContextAthlete = game.athlete
  buttons.dive.visible = not game.holding_ball()
  buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.holding_ball()
@@ -629,7 +634,7 @@ func _sync_held_state() -> void:
   held_snapshot = game.holding_ball()
   queued.clear()
   for id in fingers.keys():
-   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "height", "approach"]:
+   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "float_serve", "height", "approach"]:
     _touch_up(id, true)
   for role in role_owners.keys():
    if role in ["primary", "secondary", "dive", "jump_set", "bump"]:
@@ -638,7 +643,7 @@ func _sync_held_state() -> void:
 func _process(dt: float) -> void:
  var a: ContextAthlete = game.athlete
  _sync_held_state()
- if not menu.visible and not edit_mode and visible and (not is_instance_valid(game.frontend) or not game.frontend.blocks_input()) and not is_instance_valid(game.lower_serve.busy_actor):
+ if not menu.visible and not edit_mode and visible and (not is_instance_valid(game.frontend) or not game.frontend.blocks_input()) and not game.automatic_serve_busy():
   _sync_axes()
   _advance_buffers(dt)
  _refresh_context()
@@ -646,6 +651,7 @@ func _process(dt: float) -> void:
  buttons.secondary.text = ("К ПОДАЧЕ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПРИЦЕЛ\nБРОСКА") if game.holding_ball() else "БЛОК" if a.airborne() else "ПАС"
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
+ buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"

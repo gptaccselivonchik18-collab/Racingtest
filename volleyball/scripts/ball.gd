@@ -17,6 +17,10 @@ var last_velocity := Vector3.ZERO
 var pending_feed := false
 var feed_position := Vector3.ZERO
 var feed_velocity := Vector3.ZERO
+var feed_spin := FEED_SPIN
+var float_active := false
+var float_age := 0.0
+var float_flight := VolleyFloatFlight.new()
 var held := false
 var toss_yaw := 0.0
 var jump_toss := false
@@ -80,7 +84,7 @@ func aiming_throw() -> bool:
 func throw_velocity() -> Vector3:
  return solve_launch(athlete.hold_position(), throw_target, throw_height)
 
-func solve_launch(start: Vector3, destination: Vector3, apex: float) -> Vector3:
+func solve_launch(start: Vector3, destination: Vector3, apex: float, launch_spin := FEED_SPIN) -> Vector3:
  var upward := upward_for_height(apex)
  var flight_time := (upward + sqrt(upward * upward + 2 * 9.81 * maxf(0, start.y - VolleyAthlete.BALL_RADIUS))) / 9.81
  var offset := destination - start
@@ -93,7 +97,7 @@ func solve_launch(start: Vector3, destination: Vector3, apex: float) -> Vector3:
   var step := 1.0 / 120.0
   var time := 0.0
   for tick in range(360):
-   v += (Vector3.DOWN * 9.81 + aero_force(v, FEED_SPIN) / mass) * step
+   v += (Vector3.DOWN * 9.81 + aero_force(v, launch_spin) / mass) * step
    at += v * step
    time += step
    if at.y <= VolleyAthlete.BALL_RADIUS:
@@ -187,6 +191,7 @@ func pick_up() -> bool:
  if not can_pick_up():
   athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
   return false
+ clear_float()
  held = true
  held_mode = HeldMode.TOSS
  var forward := -athlete.visual.global_basis.z
@@ -246,7 +251,7 @@ func _ready() -> void:
  angular_damp = 0.15
  contact_monitor = true
  max_contacts_reported = 8
- body_entered.connect(func(body: Node): surface_contact.emit(str(body.get_meta("surface", "world"))))
+ body_entered.connect(func(body: Node): clear_float(); surface_contact.emit(str(body.get_meta("surface", "world"))))
  var mat := PhysicsMaterial.new()
  mat.bounce = 0.73
  mat.friction = 0.45
@@ -263,15 +268,28 @@ func _ready() -> void:
  material.shader = shader
  ball_mesh.material_override = material
 
-func feed(at: Vector3, speed: Vector3) -> void:
+func clear_float() -> void:
+ float_active = false
+ float_age = 0
+
+func launch_float(at: Vector3, speed: Vector3, spin: Vector3, skill: float, seed_value: int) -> void:
  if replica:
   return
+ feed(at, speed, spin)
+ float_flight.configure(skill, seed_value)
+ float_active = true
+
+func feed(at: Vector3, speed: Vector3, spin := FEED_SPIN) -> void:
+ if replica:
+  return
+ clear_float()
  held = false
  athlete.holding_ball = false
  freeze = false
  collision_mask = 1
  feed_position = at
  feed_velocity = speed
+ feed_spin = spin
  pending_feed = true
  sleeping = false
  previous_center_valid = false
@@ -282,7 +300,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
  if pending_feed:
   state.transform = Transform3D(Basis.IDENTITY, feed_position)
   state.linear_velocity = feed_velocity
-  state.angular_velocity = FEED_SPIN
+  state.angular_velocity = feed_spin
   pending_feed = false
   last_velocity = feed_velocity
   previous_center = feed_position
@@ -298,10 +316,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   if obstacle.is_empty():
    var candidates: Array = contact_athletes if not contact_athletes.is_empty() else [athlete]
    for candidate in candidates:
-    if not is_instance_valid(candidate) or (candidate is ContextAthlete and candidate.lower_serve_active):
+    if not is_instance_valid(candidate) or (candidate is ContextAthlete and (candidate.lower_serve_active or candidate.float_serve_active)):
      continue
     var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
+     clear_float()
      state.apply_central_impulse(delta_v * mass)
      state.angular_velocity = candidate.outgoing_spin(state.angular_velocity, delta_v) if candidate is ContextAthlete else (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
      break
@@ -309,5 +328,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   previous_center_valid = true
  # Approximate, bounded Magnus force; no target or player tracking.
  state.apply_central_force(aero_force(state.linear_velocity, state.angular_velocity))
+ if float_active:
+  float_age += state.step
+  state.apply_central_force(float_flight.force(state.linear_velocity, state.angular_velocity, float_age))
  acceleration = (state.linear_velocity - last_velocity) / state.step
  last_velocity = state.linear_velocity
