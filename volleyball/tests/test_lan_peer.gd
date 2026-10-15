@@ -33,6 +33,8 @@ var private_hold_time := 0.0
 var float_requested_at := -1.0
 var port := 24702
 var endpoint := "127.0.0.1"
+var gate: Node
+var ack_sent := false
 
 func _initialize() -> void:
  var args := OS.get_cmdline_user_args()
@@ -49,6 +51,9 @@ func _initialize() -> void:
 func run() -> void:
  game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
+ gate = load("res://tests/test_lan_gate.gd").new()
+ gate.name = "TestGate"
+ game.add_child(gate)
  game.frontend.start_solo()
  if role == "host":
   if game.lan.host_room(port) != OK:
@@ -80,7 +85,18 @@ func _process(dt: float) -> bool:
     push_error("Foreign player trajectory leaked onto this device")
     quit(1)
    private_remote_seen = true
+ if role != "host" and game.lan.connected and not ack_sent and (private_local_seen or private_remote_seen):
+  ack_sent = true
+  gate.observed_held.rpc_id(1)
  if role == "host":
+  if game.lan.players.size() == 12 and not gate.proceed_sent:
+   var all_observed := true
+   for id in game.lan.players:
+    if id != 1 and not gate.observed.has(id):
+     all_observed = false
+   if all_observed:
+    gate.proceed_sent = true
+    gate.proceed.rpc_id(game.lan.players.keys()[1])
   if game.lan.players.size() == 12:
    saw_full = true
    if full_at < 0:
@@ -189,7 +205,7 @@ func _process(dt: float) -> bool:
      game.rig.yaw = atan2(-direction.x, -direction.z)
      game.lan.local_action("float_serve", "press", {"aim": aim, "apex": 1.8})
      print("LAN_CLIENT_FLOAT_REQUEST")
-    elif game.holding_ball() and private_hold_time > 0.5 and not served:
+    elif game.holding_ball() and private_hold_time > 0.5 and gate.may_serve and not served:
      served = true
      lower_requested_at = age
      var side := 1.0 if game.athlete.position.z >= 0 else -1.0

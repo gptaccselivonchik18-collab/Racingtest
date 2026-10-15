@@ -33,7 +33,7 @@ def launch(role, index):
     path = logs / f"lan-{role}-{index}.log"
     handle = path.open("w", encoding="utf-8")
     handles.append(handle)
-    command = [godot, "--headless", "--path", str(root), "--script", "tests/test_lan_peer.gd", "--", role, str(index), str(port), address]
+    command = [godot, "--headless", "--max-fps", "60", "--path", str(root), "--script", "tests/test_lan_peer.gd", "--", role, str(index), str(port), address]
     child = subprocess.Popen(command, stdout=handle, stderr=subprocess.STDOUT)
     processes.append((child, path))
     return child, path
