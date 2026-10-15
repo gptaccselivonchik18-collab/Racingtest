@@ -99,8 +99,15 @@ static func receive_power(held_seconds: float) -> float:
  return lerpf(1.0, 0.18, smoothstep(0.10, 1.15, held_seconds))
 
 func receive_elevation(kind: int) -> float:
+ # A platform always lifts the ball; the view chooses only its horizontal
+ # bearing. Hold duration controls speed, so both apex and distance change.
+ if kind == Technique.UNDERHAND and not lower_serve_active:
+  return 62.0
  var angle := rad_to_deg(camera_pitch)
  if kind in [Technique.OVERHEAD, JUMP_SET]:
+  # A small, smooth assist (at most eight degrees) preserves flat passes and
+  # the existing range while making a high set easier to see and aim.
+  angle += 8.0 * sin(PI * clampf(angle / 84.0, 0, 1))
   angle -= tilt.y * 11.0
  return clampf(angle, -20.0, 84.0)
 

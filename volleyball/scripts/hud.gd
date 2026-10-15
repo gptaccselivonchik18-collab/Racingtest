@@ -108,7 +108,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.11"
+ title.text = "   VOLLEY / LAB  0.12"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -128,9 +128,9 @@ func _menu() -> void:
  strict_box.toggled.connect(func(on: bool): game.rules.strict = on; game.rules.reset())
  practice.add_child(strict_box)
  var help := Label.new()
- help.text = "ЛКМ: атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: перевести палец с джойстика на АТАКУ и отпустить → прыжок.\nИли на бегу нажать и отпустить АТАКУ другим пальцем. Следующий нажим → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
+ help.text = "ЛКМ: атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача. B: планер.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: нажать и отпустить АТАКУ другим пальцем → прыжок.\nСледующий нажим АТАКИ → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
  help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- help.text += "\nНа ПК высота: колесо мыши. Tilt: джойстик / WASD до контакта.\nОбычный удар без комбинации: удерживать для меньшей силы, отпустить для касания."
+ help.text += "\nНа ПК высота: колесо мыши. Tilt: джойстик / WASD до контакта.\nНижний приём всегда вверх; дольше держать — мягче.\nУдерживая действие, ведите палец для поворота камеры.\nОбычный удар без комбинации: удерживать для меньшей силы, отпустить для касания."
  practice.add_child(help)
  var controls := _tab("Управление")
  control_sliders.sensitivity = _slider(controls, "Чувствительность камеры", 0.3, 2.5, settings.sensitivity, func(v: float): settings.sensitivity = v; game.rig.sensitivity = v; _save(), 0.05)
@@ -545,9 +545,6 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   return
  finger_positions[id] = pos
  if role == "move":
-  if not game.holding_ball() and game.running_approach() and buttons.primary.rect.grow(16).has_point(pos) and game.begin_approach():
-   fingers[id] = "approach"
-   return
   move_value = ((pos - left_center) / radius).limit_length()
   if move_value.length() < 0.10:
    move_value = Vector2.ZERO
@@ -561,21 +558,18 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   var fraction := clampf((pos.x - height_grab_offset - height_rect.position.x - 16) / (height_rect.size.x - 32), 0, 1)
   game.ball.set_release_height(snappedf(lerpf(0.35, 3.5, fraction), 0.05))
  elif role == "camera":
-  var next := _button_at(pos, 0)
-  if next in ["primary", "secondary", "jump", "dive", "jump_set", "bump"] and not role_owners.has(next) and not game.holding_ball():
-   camera_id = -1
-   fingers[id] = next
-   _press(next, id)
-  elif (game.holding_ball() and game.ball.aiming_throw()):
+  if (game.holding_ball() and game.ball.aiming_throw()):
    game.ball.aim_throw_at(game.camera, pos)
   else:
    _look_or_aim(relative)
  elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump"]:
-  var next := _button_at(pos, 0)
-  if not next.is_empty() and next != role and next in ["primary", "secondary", "jump", "dive", "jump_set", "bump"] and not role_owners.has(next):
-   _release(role, id, true)
-   fingers[id] = next
-   _press(next, id)
+  # Capture is fixed at touch-down. Sliding across another button cannot
+  # activate it, and leaving the original rectangle does not cancel a hold.
+  # A dedicated look finger keeps priority; otherwise this finger can aim.
+  if camera_id == -1:
+   camera_id = id
+  if camera_id == id:
+   _look_or_aim(relative)
  elif role.begins_with("edit:"):
   var key := role.trim_prefix("edit:")
   settings.layout[key] = Vector3(clampf(pos.x / size.x, 0.04, 0.96), clampf(pos.y / size.y, 0.1, 0.94), editor_scale.value)
@@ -609,6 +603,8 @@ func _touch_up(id: int, canceled := false) -> void:
  var pos: Vector2 = finger_positions.get(id, Vector2.ZERO)
  fingers.erase(id)
  finger_positions.erase(id)
+ if camera_id == id:
+  camera_id = -1
  if role == "move":
   move_id = -1
   move_value = Vector2.ZERO
@@ -626,8 +622,7 @@ func _touch_up(id: int, canceled := false) -> void:
   if not canceled and (game.holding_ball() and game.ball.aiming_throw()):
    game.ball.aim_throw_at(game.camera, pos)
  elif not edit_mode:
-  var outside: bool = buttons.has(role) and not buttons[role].rect.grow(24).has_point(pos)
-  _release(role, id, canceled or outside)
+  _release(role, id, canceled)
 
 func _sync_held_state() -> void:
  if held_snapshot != game.holding_ball():
@@ -669,7 +664,7 @@ func _process(dt: float) -> void:
  elif "approach" in fingers.values() or a.approach_armed:
   status.text = "Отпустите на АТАКЕ → прыжок с замахом"
  elif game.running_approach():
-  status.text = "Разбег: переведите палец на АТАКУ и отпустите → прыжок"
+  status.text = "Разбег: нажмите и отпустите АТАКУ → прыжок с замахом"
  if game.lan.active:
   status.text = "A %d : %d Б • %d/12 • " % [game.lan.scores[0], game.lan.scores[1], game.lan.players.size()] + (game.rules.message if game.rules.ended else a.last_result)
  if edit_mode:

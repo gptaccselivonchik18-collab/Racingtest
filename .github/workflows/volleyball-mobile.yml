@@ -72,6 +72,9 @@ jobs:
           godot --headless --fixed-fps 120 --path . --script tests/test_v11.gd 2>&1 | tee build/logs/v11-tests.log
           if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v11-tests.log; then exit 1; fi
           grep -q 'V11 TESTS PASSED' build/logs/v11-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v12.gd 2>&1 | tee build/logs/v12-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v12-tests.log; then exit 1; fi
+          grep -q 'V12 TESTS PASSED' build/logs/v12-tests.log
           python3 ci/test_lan.py godot | tee build/logs/lan-integration.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -182,4 +185,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
-          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.11' --notes-file release-notes.txt --prerelease
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.12' --notes-file release-notes.txt --prerelease

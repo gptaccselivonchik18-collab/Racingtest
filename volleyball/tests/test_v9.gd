@@ -110,7 +110,10 @@ func run() -> void:
   check(tap.length() > medium.length() * 1.3 and medium.length() > soft.length() * 1.4, "Actual contact strength follows hold duration for action %d" % kind)
   var flat := sample(kind, 0.03, 5)
   var loft := sample(kind, 0.03, 75)
-  check(flat.length() > loft.length() * 1.6 and loft.y > flat.y * 3, "Higher camera angle trades speed for a higher arc for action %d" % kind)
+  if kind == 1:
+   check(flat.is_equal_approx(loft) and flat.y > 0, "Lower receive stays upward regardless of camera pitch")
+  else:
+   check(flat.length() > loft.length() * 1.6 and loft.y > flat.y * 3, "Higher camera angle trades speed for a higher arc for action %d" % kind)
   var previous_speed := 100.0
   var smooth_curve := true
   for angle in range(0, 81, 5):
