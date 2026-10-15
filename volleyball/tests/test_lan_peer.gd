@@ -27,6 +27,10 @@ var view_seen := false
 var hold_seen := false
 var bump_started := false
 var bump_released := false
+var private_local_seen := false
+var private_remote_seen := false
+var private_hold_time := 0.0
+var float_requested_at := -1.0
 var port := 24702
 
 func _initialize() -> void:
@@ -63,6 +67,16 @@ func _process(dt: float) -> bool:
  if not is_instance_valid(game):
   return false
  elapsed += dt
+ var toss: VolleyTossPreview = game.get_node("TossPreview")
+ toss._physics_process(0)
+ if game.holding_ball() and game.athlete.holding_ball:
+  private_local_seen = toss.is_visible_in_tree()
+ for entry in game.lan.players.values():
+  if entry.actor != game.athlete and entry.actor.holding_ball:
+   if toss.is_visible_in_tree():
+    push_error("Foreign player trajectory leaked onto this device")
+    quit(1)
+   private_remote_seen = true
  if role == "host":
   if game.lan.players.size() == 12:
    saw_full = true
@@ -116,8 +130,9 @@ func _process(dt: float) -> bool:
    print("LAN_FLOAT_BALL_OFFERED")
   if saw_full and game.lan.players.size() == 11:
    disconnected = true
-  if elapsed > 14:
-   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen and view_seen and hold_seen and float_seen and float_contact
+  if elapsed > 18:
+   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen and view_seen and hold_seen and float_seen and float_contact and private_remote_seen
+   print("LAN_PRIVATE_HELPERS host_remote_hidden=%s" % private_remote_seen)
    print("LAN_FLOAT_HOST_RESULT pose=%s contact=%s" % [float_seen, float_contact])
    print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s view=%s hold=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen, view_seen, hold_seen])
    quit(0 if ok else 1)
@@ -145,6 +160,8 @@ func _process(dt: float) -> bool:
    if game.lan.players.size() == 12:
     saw_full = true
    if index == 1:
+    # Let every observer receive a held pose before starting the serve.
+    private_hold_time = private_hold_time + dt if game.holding_ball() else 0.0
     game.rig.pitch = 0.6
     if age > 1.2 and not bump_started:
      bump_started = true
@@ -160,12 +177,16 @@ func _process(dt: float) -> bool:
     if pickup_tick > 0.4 and age > 2 and not game.holding_ball() and (not served or not float_requested):
      pickup_tick = 0
      game.lan.local_action("pickup")
-    if game.holding_ball() and served and not float_requested and age - lower_requested_at > 1.2:
+    if game.holding_ball() and private_hold_time > 0.5 and served and not float_requested and age - lower_requested_at > 1.2:
      float_requested = true
+     float_requested_at = age
      var side := 1.0 if game.athlete.position.z >= 0 else -1.0
-     game.lan.local_action("float_serve", "press", {"aim": Vector3(0, 0.105, -side * 5), "apex": 1.8})
+     var aim := Vector3(0, 0.105, -side * 5)
+     var direction: Vector3 = aim - game.athlete.position
+     game.rig.yaw = atan2(-direction.x, -direction.z)
+     game.lan.local_action("float_serve", "press", {"aim": aim, "apex": 1.8})
      print("LAN_CLIENT_FLOAT_REQUEST")
-    elif game.holding_ball() and not served:
+    elif game.holding_ball() and private_hold_time > 0.5 and not served:
      served = true
      lower_requested_at = age
      var side := 1.0 if game.athlete.position.z >= 0 else -1.0
@@ -179,12 +200,16 @@ func _process(dt: float) -> bool:
     reported = true
     client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
     client_passed = client_passed and stats_seen and view_seen and float_seen
+    client_passed = client_passed and (private_local_seen if index == 1 else private_remote_seen)
+    print("LAN_PRIVATE_HELPERS client=%d own=%s foreign_hidden=%s" % [index, private_local_seen, private_remote_seen])
     if index == 1:
      client_passed = client_passed and not game.frontend.visible
     print("LAN_CLIENT_RESULT %d snapshots=%d peers=%d" % [index, game.lan.snapshot_count, game.lan.players.size()])
-   if age > 11 and index != 11 and reported:
+   # The driver must finish its automatic serve before disconnecting; a
+   # delayed first held snapshot must not cancel the sequence mid-toss.
+   if age > 11 and index != 11 and reported and (index != 1 or age - float_requested_at > 2.0):
     quit(0 if client_passed else 1)
-  if elapsed > 18:
+  if elapsed > 26:
    push_error("Client timeout " + str(index))
    quit(1)
  return false

@@ -17,8 +17,8 @@ with zipfile.ZipFile(path) as archive:
     assert info["CFBundleIdentifier"] == "org.volleylab.simulator"
     assert "iPhoneOS" in info["CFBundleSupportedPlatforms"], "Simulator build rejected"
     assert info.get("NSLocalNetworkUsageDescription"), "Missing iOS LAN permission description"
-    assert info["CFBundleShortVersionString"] == "0.12.0"
-    assert info["CFBundleVersion"] == "12"
+    assert info["CFBundleShortVersionString"] == "0.13.0"
+    assert info["CFBundleVersion"] == "13"
     assert "UISupportedInterfaceOrientations" in info, "Missing orientation declarations"
     for key in ("UISupportedInterfaceOrientations", "UISupportedInterfaceOrientations~ipad"):
         if key in info:

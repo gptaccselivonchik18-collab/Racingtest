@@ -32,11 +32,15 @@ func _ready() -> void:
  athlete.serve_solver = ball.solve_launch
  athlete.power_serve_solver = ball.solve_power_serve
  var preview := VolleyTossPreview.new()
+ preview.name = "TossPreview"
  preview.ball = ball
+ preview.viewer = athlete
  add_child(preview)
  var strike_preview := VolleyStrikePreview.new()
+ strike_preview.name = "StrikePreview"
  strike_preview.game = self
  strike_preview.ball = ball
+ strike_preview.viewer = athlete
  add_child(strike_preview)
  athlete.touched.connect(_on_touch)
  ball.surface_contact.connect(_on_surface)

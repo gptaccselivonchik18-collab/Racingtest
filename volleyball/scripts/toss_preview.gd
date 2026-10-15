@@ -2,6 +2,9 @@ class_name VolleyTossPreview
 extends Node3D
 
 var ball: VolleyBall
+# Bind once to this device's player. The host temporarily changes the ball's
+# actor while processing other players; that must never transfer their hints.
+var viewer: ContextAthlete
 var dots: Array[MeshInstance3D] = []
 var elapsed := 0.0
 var landing: MeshInstance3D
@@ -26,7 +29,7 @@ func _ready() -> void:
  landing.material_override = material
 
 func _physics_process(dt: float) -> void:
- visible = ball.held
+ visible = is_instance_valid(viewer) and ball.held and ball.athlete == viewer and viewer.holding_ball
  if not visible:
   elapsed = 1
   return
