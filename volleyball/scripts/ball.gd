@@ -59,7 +59,6 @@ func aim_throw_at(camera: Camera3D, screen: Vector2) -> bool:
 
 func aim_toss(relative: Vector2) -> void:
  toss_yaw = clampf(toss_yaw - relative.x * 0.0035, -PI / 3, PI / 3)
- set_release_height(release_height() - relative.y * 0.012)
 
 func upward_for_height(height: float) -> float:
  # Integrate quadratic vertical drag analytically to reach the chosen apex.
@@ -72,7 +71,8 @@ func toss_velocity() -> Vector3:
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
  forward = forward.normalized().rotated(Vector3.UP, toss_yaw)
- return forward * 0.35 + Vector3.UP * upward_for_height(release_height()) + athlete.velocity
+ var drift: float = athlete.mechanic(VolleyAthlete.Technique.SERVE).toss_drift if athlete is ContextAthlete else 0.35
+ return forward * drift + Vector3.UP * upward_for_height(release_height()) + athlete.velocity
 
 func aiming_throw() -> bool:
  return held and held_mode == HeldMode.THROW
@@ -254,7 +254,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
     var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
      state.apply_central_impulse(delta_v * mass)
-     state.angular_velocity = (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
+     state.angular_velocity = candidate.outgoing_spin(state.angular_velocity, delta_v) if candidate is ContextAthlete else (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
      break
   previous_center = center
   previous_center_valid = true

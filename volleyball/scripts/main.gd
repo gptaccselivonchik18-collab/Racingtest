@@ -244,7 +244,7 @@ func begin_primary() -> bool:
  if running_approach() and athlete.arm_approach(VolleyAthlete.Technique.JUMP_SERVE if serving else VolleyAthlete.Technique.SPIKE):
   action_owner = "primary"
   return true
- var kind := VolleyAthlete.Technique.SPIKE if athlete.airborne() else VolleyAthlete.Technique.UNDERHAND
+ var kind := VolleyAthlete.Technique.SPIKE
  if serving:
   kind = VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE
  if athlete.begin_action(kind):
@@ -283,7 +283,7 @@ func finish_action(role: String) -> void:
   ball.throw_held()
  elif athlete.action == VolleyAthlete.Action.PREPARE:
   if role == "primary":
-   athlete.technique = (VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE) if serving else (VolleyAthlete.Technique.SPIKE if athlete.airborne() else VolleyAthlete.Technique.UNDERHAND)
+   athlete.technique = (VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE) if serving else (VolleyAthlete.Technique.SPIKE)
   elif role == "secondary":
    athlete.technique = ContextAthlete.BLOCK if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD
   athlete.release()

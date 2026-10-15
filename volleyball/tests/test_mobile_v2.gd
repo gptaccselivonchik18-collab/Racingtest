@@ -83,9 +83,9 @@ func run() -> void:
  await process_frame
  check(not paused and not ui.menu.visible, "Native Resume receives emulated touch mouse while paused")
  ui.toggle_menu()
- ui.stat_sliders.strength.value = 91
+ ui.stat_sliders.spike.value = 91
  ui.control_sliders.sensitivity.value = 1.4
- check(a.stats.values.strength == 91 and is_equal_approx(game.rig.sensitivity, 1.4), "Native settings controls work while paused")
+ check(a.stats.values.spike == 91 and is_equal_approx(game.rig.sensitivity, 1.4), "Native settings controls work while paused")
  var cfg := VolleySettings.new()
  cfg.load_settings(a)
  check(is_equal_approx(cfg.sensitivity, 1.4), "Camera settings persist")

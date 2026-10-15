@@ -17,6 +17,7 @@ var sent_jump := false
 var pickup_tick := 0.0
 var client_passed := false
 var reported := false
+var stats_seen := false
 var port := 24702
 
 func _initialize() -> void:
@@ -38,6 +39,7 @@ func run() -> void:
    quit(1)
   print("LAN_HOST_READY")
  else:
+  game.athlete.stats.set_stat("set", 135 + index)
   game.lan.join_room("127.0.0.1", port)
  game.frontend.enter_court()
  game.hud.set_process(false)
@@ -62,6 +64,8 @@ func _process(dt: float) -> bool:
    if id == 1:
     continue
    var a: ContextAthlete = game.lan.players[id].actor
+   if a.stats.values.set == 136 and a.stats.values.spike == 250:
+    stats_seen = true
    if a.move_axis.x > 0.9 and a.velocity.x > 0.5:
     moved = true
    if a.velocity.y > 1.0:
@@ -80,15 +84,20 @@ func _process(dt: float) -> bool:
   if saw_full and game.lan.players.size() == 11:
    disconnected = true
   if elapsed > 14:
-   var ok := saw_full and moved and jumped and held_seen and served and disconnected
-   print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s" % [saw_full, moved, jumped, held_seen, served, disconnected])
+   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen
+   print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen])
    quit(0 if ok else 1)
  else:
   if game.lan.connected and joined_at < 0:
    joined_at = elapsed
    print("LAN_CLIENT_JOINED ", index)
+   if index == 1:
+    game.lan.local_action("stats", "press", {"skill": "spike", "value": 250.0})
   if joined_at >= 0:
    var age := elapsed - joined_at
+   for entry in game.lan.players.values():
+    if entry.actor.stats.values.set == 136 and entry.actor.stats.values.spike == 250:
+     stats_seen = true
    if game.lan.players.size() == 12:
     saw_full = true
    if index == 1:
@@ -111,7 +120,8 @@ func _process(dt: float) -> bool:
     quit(0)
    if age > 8 and not reported:
     reported = true
-    client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica
+    client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
+    client_passed = client_passed and stats_seen
     print("LAN_CLIENT_RESULT %d snapshots=%d peers=%d" % [index, game.lan.snapshot_count, game.lan.players.size()])
    if age > 11 and index != 11:
     quit(0 if client_passed else 1)

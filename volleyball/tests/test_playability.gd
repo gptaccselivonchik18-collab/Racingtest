@@ -26,14 +26,16 @@ func trial(drill: int, release_frame: int) -> bool:
   if drill == 7 and frame == release_frame:
    a.dive()
   if frame == maxi(0, release_frame - 24):
-   if drill in [0, 3]:
+   if drill == 0:
+    game.begin_bump()
+   elif drill == 3:
     game.begin_primary()
    elif drill in [1, 4]:
     game.begin_secondary()
    elif drill == 2:
     game.begin_jump_set()
   if frame == release_frame and drill != 7:
-   game.finish_action("jump_set" if drill == 2 else "secondary" if drill in [1, 4] else "primary")
+   game.finish_action("bump" if drill == 0 else "jump_set" if drill == 2 else "secondary" if drill in [1, 4] else "primary")
   for wrist in a.wrists:
    if wrist.distance_to(game.ball.position) < closest:
     closest_note = " frame=%d ball=%s wrist=%s" % [frame, game.ball.position, wrist]

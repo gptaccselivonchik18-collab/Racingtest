@@ -119,7 +119,7 @@ func run() -> void:
  hud._touch_down(71, Vector2(600, 200))
  hud._touch_move(71, Vector2(730, 280), Vector2(130, 80))
  var aimed := b.toss_velocity()
- check(aimed.x > initial.x + 0.1 and aimed.y < initial.y - 0.1, "Free screen swipe changes toss direction and release height")
+ check(aimed.x > initial.x + 0.1 and is_equal_approx(aimed.y, initial.y), "Free screen swipe aims direction without fighting the height slider")
  check(game.rig.yaw == yaw and hud.move_id == 70, "Toss aiming preserves camera and movement finger")
  hud._touch_up(70)
  hud._touch_up(71)

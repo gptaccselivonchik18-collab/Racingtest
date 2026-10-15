@@ -2,7 +2,7 @@ class_name VolleySettings
 extends RefCounted
 const PATH := "user://context_controls.cfg"
 const DEFAULT_KEYS := {"bump": KEY_X, "lower_serve": KEY_V, "forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "primary": -MOUSE_BUTTON_LEFT, "secondary": KEY_Q, "jump": KEY_SPACE, "dive": KEY_CTRL, "jump_set": KEY_E, "pause": KEY_ESCAPE, "next": KEY_R, "pickup": KEY_F, "lock": KEY_SHIFT}
-const KEY_LABELS := {"bump": "Нижний приём", "lower_serve": "Нижняя подача", "forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Приём / атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
+const KEY_LABELS := {"bump": "Нижний приём", "lower_serve": "Нижняя подача", "forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
 var keys := DEFAULT_KEYS.duplicate()
 var layout := {}
 var sensitivity := 1.0
@@ -14,9 +14,9 @@ var orientation := 4
 func load_settings(athlete: VolleyAthlete) -> void:
  var file := ConfigFile.new()
  if file.load(PATH) != OK:
-  if file.load("user://controls.cfg") == OK:
+  if not athlete.stats is VolleyStyleStats and file.load("user://controls.cfg") == OK:
    for key in athlete.stats.values:
-    athlete.stats.set_stat(key, float(file.get_value("stats", key, athlete.stats.values[key])))
+    athlete.stats.set_stat(key, float(file.get_value("style_stats" if athlete.stats is VolleyStyleStats else "stats", key, athlete.stats.values[key])))
   install_keys()
   return
  sensitivity = clampf(float(file.get_value("camera", "sensitivity", 1)), 0.3, 2.5)
@@ -34,7 +34,7 @@ func load_settings(athlete: VolleyAthlete) -> void:
    if entry is Vector3:
     layout[key] = Vector3(clampf(entry.x, 0.04, 0.96), clampf(entry.y, 0.10, 0.94), clampf(entry.z, 0.65, 1.45))
  for key in athlete.stats.values:
-  athlete.stats.set_stat(key, float(file.get_value("stats", key, athlete.stats.values[key])))
+  athlete.stats.set_stat(key, float(file.get_value("style_stats" if athlete.stats is VolleyStyleStats else "stats", key, athlete.stats.values[key])))
  athlete.reset_seed(int(file.get_value("training", "seed", 20261014)))
  install_keys()
 
@@ -76,5 +76,5 @@ func save(athlete: VolleyAthlete) -> Error:
  for key in layout:
   file.set_value("layout", key, layout[key])
  for key in athlete.stats.values:
-  file.set_value("stats", key, athlete.stats.values[key])
+  file.set_value("style_stats" if athlete.stats is VolleyStyleStats else "stats", key, athlete.stats.values[key])
  return file.save(PATH)

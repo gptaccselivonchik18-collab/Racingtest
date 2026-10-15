@@ -150,7 +150,7 @@ func run() -> void:
  a.action = VolleyAthlete.Action.IDLE
  await frames(20)
  game.begin_primary()
- check(a.technique == 1, "Ground primary is Bump")
+ check(a.technique == 2, "Ground primary is Attack; receive is separate")
  await frames(20)
  var initial_power := a.power
  await frames(50)

@@ -10,6 +10,7 @@ var finger_positions: Dictionary = {}
 var queued: Dictionary = {}
 var held_snapshot := false
 var height_rect := Rect2()
+var height_grab_offset := 0.0
 var move_id := -1
 var camera_id := -1
 var move_value := Vector2.ZERO
@@ -74,7 +75,7 @@ func _layout() -> void:
   var side := 88.0 * scale_value
   if key == "primary":
    side = 98 * scale_value
-  elif key in ["jump_set", "bump"]:
+  elif key == "jump_set":
    side = 68 * scale_value
   elif key in ["menu", "lock", "next"]:
    side = 46
@@ -86,16 +87,7 @@ func _layout() -> void:
   buttons[key].rect = Rect2(at - dimensions * 0.5, dimensions)
  status.position = Vector2(margin + 70, 28)
  status.size = Vector2(size.x - margin * 2 - 260, 44)
- height_rect = Rect2(Vector2(size.x * 0.68, size.y * 0.43), Vector2(44, size.y * 0.34))
- for fraction in [0.68, 0.55, 0.42, 0.30]:
-  var candidate := Rect2(Vector2(size.x * fraction, size.y * 0.43), height_rect.size)
-  var clear := true
-  for key in ["primary", "secondary", "jump", "context"]:
-   if candidate.grow(18).intersects(buttons[key].rect):
-    clear = false
-  if clear:
-   height_rect = candidate
-   break
+ height_rect = Rect2(Vector2(size.x * 0.5 - 140, 104), Vector2(280, 50))
  menu.position = Vector2(size.x * 0.08, size.y * 0.07)
  menu.size = Vector2(size.x * 0.84, size.y * 0.86)
  if is_instance_valid(editor_bar):
@@ -116,7 +108,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.6"
+ title.text = "   VOLLEY / LAB  0.7"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -136,7 +128,7 @@ func _menu() -> void:
  strict_box.toggled.connect(func(on: bool): game.rules.strict = on; game.rules.reset())
  practice.add_child(strict_box)
  var help := Label.new()
- help.text = "ЛКМ: приём / атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: перевести палец с джойстика на АТАКУ и отпустить → прыжок.\nИли на бегу нажать и отпустить АТАКУ другим пальцем. Следующий нажим → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
+ help.text = "ЛКМ: атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: перевести палец с джойстика на АТАКУ и отпустить → прыжок.\nИли на бегу нажать и отпустить АТАКУ другим пальцем. Следующий нажим → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
  help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  help.text += "\nНа ПК высота: колесо мыши. Tilt: джойстик / WASD до контакта.\nОбычный удар без комбинации: удерживать для меньшей силы, отпустить для касания."
  practice.add_child(help)
@@ -167,11 +159,43 @@ func _menu() -> void:
   var button := _native_button(bindings, "", func(): key_capture = key_name; key_buttons[key_name].text = "Нажмите клавишу • Esc — отмена")
   key_buttons[key] = button
  _refresh_keys()
- _native_button(bindings, "Приём / атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
+ _native_button(bindings, "Атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
  var testing := _tab("Спортсмен")
- for key in game.athlete.stats.values:
+ var explanation := Label.new()
+ explanation.text = "Свободный эксперимент: 65 — исходное значение. 0–100 — ориентир. Можно вводить отрицательные значения и больше 100. Эффект плавно насыщается при крайних числах."
+ explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ testing.add_child(explanation)
+ for key in VolleyStyleStats.KEYS:
   var stat_key: String = key
-  stat_sliders[key] = _slider(testing, AthleteStats.LABELS[key], 1, 100, game.athlete.stats.values[key], func(v: float): game.athlete.stats.set_stat(stat_key, v); _save())
+  var label := Label.new()
+  label.text = VolleyStyleStats.STYLE_LABELS[key]
+  label.add_theme_font_size_override("font_size", 21)
+  testing.add_child(label)
+  var row := HBoxContainer.new()
+  var value := SpinBox.new()
+  value.min_value = 0
+  value.max_value = 100
+  value.allow_greater = true
+  value.allow_lesser = true
+  value.step = 1
+  value.value = game.athlete.stats.values[key]
+  value.custom_minimum_size = Vector2(180, 52)
+  value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+  value.value_changed.connect(func(v: float): _change_stat(stat_key, v))
+  var minus := _native_button(row, "−10", func(): value.value -= 10)
+  minus.custom_minimum_size.x = 64
+  row.add_child(value)
+  var plus := _native_button(row, "+10", func(): value.value += 10)
+  plus.custom_minimum_size.x = 64
+  testing.add_child(row)
+  stat_sliders[key] = value
+  var detail := Label.new()
+  detail.text = VolleyStyleStats.DETAILS[key]
+  detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+  testing.add_child(detail)
+ _native_button(testing, "Вернуть все характеристики к 65", func():
+  for key in VolleyStyleStats.KEYS:
+   stat_sliders[key].value = 65)
  _native_button(content, "Главное меню / выйти из комнаты", func():
   _cancel()
   menu.hide()
@@ -269,6 +293,12 @@ func _orientation(value: int) -> void:
  if OS.get_name() in ["iOS", "Android"]:
   DisplayServer.screen_set_orientation(value)
 
+func _change_stat(key: String, value: float) -> void:
+ game.athlete.stats.set_stat(key, value)
+ _save()
+ if is_instance_valid(game.lan) and game.lan.active:
+  game.lan.local_action("stats", "press", {"skill": key, "value": value})
+
 func _save() -> void:
  settings.save(game.athlete)
 
@@ -290,6 +320,8 @@ func _cancel() -> void:
  move_id = -1
  camera_id = -1
  move_value = Vector2.ZERO
+ for key in ["left", "right", "forward", "back"]:
+  Input.action_release("volley_" + key)
  game.athlete.cancel_input()
  game.cancel_action("")
 
@@ -332,7 +364,8 @@ func _input(event: InputEvent) -> void:
   elif event.pressed:
    _touch_down(event.index, event.position)
   else:
-   _touch_move(event.index, event.position)
+   if fingers.get(event.index, "") != "height":
+    finger_positions[event.index] = event.position
    _touch_up(event.index)
  elif event is InputEventScreenDrag:
   _touch_move(event.index, event.position, event.relative)
@@ -446,6 +479,9 @@ func _button_at(pos: Vector2, padding := 12.0) -> String:
  return best
 
 func _sync_axes() -> void:
+ if move_id < 0 or fingers.get(move_id, "") not in ["move", "approach"]:
+  move_value = Vector2.ZERO
+  move_id = -1
  var keyboard := Input.get_vector("volley_left", "volley_right", "volley_forward", "volley_back")
  var axis := (keyboard + move_value).limit_length()
  game.athlete.move_axis = game.rig.movement(axis)
@@ -471,6 +507,8 @@ func _touch_down(id: int, pos: Vector2) -> void:
  finger_positions[id] = pos
  if game.holding_ball() and not edit_mode and height_rect.grow(12).has_point(pos) and "height" not in fingers.values():
   fingers[id] = "height"
+  var knob: float = height_rect.position.x + 16 + (game.ball.release_height() - 0.35) / 3.15 * (height_rect.size.x - 32)
+  height_grab_offset = pos.x - knob if absf(pos.x - knob) <= 24 else 0.0
   _touch_move(id, pos)
   return
  var key := _button_at(pos)
@@ -505,8 +543,6 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
   if not game.holding_ball() and game.running_approach() and buttons.primary.rect.grow(16).has_point(pos) and game.begin_approach():
    fingers[id] = "approach"
    return
-  if pos.distance_to(left_center) > radius * 1.7 and move_value.length() > 0.65:
-   return
   move_value = ((pos - left_center) / radius).limit_length()
   if move_value.length() < 0.10:
    move_value = Vector2.ZERO
@@ -517,8 +553,8 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
    fingers[id] = "move"
    _touch_move(id, pos)
  elif role == "height":
-  var fraction := clampf((height_rect.end.y - pos.y) / height_rect.size.y, 0, 1)
-  game.ball.set_release_height(lerpf(0.35, 3.5, fraction))
+  var fraction := clampf((pos.x - height_grab_offset - height_rect.position.x - 16) / (height_rect.size.x - 32), 0, 1)
+  game.ball.set_release_height(snappedf(lerpf(0.35, 3.5, fraction), 0.05))
  elif role == "camera":
   var next := _button_at(pos, 0)
   if next in ["primary", "secondary", "jump", "dive", "jump_set", "bump"] and not role_owners.has(next) and not game.holding_ball():
@@ -605,7 +641,7 @@ func _process(dt: float) -> void:
   _sync_axes()
   _advance_buffers(dt)
  _refresh_context()
- buttons.primary.text = ("БРОСИТЬ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПОДБРОС") if game.holding_ball() else "АТАКА" if a.airborne() or game.running_approach() or a.approach_armed or a.jump_windup > 0 else "ПОДАЧА" if game.serving else "ПРИЁМ"
+ buttons.primary.text = ("БРОСИТЬ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПОДБРОС") if game.holding_ball() else "АТАКА" if a.airborne() or game.running_approach() or a.approach_armed or a.jump_windup > 0 else "ПОДАЧА" if game.serving else "АТАКА"
  buttons.secondary.text = ("К ПОДАЧЕ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПРИЦЕЛ\nБРОСКА") if game.holding_ball() else "БЛОК" if a.airborne() else "ПАС"
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
@@ -655,14 +691,13 @@ func _draw() -> void:
    draw_string(font, rect.position + Vector2(4, rect.size.y * 0.5 + 5 + (line - (lines.size() - 1) * 0.5) * 17), lines[line], HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8, 14 if key not in ["menu", "next", "lock"] else 25, Color("f2f1e9"))
  if game.holding_ball() and not edit_mode:
   var fraction: float = (game.ball.release_height() - 0.35) / 3.15
-  var middle := height_rect.get_center().x
-  draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.75)), height_rect.grow(8))
-  draw_line(Vector2(middle, height_rect.position.y + 4), Vector2(middle, height_rect.end.y - 4), Color("557580"), 4, true)
-  var knob := Vector2(middle, lerpf(height_rect.end.y, height_rect.position.y, fraction))
-  draw_circle(knob, 13, Color("f4cf77"))
-  draw_string(font, height_rect.position + Vector2(-38, -26), "ВЫСОТА", HORIZONTAL_ALIGNMENT_CENTER, 120, 13, Color("f4cf77"))
-  draw_string(font, height_rect.position + Vector2(-38, -7), "+%.1f м" % game.ball.release_height(), HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color("f4cf77"))
-  draw_string(font, height_rect.end + Vector2(-81, 24), "над руками", HORIZONTAL_ALIGNMENT_CENTER, 120, 12, Color("cad9df"))
+  var y := height_rect.get_center().y
+  draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.85)), height_rect.grow(8))
+  draw_line(Vector2(height_rect.position.x + 16, y), Vector2(height_rect.end.x - 16, y), Color("557580"), 5, true)
+  var knob := Vector2(height_rect.position.x + 16 + fraction * (height_rect.size.x - 32), y)
+  draw_circle(knob, 15, Color("f4cf77"))
+  draw_string(font, height_rect.position + Vector2(0, -12), "ПОДБРОС +%.2f м" % game.ball.release_height(), HORIZONTAL_ALIGNMENT_CENTER, height_rect.size.x, 17, Color("f4cf77"))
+  draw_string(font, height_rect.position + Vector2(0, 68), "0.35 м     высота над руками     3.50 м", HORIZONTAL_ALIGNMENT_CENTER, height_rect.size.x, 12, Color("cad9df"))
  if game.athlete.action == VolleyAthlete.Action.PREPARE and not game.athlete.attack_ready and not edit_mode:
   var at := Vector2(size.x * 0.5 - 90, size.y - 108)
   draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.8)), Rect2(at - Vector2(10, 23), Vector2(200, 48)))

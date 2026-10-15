@@ -143,17 +143,17 @@ func close() -> void:
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.get_name() in ["iOS", "Android"] else Input.MOUSE_MODE_CAPTURED
 
 func sample_error(aim: Vector3, accuracy: float) -> Dictionary:
- var scatter := lerpf(0.95, 0.18, accuracy)
+ var scatter := lerpf(1.15, 0.15, accuracy)
  var aim_error := Vector3(rng.randfn(0, scatter), 0, rng.randfn(0, scatter * 1.2))
- var slip := rng.randf() < lerpf(0.12, 0.035, accuracy)
- return {"target": aim + aim_error, "slip": slip, "angle": rng.randf_range(-0.85, 0.85), "scale": rng.randf_range(0.45, 0.75) if slip else rng.randf_range(0.97, 1.03)}
+ var slip := rng.randf() < lerpf(0.15, 0.015, accuracy)
+ return {"target": aim + aim_error, "slip": slip, "angle": rng.randf_range(-0.85, 0.85), "scale": rng.randf_range(0.45, 0.75) if slip else rng.randf_range(1.0 - lerpf(0.04, 0.004, accuracy), 1.0 + lerpf(0.04, 0.004, accuracy))}
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  var side := 1.0 if actor.position.z >= 0 else -1.0
  if is_instance_valid(busy_actor) or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
- var error := sample_error(aim, actor.stats.n("accuracy"))
+ var error := sample_error(aim, actor.style_stats.n("serve"))
  target = error.target
  slipped = error.slip
  slip_angle = error.angle

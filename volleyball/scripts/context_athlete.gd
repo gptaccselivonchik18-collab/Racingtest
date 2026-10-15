@@ -6,6 +6,15 @@ signal touched(kind: int, point: Vector3, outgoing: Vector3)
 @export var contact_ball_radius := 0.38
 @export var serve_contact_radius := 0.64
 var serve_solver: Callable
+var style_stats := VolleyStyleStats.new()
+var landing_cooldown := 0.0
+
+func _init() -> void:
+ stats = style_stats
+
+func mechanic(kind: int) -> Dictionary:
+ return style_stats.profile(Technique.SERVE if lower_serve_active and kind == Technique.UNDERHAND else kind)
+
 @export var air_acceleration := 0.65
 var replica := false
 var lower_serve_active := false
@@ -73,13 +82,7 @@ func release() -> void:
  if strike_technique == Technique.SPIKE and charged_for < 0.13:
   strike_technique = TIP
  strike_direction = direction_for(strike_technique)
- strike_duration = lerpf(0.34, 0.23, stats.n("reaction"))
- if strike_technique == BLOCK:
-  strike_duration = 0.46
- elif strike_technique == JUMP_SET:
-  strike_duration = 0.24
- elif strike_technique in [Technique.SERVE, Technique.JUMP_SERVE]:
-  strike_duration = 0.46
+ strike_duration = mechanic(strike_technique).duration
  action = Action.STRIKE
  action_time = 0
  hit_used = false
@@ -108,7 +111,7 @@ func launch_approach() -> void:
   approach_armed = false
   return
  approach_armed = false
- jump_windup = 0.10
+ jump_windup = style_stats.movement().plant
  last_result = "Прыжок с замахом • нажмите АТАКА для удара"
 
 func hit_approach() -> bool:
@@ -121,10 +124,10 @@ func hit_approach() -> bool:
  return action == Action.STRIKE
 
 func jump() -> void:
- if is_on_floor() and dive_time < 0:
+ if is_on_floor() and dive_time < 0 and landing_cooldown <= 0:
   jump_origin = global_position
-  velocity.y = lerpf(3.5, 5.9, stats.n("jump")) * lerpf(0.88, 1.0, energy)
-  energy = maxf(0, energy - 0.075 * (1.3 - stats.n("stamina")))
+  velocity.y = sqrt(2.0 * 9.81 * style_stats.movement().jump_height) * lerpf(0.88, 1.0, energy)
+  energy = maxf(0, energy - style_stats.movement().jump_cost)
 
 func dive() -> bool:
  if not is_on_floor() or dive_cooldown > 0 or dive_time >= 0 or holding_ball:
@@ -133,14 +136,14 @@ func dive() -> bool:
  cancel_input()
  if dive_direction.length() < 0.1:
   dive_direction = -visual.global_basis.z
- dive_speed = lerpf(5.0, 8.5, stats.n("agility")) + Vector2(velocity.x, velocity.z).length() * 0.3
+ dive_speed = mechanic(DIVE).speed + Vector2(velocity.x, velocity.z).length() * 0.3
  dive_time = 0
- dive_cooldown = lerpf(2.0, 1.25, stats.n("agility"))
+ dive_cooldown = mechanic(DIVE).cooldown
  technique = DIVE
  strike_technique = DIVE
  strike_direction = (dive_direction * 0.55 + Vector3.UP * 0.83).normalized()
  strike_power = 0.5
- strike_duration = 0.55
+ strike_duration = mechanic(DIVE).duration
  action = Action.STRIKE
  action_time = 0
  hit_used = false
@@ -161,12 +164,12 @@ func direction_for(kind: int) -> Vector3:
  if kind in [Technique.OVERHEAD, JUMP_SET, Technique.UNDERHAND]:
   if tilt.length() > 0.18:
    horizontal = (forward * -tilt.y + right * tilt.x).normalized()
-  angle = lerpf(74, 43, power) if kind != Technique.UNDERHAND else lerpf(67, 41, power)
+  angle = lerpf(74, 43, power) + (mechanic(kind).weight - 0.5) * 8 if kind != Technique.UNDERHAND else lerpf(67, 41, power) + (mechanic(kind).weight - 0.5) * 6
  elif kind in [Technique.SPIKE, TIP]:
-  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(50))
+  horizontal = forward.rotated(Vector3.UP, -tilt.x * deg_to_rad(mechanic(kind).angle))
   # Low contact really is shallow; there is no correction to clear the net.
   var height_factor := clampf((global_position.y + 2.2 - 2.43) / 0.9, 0, 1)
-  angle = lerpf(-6, -30, height_factor) + tilt.y * 28
+  angle = lerpf(-6, lerpf(-23, -37, mechanic(kind).weight), height_factor) + tilt.y * 28
   if kind == TIP:
    angle = 7 + tilt.y * 15
  elif kind in [Technique.SERVE, Technique.JUMP_SERVE]:
@@ -182,14 +185,11 @@ func desired_direction() -> Vector3:
 func contact_active() -> bool:
  if action != Action.STRIKE:
   return false
+ var p := mechanic(strike_technique)
  if strike_technique == DIVE:
-  return dive_time >= 0.10 and dive_time <= 0.56
+  return dive_time >= p.contact_from and dive_time <= p.contact_to
  var phase := action_time / strike_duration
- if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE]:
-  return phase >= 0.02 and phase <= 0.98
- if strike_technique == BLOCK:
-  return phase >= 0.20 and phase <= 0.92 and airborne()
- return phase >= 0.12 and phase <= 0.90
+ return phase >= p.start and phase <= p.end and (strike_technique != BLOCK or airborne())
 
 func phase_name() -> String:
  if action == Action.PREPARE:
@@ -202,6 +202,8 @@ func _physics_process(dt: float) -> void:
  previous_wrists = wrists.duplicate()
  previous_elbows = elbows.duplicate()
  dive_cooldown = maxf(0, dive_cooldown - dt)
+ landing_cooldown = maxf(0, landing_cooldown - dt)
+ var movement := style_stats.movement()
  if jump_windup > 0:
   jump_windup = maxf(0, jump_windup - dt)
   if jump_windup == 0:
@@ -215,39 +217,39 @@ func _physics_process(dt: float) -> void:
  var target_yaw := camera_yaw
  if not shift_lock and move_axis.length() > 0.15:
   target_yaw = atan2(-move_axis.x, -move_axis.y)
- var turn_limit := lerpf(2.5, 5.5, stats.n("coordination")) * dt
+ var turn_limit := float(movement.turn) * dt
  if airborne():
   turn_limit *= 0.45
  visual.rotation.y += clampf(angle_difference(visual.rotation.y, target_yaw), -turn_limit, turn_limit)
  if dive_time >= 0:
   dive_time += dt
-  var speed := dive_speed * maxf(0, 1.0 - dive_time / 0.68)
+  var speed := dive_speed * maxf(0, 1.0 - dive_time / float(mechanic(DIVE).travel))
   velocity.x = dive_direction.x * speed
   velocity.z = dive_direction.z * speed
   var dive_yaw := atan2(-dive_direction.x, -dive_direction.z)
   visual.rotation.y += clampf(angle_difference(visual.rotation.y, dive_yaw), -turn_limit, turn_limit)
-  var fall := smoothstep(0.0, 0.22, dive_time) * (1.0 - smoothstep(0.72, 1.12, dive_time))
+  var fall := smoothstep(0.0, 0.22, dive_time) * (1.0 - smoothstep(float(mechanic(DIVE).travel), float(mechanic(DIVE).recover_time), dive_time))
   visual.rotation.x = -fall * 1.12
   var shape_node := get_child(0) as CollisionShape3D
   shape_node.shape.height = lerpf(1.75, 0.6, fall)
   shape_node.position.y = shape_node.shape.height * 0.5
-  if dive_time >= 1.12:
+  if dive_time >= mechanic(DIVE).recover_time:
    dive_time = -1
    visual.rotation.x = 0
    shape_node.shape.height = 1.75
    shape_node.position.y = 0.875
    action = Action.IDLE
  else:
-  var speed := lerpf(2.8, 6.2, stats.n("speed")) * lerpf(0.8, 1.0, energy)
+  var speed := float(movement.speed) * lerpf(0.8, 1.0, energy)
   var horizontal := Vector2(velocity.x, velocity.z)
   if airborne():
    # Keep takeoff momentum; small corrections cannot reverse flight instantly.
    if move_axis.length() > 0.1:
-    horizontal = horizontal.move_toward(move_axis * speed, air_acceleration * dt)
+    horizontal = horizontal.move_toward(move_axis * speed, float(movement.air) * dt)
    horizontal *= 1.0 / (1.0 + 0.018 * horizontal.length() * dt)
   else:
-   var acceleration := lerpf(8.0, 13.0, stats.n("agility"))
-   var braking := lerpf(16.0, 22.0, stats.n("agility"))
+   var acceleration := float(movement.acceleration)
+   var braking := float(movement.braking)
    if move_axis.length() < 0.1:
     horizontal = horizontal.move_toward(Vector2.ZERO, braking * dt)
    elif horizontal.dot(move_axis) < -0.15:
@@ -268,7 +270,8 @@ func _physics_process(dt: float) -> void:
   velocity.y -= 9.81 * dt
  move_and_slide()
  if not was_grounded and is_on_floor() and fall_speed < -1:
-  landing_load = clampf(-fall_speed / 9.0, 0, 0.7)
+  landing_load = clampf(-fall_speed / 9.0 * float(movement.landing), 0, 0.7)
+  landing_cooldown = float(movement.landing_recovery)
  landing_load = move_toward(landing_load, 0, dt * 2.0)
  visual.position.y = -landing_load * 0.07
  approach_blend = lerpf(approach_blend, 1.0 if approach_armed or jump_windup > 0 else 0.0, 1.0 - exp(-18.0 * dt))
@@ -278,7 +281,7 @@ func _physics_process(dt: float) -> void:
   action = Action.IDLE
  position.x = clampf(position.x, -8, 8)
  position.z = clampf(position.z, -12, 12)
- energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -0.018 * (1.2 - stats.n("stamina"))), 0, 1)
+ energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -float(movement.drain)), 0, 1)
  action_time += dt
  if action == Action.PREPARE and not attack_ready:
   charged_for += dt
@@ -289,7 +292,7 @@ func _physics_process(dt: float) -> void:
   action_time = 0
   if not hit_used:
    last_result = "Промах • R — следующий мяч"
- elif action == Action.RECOVER and action_time > 0.20 and dive_time < 0:
+ elif action == Action.RECOVER and action_time > mechanic(strike_technique).recovery and dive_time < 0:
   action = Action.IDLE
  gait += Vector2(velocity.x, velocity.z).length() * dt * 2.5
  _update_pose(dt)
@@ -323,7 +326,7 @@ func _update_pose(dt: float) -> void:
   var side := -1.0 if i == 0 else 1.0
   var shoulder := Vector3(side * 0.3, 1.45, 0)
   var e := Vector3(side * 0.31 + tilt.x * 0.08, 1.91, -0.18)
-  var w := Vector3(side * 0.20 + tilt.x * 0.12, 2.35, -0.30 + tilt.y * 0.12)
+  var w := Vector3(side * float(mechanic(BLOCK).width) + tilt.x * 0.12, 2.35, -0.30 + tilt.y * 0.12)
   if mode == DIVE:
    e = Vector3(side * 0.23, 1.60, -0.32)
    w = Vector3(side * 0.08, 1.87, -0.67)
@@ -348,7 +351,7 @@ func _adapt_platform(dt: float) -> void:
  var mode: int = strike_technique if action == Action.STRIKE else technique
  if mode not in [Technique.OVERHEAD, Technique.UNDERHAND, JUMP_SET]:
   return
- var approach := smoothstep(0, 0.10, action_time) if action == Action.PREPARE else 1.0
+ var approach := smoothstep(0, float(mechanic(mode).windup), action_time) if action == Action.PREPARE else 1.0
  for i in range(2):
   var side := -1.0 if i == 0 else 1.0
   var e := visual.to_local(elbows[i])
@@ -369,7 +372,7 @@ func intersects_ball(center: Vector3) -> bool:
  return overlap_at(center, 1.0)
 
 func effective_contact_radius() -> float:
- return serve_contact_radius if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] else contact_ball_radius
+ return (serve_contact_radius if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] else contact_ball_radius) * float(mechanic(strike_technique).radius)
 
 func overlap_at(center: Vector3, fraction: float) -> bool:
  for i in range(2):
@@ -412,29 +415,32 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
   return Vector3.ZERO
  hit_used = true
  contact_count += 1
+ var p := mechanic(strike_technique)
  var phase := action_time / strike_duration
  var timing := clampf(1.0 - absf(phase - 0.47) / 0.47, 0, 1)
- var approach := clampf(1.0 - incoming.length() / 65.0, 0.3, 1)
- quality = clampf((0.45 + timing * 0.55) * lerpf(approach, 1, stats.n("control")) * lerpf(0.75, 1, stats.n("coordination")), 0.15, 1)
+ var approach := clampf(1.0 - incoming.length() / float(p.pressure), 0.3, 1)
+ quality = clampf((0.45 + timing * 0.55) * lerpf(approach, 1, float(p.control)) * lerpf(0.75, 1, float(p.weight)), 0.15, 1)
  var nearest := 1.0
  for i in range(2):
   nearest = minf(nearest, last_contact_point.distance_to(wrists[i]) / (effective_contact_radius() + HAND_RADIUS))
   if strike_technique in [Technique.UNDERHAND, DIVE]:
    nearest = minf(nearest, VolleyGeometry.distance_to_segment(last_contact_point, elbows[i], wrists[i]) / (effective_contact_radius() + FOREARM_RADIUS))
- quality *= lerpf(1.0, 0.65, clampf(nearest, 0, 1))
+ quality *= lerpf(1.0, float(p.edge), clampf(nearest, 0, 1))
  var outgoing: Vector3
  if strike_technique == BLOCK:
-  var normal := (-visual.global_basis.z + Vector3.UP * (0.18 + tilt.y * 0.55) + visual.global_basis.x * tilt.x * 0.3).normalized()
-  outgoing = incoming.bounce(normal) * lerpf(0.65, 0.94, stats.n("control")) * lerpf(0.8, 1, quality) + hand_velocity.limit_length(6) * 0.12
+  var normal := (-visual.global_basis.z + Vector3.UP * (0.18 + tilt.y * float(p.steer)) + visual.global_basis.x * tilt.x * float(p.steer)).normalized()
+  normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-float(p.accuracy), float(p.accuracy)) * (1.0 - quality)))
+  outgoing = incoming.bounce(normal) * float(p.reflect) * lerpf(0.8, 1, quality) + hand_velocity.limit_length(6) * 0.12
+  outgoing *= rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
  else:
   # One sampled angular error and one speed error per contact, never per frame.
-  var spread := lerpf(7.0, 0.3, stats.n("accuracy")) * (1.3 - quality)
+  var spread := float(p.accuracy) * (1.3 - quality)
   deviation = rng.randf_range(-spread, spread)
   # Tilt remains live until contact, including after release of the hit button.
   if strike_technique != DIVE:
    strike_direction = direction_for(strike_technique)
   var direction := strike_direction.rotated(Vector3.UP, deg_to_rad(deviation))
-  var strength := lerpf(0.75, 1.18, stats.n("strength"))
+  var strength: float = p.strength
   var speed := lerpf(3, 12.5, strike_power)
   match strike_technique:
    Technique.SPIKE: speed = lerpf(16, 31, strike_power)
@@ -442,21 +448,31 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3) -> Vec
    Technique.SERVE: speed = lerpf(9, 22, strike_power)
    Technique.JUMP_SERVE: speed = lerpf(13, 29, strike_power)
    DIVE: speed = lerpf(5, 10, strike_power)
-  speed *= strength * (0.7 + quality * 0.3) * rng.randf_range(0.98, 1.02)
-  outgoing = direction * speed + incoming * (0.025 + (1 - stats.n("control")) * 0.13) + velocity * 0.12
+  speed *= strength * (0.7 + quality * 0.3) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
+  direction = direction.rotated(visual.global_basis.x, deg_to_rad(rng.randf_range(-spread, spread) * 0.5))
+  outgoing = direction * speed + incoming * float(p.carry) + velocity * (0.12 * (1.0 - float(p.control)))
+  if strike_technique in [Technique.UNDERHAND, DIVE]:
+   outgoing.y *= float(p.lift)
  if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] and serve_solver.is_valid():
   var side := 1.0 if global_position.z >= 0 else -1.0
   var horizontal := Vector3(strike_direction.x, 0, strike_direction.z).normalized()
   if horizontal.z * side < -0.25:
    # Choose the landing distance before contact instead of multiplying a
    # fixed fast serve vector that overshoots the whole opponent court.
-   var depth := lerpf(2.0, 6.8, strike_power) + (stats.n("strength") - 0.5) * 0.8
+   var depth := lerpf(2.0, float(p.depth), strike_power)
    var aim_z := -side * depth
    var aim_x := last_contact_point.x + horizontal.x / absf(horizontal.z) * absf(aim_z - last_contact_point.z)
    var aim := Vector3(aim_x, BALL_RADIUS, aim_z)
-   var apex := clampf((1.8 if strike_technique == Technique.JUMP_SERVE else 2.7) + tilt.y * 0.8, 1.0, 4.0)
+   var apex := clampf((1.8 if strike_technique == Technique.JUMP_SERVE else 2.7) + tilt.y * 0.8, 1.0, 4.0) * float(p.arc)
    var launch: Vector3 = serve_solver.call(last_contact_point, aim, apex)
-   outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(0.98, 1.02)
+   outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
  last_result = "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]
  touched.emit(strike_technique, last_contact_point, outgoing)
  return outgoing - incoming
+
+func outgoing_spin(incoming_spin: Vector3, delta_v: Vector3) -> Vector3:
+ var p := mechanic(strike_technique)
+ if strike_technique in [Technique.SPIKE, TIP]:
+  return (incoming_spin * float(p.spin) - visual.global_basis.x * float(p.topspin) * strike_power).limit_length(50)
+ # A cleaner platform absorbs incoming rotation rather than adding random spin.
+ return (incoming_spin * float(p.spin) + hand_velocity.cross(delta_v) * (0.025 * (1.0 - float(p.control)))).limit_length(50)

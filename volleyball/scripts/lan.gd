@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 6
+const PROTOCOL := 7
 var game: Node3D
 var active := false
 var hosting := false
@@ -170,7 +170,7 @@ func _peer_joined(id: int) -> void:
  last_input[id] = Time.get_ticks_msec()
 
 @rpc("any_peer", "call_remote", "reliable")
-func hello(version: int) -> void:
+func hello(version: int, skills: Dictionary) -> void:
  if not hosting:
   return
  var id := multiplayer.get_remote_sender_id()
@@ -191,13 +191,14 @@ func hello(version: int) -> void:
  while slot in occupied:
   slot += 1
  _spawn(id, team, slot)
+ _apply_skills(players[id].actor, skills)
  _broadcast_roster()
  changed.emit()
 
 func _broadcast_roster() -> void:
  var entries := []
  for id in players:
-  entries.append([id, players[id].team, players[id].slot])
+  entries.append([id, players[id].team, players[id].slot, players[id].actor.stats.values])
  for peer_id in players:
   if peer_id != 1 and peer_id in multiplayer.get_peers():
    roster.rpc_id(peer_id, entries)
@@ -209,9 +210,10 @@ func roster(entries: Array) -> void:
   return
  var ids := []
  for entry in entries:
-  if entry is Array and entry.size() == 3:
+  if entry is Array and entry.size() == 4:
    ids.append(entry[0])
    _spawn(entry[0], entry[1], entry[2])
+   _apply_skills(players[entry[0]].actor, entry[3])
  for id in players.keys():
   if id not in ids:
    _remove(id)
@@ -242,7 +244,7 @@ func _peer_left(id: int) -> void:
  changed.emit()
 
 func _connected() -> void:
- hello.rpc_id(1, PROTOCOL)
+ hello.rpc_id(1, PROTOCOL, game.athlete.stats.values)
 
 func _failed() -> void:
  leave()
@@ -308,9 +310,19 @@ func command(role: String, phase: String, payload: Dictionary) -> void:
  execute(id, role, phase, payload)
 
 func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> bool:
- if not hosting or not players.has(id) or role not in ["primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve"] or phase not in ["press", "release", "cancel"]:
+ if not hosting or not players.has(id) or role not in ["primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "stats"] or phase not in ["press", "release", "cancel"]:
   return false
  var actor: ContextAthlete = players[id].actor
+ if role == "stats":
+  var key: String = str(payload.get("skill", ""))
+  var value: Variant = payload.get("value")
+  if key not in VolleyStyleStats.KEYS or not (value is float or value is int) or not is_finite(float(value)):
+   return false
+  actor.stats.set_stat(key, float(value))
+  for peer_id in players:
+   if peer_id != 1 and peer_id in multiplayer.get_peers():
+    style_state.rpc_id(peer_id, id, actor.stats.values)
+  return true
  _apply_input(id, payload.get("axis", actor.move_axis), payload.get("tilt", actor.tilt), payload.get("yaw", actor.camera_yaw), payload.get("pitch", actor.camera_pitch))
  if role == "next":
   if id == 1:
@@ -506,3 +518,14 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
  game.ball.held_mode = mode
  scores = score
  game.rules.message = message
+
+func _apply_skills(actor: ContextAthlete, skills: Dictionary) -> void:
+ for key in VolleyStyleStats.KEYS:
+  var value: Variant = skills.get(key)
+  if (value is float or value is int) and is_finite(float(value)):
+   actor.stats.set_stat(key, float(value))
+
+@rpc("authority", "call_remote", "reliable")
+func style_state(id: int, skills: Dictionary) -> void:
+ if not hosting and players.has(id):
+  _apply_skills(players[id].actor, skills)
