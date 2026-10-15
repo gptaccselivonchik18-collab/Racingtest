@@ -32,6 +32,10 @@ func _ready() -> void:
  var preview := VolleyTossPreview.new()
  preview.ball = ball
  add_child(preview)
+ var strike_preview := VolleyStrikePreview.new()
+ strike_preview.game = self
+ strike_preview.ball = ball
+ add_child(strike_preview)
  athlete.touched.connect(_on_touch)
  ball.surface_contact.connect(_on_surface)
  ball_shadow = VolleyGeometry.sphere(self, Vector3.ZERO, 0.16, Color("143c42"))
@@ -110,6 +114,9 @@ func _court() -> void:
  add_child(sign_text)
 
 func _process(_dt: float) -> void:
+ for entry in ([athlete] if not lan.active else lan.players.values().map(func(p: Dictionary): return p.actor)):
+  entry.look_target = ball.global_position
+  entry.look_target_valid = true
  ball_shadow.position = Vector3(ball.position.x, 0.037, ball.position.z)
  if (not lan.active or lan.hosting) and (ball.position.y < -3 or ball.position.length() > 45):
   ball.feed(Vector3(0, 0.3, 1), Vector3.ZERO)

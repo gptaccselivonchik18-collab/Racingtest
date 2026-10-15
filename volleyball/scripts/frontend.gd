@@ -8,6 +8,11 @@ var info: Label
 var address: LineEdit
 var roster_label: Label
 var in_home := true
+var rooms_box: VBoxContainer
+var search_info: Label
+var join_button: Button
+var auto_enter := false
+var remembered := ""
 
 func _ready() -> void:
  process_mode = Node.PROCESS_MODE_ALWAYS
@@ -28,6 +33,10 @@ func _ready() -> void:
  scroll.add_child(content)
  resized.connect(_layout)
  game.lan.changed.connect(_refresh)
+ game.lan.discovery.changed.connect(_refresh_rooms)
+ var saved := ConfigFile.new()
+ if saved.load("user://rooms.cfg") == OK:
+  remembered = str(saved.get_value("last", "address", ""))
  _layout()
  show_home()
 
@@ -70,27 +79,70 @@ func show_home() -> void:
    show_room()
   else:
    _refresh())
+ _button("Найти комнаты в моей сети", func(): game.lan.discovery.search(); _refresh_rooms())
+ search_info = _label("Откройте комнату у друга и нажмите поиск — IP вводить не нужно.", 16)
+ rooms_box = VBoxContainer.new()
+ content.add_child(rooms_box)
  var join_row := HBoxContainer.new()
  content.add_child(join_row)
  address = LineEdit.new()
  address.placeholder_text = "IP создателя: 192.168.1.10"
  address.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  address.custom_minimum_size.y = 52
- address.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+ address.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_DEFAULT
+ address.text = remembered
+ address.max_length = 96
+ address.select_all_on_focus = true
  join_row.add_child(address)
- var join_button: Button = game.hud._native_button(join_row, "Подключиться", join_from_field)
+ join_button = game.hud._native_button(join_row, "Войти по IP", join_from_field)
  join_button.custom_minimum_size.x = 160
+ var extras := HBoxContainer.new()
+ content.add_child(extras)
+ var dot: Button = game.hud._native_button(extras, ".", func():
+  address.grab_focus()
+  address.deselect()
+  address.insert_text_at_caret("."))
+ dot.custom_minimum_size.x = 70
+ game.hud._native_button(extras, "Вставить IP", func(): address.text = VolleyLAN.normalize_address(DisplayServer.clipboard_get()))
+ game.hud._native_button(extras, "Отменить подключение", func(): game.lan.leave(); game.lan.status = ""; auto_enter = false; _refresh())
  address.text_submitted.connect(func(_value: String): join_from_field())
  info = _label(game.lan.status, 16)
- _label("Все устройства — в одной Wi-Fi сети или на одной точке доступа.\nСоздатель сообщает свой IP остальным. Интернет не требуется.\nВ iOS разрешите доступ к локальной сети.", 16)
+ _label("Одна Wi-Fi сеть / точка доступа. В iOS разрешите локальную сеть. Если поиск не находит комнату, можно вставить IP создателя.", 16)
+ _refresh_rooms()
  _button("Настройки управления и спортсмена", func():
   game.hud.show()
   hide()
   game.hud.toggle_menu())
 
 func join_from_field() -> void:
- game.lan.join_room(address.text)
+ join_to(VolleyLAN.normalize_address(address.text))
+
+func join_to(ip: String, port := VolleyLAN.PORT) -> void:
+ if game.lan.active and not game.lan.connected:
+  return
+ auto_enter = true
+ remembered = ip
+ if game.lan.join_room(ip, port) == OK:
+  var saved := ConfigFile.new()
+  saved.set_value("last", "address", ip)
+  saved.save("user://rooms.cfg")
+ if is_instance_valid(address):
+  address.release_focus()
  _refresh()
+
+func _refresh_rooms() -> void:
+ if not in_home or not is_instance_valid(rooms_box):
+  return
+ for child in rooms_box.get_children():
+  rooms_box.remove_child(child)
+  child.queue_free()
+ if is_instance_valid(search_info):
+  search_info.text = game.lan.discovery.message if not game.lan.discovery.message.is_empty() else "Откройте комнату у друга и нажмите поиск."
+ for room in game.lan.discovery.rooms.values():
+  var entry: Dictionary = room
+  var button: Button = game.hud._native_button(rooms_box, "Войти • %s • %d/12" % [entry.ip, entry.players], func(): join_to(entry.ip, entry.port))
+  button.disabled = entry.players >= 12
+
 
 func show_room() -> void:
  get_tree().paused = false
@@ -103,7 +155,7 @@ func show_room() -> void:
  _label("КОМНАТА • VOLLEY / LAB", 30)
  info = _label("", 18)
  if game.lan.hosting:
-  _button("Скопировать IP комнаты", func(): DisplayServer.clipboard_set(game.lan.addresses()))
+  _button("Скопировать IP комнаты", func(): DisplayServer.clipboard_set(game.lan.addresses().get_slice(",", 0).strip_edges()))
  roster_label = _label("", 20)
  _label("Две стороны, до 6 игроков в каждой. Можно входить во время игры.\nСоздатель рассчитывает мяч и счёт. Следующий розыгрыш — через 3 секунды.", 16)
  _button("На площадку", enter_court)
@@ -115,8 +167,13 @@ func _refresh() -> void:
   return
  if in_home:
   info.text = game.lan.status
+  if is_instance_valid(join_button):
+   join_button.disabled = game.lan.active and not game.lan.connected
+   join_button.text = "Подключаюсь…" if join_button.disabled else "Войти по IP"
   if game.lan.connected:
    show_room()
+   if auto_enter:
+    enter_court()
   return
  info.text = ("Ваш IP: " + game.lan.addresses() + "\n" if game.lan.hosting else "Подключено к создателю\n") + "Игроки: %d / 12" % game.lan.players.size()
  if is_instance_valid(roster_label):

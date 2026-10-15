@@ -40,8 +40,14 @@ func run() -> void:
   print("LAN_HOST_READY")
  else:
   game.athlete.stats.set_stat("set", 135 + index)
-  game.lan.join_room("127.0.0.1", port)
- game.frontend.enter_court()
+  if index == 1:
+   game.frontend.show_home()
+   var targets: Array[String] = ["127.0.0.1"]
+   game.lan.discovery.search(targets, port + 1)
+  else:
+   game.lan.join_room("127.0.0.1", port)
+ if role == "host" or index != 1:
+  game.frontend.enter_court()
  game.hud.set_process(false)
 
 func _process(dt: float) -> bool:
@@ -88,6 +94,11 @@ func _process(dt: float) -> bool:
    print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen])
    quit(0 if ok else 1)
  else:
+  if index == 1 and not drive and game.lan.discovery.rooms.has("127.0.0.1"):
+   drive = true
+   var room: Dictionary = game.lan.discovery.rooms["127.0.0.1"]
+   game.frontend.join_to(room.ip, room.port)
+   print("LAN_DISCOVERY_JOIN")
   if game.lan.connected and joined_at < 0:
    joined_at = elapsed
    print("LAN_CLIENT_JOINED ", index)
@@ -122,6 +133,8 @@ func _process(dt: float) -> bool:
     reported = true
     client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
     client_passed = client_passed and stats_seen
+    if index == 1:
+     client_passed = client_passed and not game.frontend.visible
     print("LAN_CLIENT_RESULT %d snapshots=%d peers=%d" % [index, game.lan.snapshot_count, game.lan.players.size()])
    if age > 11 and index != 11:
     quit(0 if client_passed else 1)

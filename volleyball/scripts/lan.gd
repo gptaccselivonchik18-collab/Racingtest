@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 7
+const PROTOCOL := 8
 var game: Node3D
 var active := false
 var hosting := false
@@ -24,6 +24,9 @@ var round_wait := -1.0
 var last_touch_team := 0
 var serve_team := 0
 var snapshot_count := 0
+var discovery: VolleyRoomDiscovery
+var join_address := ""
+var rejected_reason := ""
 
 func player_id(actor: ContextAthlete) -> int:
  for id in players:
@@ -32,6 +35,11 @@ func player_id(actor: ContextAthlete) -> int:
  return 0
 
 func _ready() -> void:
+ discovery = VolleyRoomDiscovery.new()
+ discovery.lan = self
+ add_child(discovery)
+ # All gameplay messages go through the host; no client relay mesh is needed.
+ multiplayer.server_relay = false
  name = "LAN"
  process_mode = Node.PROCESS_MODE_ALWAYS
  multiplayer.peer_connected.connect(_peer_joined)
@@ -45,14 +53,14 @@ func addresses() -> String:
  for address in IP.get_local_addresses():
   if address.is_valid_ip_address() and ":" not in address and not address.begins_with("127.") and not address.begins_with("169.254."):
    result.append(address)
- return ", ".join(result) if not result.is_empty() else "РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ Рє Wi-Fi"
+ return ", ".join(result) if not result.is_empty() else "Проверьте подключение к Wi-Fi"
 
 func host_room(port := PORT) -> Error:
  leave()
  var peer := ENetMultiplayerPeer.new()
  var error := peer.create_server(port, LIMIT - 1)
  if error != OK:
-  status = "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РєРѕРјРЅР°С‚Сѓ. РџРѕСЂС‚ Р·Р°РЅСЏС‚ РёР»Рё СЃРµС‚СЊ РЅРµРґРѕСЃС‚СѓРїРЅР°."
+  status = "Не удалось создать комнату. Порт занят или сеть недоступна."
   changed.emit()
   return error
  multiplayer.multiplayer_peer = peer
@@ -63,26 +71,29 @@ func host_room(port := PORT) -> Error:
  game.ball.replica = false
  game.ball.contact_athletes = [game.athlete]
  reset_round()
- status = "РљРѕРјРЅР°С‚Р° СЃРѕР·РґР°РЅР° вЂў " + addresses()
+ discovery.advertise(port, port + 1)
+ status = "Комната создана • " + addresses()
  changed.emit()
  return OK
 
 func join_room(address: String, port := PORT) -> Error:
  leave()
- address = address.strip_edges()
+ address = normalize_address(address)
  if not address.is_valid_ip_address():
-  status = "Р’РІРµРґРёС‚Рµ IP СЃРѕР·РґР°С‚РµР»СЏ РєРѕРјРЅР°С‚С‹, РЅР°РїСЂРёРјРµСЂ 192.168.1.10"
+  status = "Введите IP создателя комнаты, например 192.168.1.10"
   changed.emit()
   return ERR_INVALID_PARAMETER
  var peer := ENetMultiplayerPeer.new()
  var error := peer.create_client(address, port)
  if error != OK:
-  status = "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє СЃРµС‚Рё"
+  status = "Не удалось подключиться к сети"
   changed.emit()
   return error
  multiplayer.multiplayer_peer = peer
  active = true
- status = "РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє " + address + "вЂ¦"
+ join_address = address
+ rejected_reason = ""
+ status = "Подключение к " + address + "…"
  connecting_for = 0
  game.ball.replica = true
  game.ball.freeze = true
@@ -92,6 +103,9 @@ func join_room(address: String, port := PORT) -> Error:
  return OK
 
 func leave() -> void:
+ if is_instance_valid(discovery):
+  discovery.stop_advertising()
+  discovery.stop_search()
  active = false
  hosting = false
  connected = false
@@ -146,7 +160,7 @@ func _spawn(id: int, team: int, slot: int) -> void:
  actor.replica = not hosting
  actor.set_physics_process(hosting)
  var tag := Label3D.new()
- tag.text = "%s %d" % ["A" if team == 0 else "Р‘", slot + 1]
+ tag.text = "%s %d" % ["A" if team == 0 else "Б", slot + 1]
  tag.position.y = 2.05
  tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
  tag.font_size = 48
@@ -175,7 +189,10 @@ func hello(version: int, skills: Dictionary) -> void:
   return
  var id := multiplayer.get_remote_sender_id()
  if version != PROTOCOL or players.size() >= LIMIT:
-  multiplayer.multiplayer_peer.disconnect_peer(id)
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.8." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  get_tree().create_timer(0.3).timeout.connect(func():
+   if hosting and id in multiplayer.get_peers():
+    multiplayer.multiplayer_peer.disconnect_peer(id))
   return
  if players.has(id):
   return
@@ -195,12 +212,18 @@ func hello(version: int, skills: Dictionary) -> void:
  _broadcast_roster()
  changed.emit()
 
+func _peer_ready(id: int) -> bool:
+ if id not in multiplayer.get_peers() or multiplayer.multiplayer_peer is not ENetMultiplayerPeer:
+  return false
+ var transport: ENetMultiplayerPeer = multiplayer.multiplayer_peer
+ return transport.get_peer(id).get_state() == ENetPacketPeer.STATE_CONNECTED
+
 func _broadcast_roster() -> void:
  var entries := []
  for id in players:
   entries.append([id, players[id].team, players[id].slot, players[id].actor.stats.values])
  for peer_id in players:
-  if peer_id != 1 and peer_id in multiplayer.get_peers():
+  if peer_id != 1 and _peer_ready(peer_id):
    roster.rpc_id(peer_id, entries)
  game.ball.contact_athletes = players.values().map(func(entry: Dictionary): return entry.actor)
 
@@ -218,7 +241,7 @@ func roster(entries: Array) -> void:
   if id not in ids:
    _remove(id)
  connected = players.has(multiplayer.get_unique_id())
- status = "Р’ РєРѕРјРЅР°С‚Рµ %d / 12" % players.size()
+ status = "В комнате %d / 12" % players.size()
  changed.emit()
 
 func _remove(id: int) -> void:
@@ -248,13 +271,16 @@ func _connected() -> void:
 
 func _failed() -> void:
  leave()
- status = "РљРѕРјРЅР°С‚Р° РЅРµРґРѕСЃС‚СѓРїРЅР° РёР»Рё Р·Р°РїРѕР»РЅРµРЅР°. РџСЂРѕРІРµСЂСЊС‚Рµ IP Рё РѕР±С‰СѓСЋ Wi-Fi СЃРµС‚СЊ."
+ status = rejected_reason if not rejected_reason.is_empty() else "Нет ответа. Откройте комнату у создателя, проверьте общую Wi-Fi сеть и разрешение локальной сети."
  game.frontend.show_home()
  changed.emit()
 
 func _lost_host() -> void:
+ if not connected:
+  _failed()
+  return
  leave()
- status = "РЎРѕР·РґР°С‚РµР»СЊ РІС‹С€РµР» РёР· РєРѕРјРЅР°С‚С‹. РњРѕР¶РЅРѕ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ СЃРЅРѕРІР° РёР»Рё РёРіСЂР°С‚СЊ РѕРґРЅРѕРјСѓ."
+ status = "Создатель вышел из комнаты. Можно подключиться снова или играть одному."
  game.frontend.show_home()
  changed.emit()
 
@@ -320,7 +346,7 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
    return false
   actor.stats.set_stat(key, float(value))
   for peer_id in players:
-   if peer_id != 1 and peer_id in multiplayer.get_peers():
+   if peer_id != 1 and _peer_ready(peer_id):
     style_state.rpc_id(peer_id, id, actor.stats.values)
   return true
  _apply_input(id, payload.get("axis", actor.move_axis), payload.get("tilt", actor.tilt), payload.get("yaw", actor.camera_yaw), payload.get("pitch", actor.camera_pitch))
@@ -468,12 +494,14 @@ func _process(dt: float) -> void:
    var a: ContextAthlete = players[id].actor
    if game.ball.held and game.ball.athlete == a:
     held_by = id
-   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup])
+   poses.append([id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack])
   # Stay below the ENet MTU at 12 players; one large unreliable packet
   # would fragment and magnify loss on mobile Wi-Fi.
   for first in range(0, poses.size(), 2):
-   snapshot.rpc(poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message)
- else:
+   for peer_id in players:
+    if peer_id != 1 and _peer_ready(peer_id):
+     snapshot.rpc_id(peer_id, poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message)
+ elif _peer_ready(1):
   input_state.rpc_id(1, game.athlete.move_axis, game.athlete.tilt, game.rig.yaw, game.rig.pitch)
 
 @rpc("authority", "call_remote", "unreliable_ordered", 2)
@@ -505,11 +533,13 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
   a.dive_time = pose[17]
   a.last_result = pose[18]
   a.jump_windup = pose[19]
+  a.release_time = pose[20]
+  a.contact_flash = pose[21]
+  a.lower_serve_active = pose[22]
+  a.air_attack = pose[23]
   a.holding_ball = held_by == pose[0]
   a.previous_wrists = a.wrists.duplicate()
   a.previous_elbows = a.elbows.duplicate()
-  a.gait += Vector2(a.velocity.x, a.velocity.z).length() / 30.0 * 2.5
-  a._update_pose(1.0 / 30)
  game.ball.position = at
  game.ball.rotation = spin_pose
  game.ball.last_velocity = speed
@@ -529,3 +559,20 @@ func _apply_skills(actor: ContextAthlete, skills: Dictionary) -> void:
 func style_state(id: int, skills: Dictionary) -> void:
  if not hosting and players.has(id):
   _apply_skills(players[id].actor, skills)
+
+static func normalize_address(raw: String) -> String:
+ var text := raw.strip_edges().replace(",", ".").replace("，", ".").replace("。", ".")
+ var pattern := RegEx.new()
+ pattern.compile("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")
+ for match_value in pattern.search_all(text):
+  var value := match_value.get_string()
+  if value.is_valid_ip_address():
+   return value
+ return text
+
+@rpc("authority", "call_remote", "reliable")
+func reject_join(reason: String) -> void:
+ if not connected:
+  rejected_reason = reason.left(160)
+  status = rejected_reason
+  changed.emit()

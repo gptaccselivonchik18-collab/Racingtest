@@ -173,6 +173,8 @@ func toss() -> bool:
   athlete.last_result = "Сначала подберите мяч"
   return false
  jump_toss = athlete.technique == VolleyAthlete.Technique.JUMP_SERVE
+ if athlete is ContextAthlete:
+  athlete.animate_release()
  feed(athlete.hold_position(), toss_velocity())
  athlete.last_result = "Подброс • удержать и отпустить основную кнопку для удара"
  return true
@@ -181,6 +183,8 @@ func throw_held() -> bool:
  if not held:
   athlete.last_result = "Бросок: сначала подберите мяч"
   return false
+ if athlete is ContextAthlete:
+  athlete.animate_release()
  feed(athlete.hold_position(), throw_velocity())
  athlete.action = VolleyAthlete.Action.RECOVER
  athlete.strike_technique = VolleyAthlete.Technique.THROW
