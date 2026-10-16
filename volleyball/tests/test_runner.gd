@@ -47,7 +47,8 @@ func run() -> void:
  check(game.camera.global_position.distance_to(a.eye_transform().origin) < 0.001, "Camera remains attached to the eyes beside solid geometry")
  wall.queue_free()
  await frames(3)
- # Compare original and extended controller's actual resource properties.
+ # Preserve source resources; the runtime jersey deliberately has a tapered
+ # silhouette in 0.16. All other original mesh classes/materials stay intact.
  var original := VolleyAthlete.new()
  root.add_child(original)
  original.set_physics_process(false)
@@ -56,7 +57,12 @@ func run() -> void:
   var old_node := original.visual.get_child(i)
   var new_node := a.visual.get_child(i)
   if old_node is MeshInstance3D:
-   check(old_node.mesh.get_class() == new_node.mesh.get_class() and old_node.material_override.albedo_color == new_node.material_override.albedo_color, "Original mesh and material %d preserved" % i)
+   var same_color: bool = old_node.material_override.albedo_color == new_node.material_override.albedo_color
+   if i == 0:
+    var bounds: AABB = new_node.mesh.get_aabb()
+    check(old_node.mesh is BoxMesh and new_node.mesh is ArrayMesh and same_color and bounds.size.is_equal_approx(Vector3(0.56, 0.60, 0.32)), "Original jersey source/material preserved; runtime shoulder/waist silhouette has anatomical bounds")
+   else:
+    check(old_node.mesh.get_class() == new_node.mesh.get_class() and same_color, "Original mesh and material %d preserved" % i)
  original.queue_free()
  check(is_equal_approx(b.mass, 0.27) and b.continuous_cd, "Real ball mass and CCD")
  check(PhysicsServer3D.area_get_param(root.world_3d.space, PhysicsServer3D.AREA_PARAM_GRAVITY) > 0, "Physics world gravity is active")
@@ -221,3 +227,4 @@ func run() -> void:
  game.queue_free()
  await process_frame
  quit(0 if failures == 0 else 1)
+
