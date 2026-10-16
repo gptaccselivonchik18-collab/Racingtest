@@ -211,7 +211,7 @@ func _process(dt: float) -> bool:
      var side := 1.0 if game.athlete.position.z >= 0 else -1.0
      game.lan.local_action("lower_serve", "press", {"aim": Vector3(0, 0.105, -side * 5), "apex": 3.5})
      print("LAN_CLIENT_SERVE_REQUEST")
-   if index == 11 and age > 9:
+   if index == 11 and age > 9 and gate.may_finish:
     game.lan.leave()
     print("LAN_CLIENT_LEFT")
     quit(0)
@@ -224,9 +224,12 @@ func _process(dt: float) -> bool:
     if index == 1:
      client_passed = client_passed and not game.frontend.visible
     print("LAN_CLIENT_RESULT %d snapshots=%d peers=%d" % [index, game.lan.snapshot_count, game.lan.players.size()])
+    # Keep every participant connected until the slowest process has checked
+    # the final serve. Otherwise scheduling delays masquerade as a LAN bug.
+    gate.observed_result.rpc_id(1)
    # The driver must finish its automatic serve before disconnecting; a
    # delayed first held snapshot must not cancel the sequence mid-toss.
-   if age > 11 and index != 11 and reported and (index != 1 or age - float_requested_at > 2.0):
+   if age > 11 and index != 11 and reported and gate.may_finish and (index != 1 or age - float_requested_at > 2.0):
     quit(0 if client_passed else 1)
   if elapsed > 26:
    push_error("Client timeout " + str(index))

@@ -20,6 +20,13 @@ var last_velocity := Vector3.ZERO
 var torso_origin := Basis.IDENTITY
 var offset_origin := Vector3.ZERO
 var acceleration := Vector3.ZERO
+var previous_feet: Array[Vector3] = []
+var previous_poles: Array[Vector3] = []
+var air_blend := 0.0
+var run_blend := 0.0
+
+static func stride_frequency(speed: float) -> float:
+ return clampf(1.15 + speed * 0.23, 1.15, 2.80)
 
 func shoulder(index: int) -> Vector3:
  return Vector3(0, 1.23, 0) + body_offset + torso_basis * Vector3(-0.3 if index == 0 else 0.3, 0.22, 0)
@@ -38,6 +45,9 @@ func update(dt: float) -> void:
  var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.technique
  var speed := Vector2(a.velocity.x, a.velocity.z).length()
  var air := a.airborne()
+ var blend := 1.0 - exp(-14.0 * dt) if dt > 0 else 1.0
+ air_blend = lerpf(air_blend, 1.0 if air else 0.0, blend)
+ run_blend = lerpf(run_blend, clampf(speed / 4.0, 0, 1) * (1.0 - air_blend), blend)
  var aim := a.action_tilt(kind)
  var phase := clampf(a.action_time / maxf(a.strike_duration, 0.01), 0, 1)
  var jumping_spike := kind in [2, 4] and (air if a.action == VolleyAthlete.Action.PREPARE else a.air_attack)
@@ -78,13 +88,19 @@ func update(dt: float) -> void:
   torso_basis = torso_origin.slerp(torso_basis, smoothstep(0, 0.10, transition))
   body_offset = offset_origin.lerp(body_offset, smoothstep(0, 0.10, transition))
  wrists.clear()
+ previous_poles = poles.duplicate()
+ previous_feet = feet.duplicate()
  poles.clear()
  feet.clear()
  for i in range(2):
   var side := -1.0 if i == 0 else 1.0
-  var run_swing := sin(a.gait + i * PI) * minf(0.29, speed * 0.055)
-  var idle := Vector3(side * lerpf(0.28, 0.33, readiness), 1.08 - readiness * 0.09 + absf(run_swing) * 0.10, -0.28 + readiness * 0.18 + run_swing)
-  var pole := Vector3(side * 0.38, 1.16, 0.015)
+  var run_swing := cos(a.gait + i * PI) * 0.18 * run_blend
+  var idle := Vector3(side * lerpf(0.28, 0.31, readiness), 1.08 - run_blend * 0.04, -0.28 + run_blend * 0.13 + run_swing)
+  # Elbows descend beside the ribs, behind the wrists. A lateral pole used
+  # to fold both arms outward into an inverted-looking chicken-wing pose.
+  var pole := Vector3(side * 0.30, 1.02, 0.24)
+  var jump_hands := Vector3(side * 0.30, 1.17, -0.24)
+  idle = idle.lerp(jump_hands, air_blend)
   var draw := idle
   var contact := idle
   var follow := idle
@@ -159,6 +175,10 @@ func update(dt: float) -> void:
    wrist = origins[i].lerp(idle, smoothstep(0, float(a.mechanic(kind).recovery), a.action_time)) if origins.size() == 2 else idle
   if a.action != VolleyAthlete.Action.IDLE:
    wrist += Vector3(aim.x * 0.07, aim.x * side * 0.035, aim.y * 0.055)
+  if a.action == VolleyAthlete.Action.IDLE:
+   pole = Vector3(side * 0.30, 1.02, 0.24)
+  elif a.action == VolleyAthlete.Action.RECOVER:
+   pole = pole.lerp(Vector3(side * 0.30, 1.02, 0.24), smoothstep(0, float(a.mechanic(kind).recovery), a.action_time))
   if a.holding_ball:
    wrist = Vector3(0.18 + side * 0.105, 1.30, -0.50)
    pole = Vector3(side * 0.35, 1.20, -0.15)
@@ -177,22 +197,33 @@ func update(dt: float) -> void:
   if origins.size() == 2 and (a.holding_ball or a.action in [VolleyAthlete.Action.IDLE, VolleyAthlete.Action.PREPARE]):
    wrist = origins[i].lerp(wrist, smoothstep(0, 0.16 if a.holding_ball else windup, transition))
   wrists.append(wrist)
-  poles.append(chest + body_offset + torso_basis * (pole - chest))
+  var posed_pole := chest + body_offset + torso_basis * (pole - chest)
+  if previous_poles.size() == 2 and dt > 0:
+   posed_pole = previous_poles[i].lerp(posed_pole, 1.0 - exp(-20.0 * dt))
+  poles.append(posed_pole)
   var local_motion := a.visual.global_basis.inverse() * Vector3(a.velocity.x, 0, a.velocity.z)
   var travel := local_motion.normalized() if speed > 0.1 else Vector3.FORWARD
-  var walk_phase := a.gait + i * PI
-  var swing := sin(walk_phase)
-  var foot := Vector3(side * lerpf(0.20, 0.15, readiness), 0.11, side * 0.045 * (1.0 - readiness)) + travel * swing * minf(0.24, speed * 0.05)
-  foot.y += maxf(0, cos(walk_phase)) * minf(0.16, speed * 0.032)
-  var on_stance := cos(walk_phase) <= 0 and not air and a.dive_time < 0 and speed > 0.25
+  var walk_phase := fposmod((a.gait + i * PI) / TAU, 1.0)
+  var frequency := stride_frequency(speed)
+  # At running speed the foot stays down for a short support phase. Keep
+  # stride reach within leg length rather than vibrating short steps.
+  var support := minf(0.32, 0.72 * frequency / maxf(speed, 0.1))
+  var reach := minf(0.36, speed / frequency * support * 0.5)
+  var swing_phase := clampf((walk_phase - support) / (1.0 - support), 0, 1)
+  var along := lerpf(reach, -reach, walk_phase / support) if walk_phase < support else lerpf(-reach, reach, smoothstep(0, 1, swing_phase))
+  var lift := sin(swing_phase * PI) * minf(0.15, speed * 0.035)
+  var foot := Vector3(side * lerpf(0.20, 0.15, readiness), 0.11 + lift, side * 0.045 * (1.0 - readiness)) + travel * along
+  var on_stance := walk_phase < support and not air and a.dive_time < 0 and speed > 0.25
   if on_stance:
    if not stance[i] or not initialized:
+    if previous_feet.size() == 2 and dt > 0:
+     foot = previous_feet[i].lerp(foot, 1.0 - exp(-22.0 * dt))
     planted[i] = a.visual.to_global(foot)
     planted[i].y = a.global_position.y + 0.10
    foot = a.visual.to_local(planted[i])
   elif not air and a.dive_time < 0:
    var world_foot := a.visual.to_global(foot)
-   world_foot.y = a.global_position.y + 0.10 + maxf(0, cos(walk_phase)) * minf(0.15, speed * 0.03)
+   world_foot.y = a.global_position.y + 0.10 + lift
    foot = a.visual.to_local(world_foot)
   if air:
    foot = Vector3(side * 0.16, 0.22 + maxf(0, a.velocity.y) * 0.012, 0.14 + side * 0.045)
@@ -202,6 +233,8 @@ func update(dt: float) -> void:
     foot = foot.lerp(Vector3(side * 0.17, 0.35 if i == 1 else 0.22, 0.30 if i == 1 else -0.08), air_windup)
   if a.dive_time >= 0:
    foot = Vector3(side * 0.19, 0.13, 0.15 + side * 0.05)
+  if previous_feet.size() == 2 and dt > 0 and not on_stance:
+   foot = previous_feet[i].lerp(foot, 1.0 - exp(-22.0 * dt))
   stance[i] = on_stance
   feet.append(foot)
  initialized = true

@@ -169,7 +169,7 @@ func _process(dt: float) -> void:
  contact_flash = maxf(0, contact_flash - dt)
  if dive_time >= 0:
   dive_time += dt
- gait += Vector2(velocity.x, velocity.z).length() * dt * 7.6
+ advance_gait(dt)
  _update_pose(dt)
 
 func airborne() -> bool:
@@ -422,7 +422,7 @@ func _physics_process(dt: float) -> void:
    last_result = "Промах • R — следующий мяч"
  elif action == Action.RECOVER and action_time > mechanic(strike_technique).recovery and dive_time < 0:
   action = Action.IDLE
- gait += Vector2(velocity.x, velocity.z).length() * dt * 7.6
+ advance_gait(dt)
  _update_pose(dt)
 
 func _update_pose(dt: float) -> void:
@@ -466,6 +466,13 @@ func _update_pose(dt: float) -> void:
   elbows[i] = visual.to_global(e)
   wrists[i] = visual.to_global(w)
  _finish_pose(dt)
+
+func advance_gait(dt: float) -> void:
+ # One phase revolution is a complete left/right stride, not a single step.
+ # Keep take-off momentum without continuing to cycle limbs in mid-air.
+ var speed := Vector2(velocity.x, velocity.z).length()
+ if speed > 0.12 and not airborne() and dive_time < 0:
+  gait = fposmod(gait + dt * TAU * VolleyMotion.stride_frequency(speed), TAU)
 
 func _finish_pose(dt: float) -> void:
  if is_instance_valid(limb_rig):
