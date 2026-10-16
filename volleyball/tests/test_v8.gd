@@ -58,6 +58,8 @@ func run() -> void:
  root.add_child(game)
  a = game.athlete
  a.style_stats.reset_all()
+ game.frontend.show_network()
+ game.frontend._set_manual(true)
  check(game.frontend.address.virtual_keyboard_type == LineEdit.KEYBOARD_TYPE_DEFAULT, "IP uses the full keyboard with punctuation")
  game.frontend.address.text = "192"
  game.frontend.address.caret_column = 3
