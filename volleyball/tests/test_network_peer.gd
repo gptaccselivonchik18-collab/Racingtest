@@ -97,7 +97,7 @@ func _process(dt: float) -> bool:
     else:
      print("NETWORK_CLIENT_RESULT reconnect=true snapshots=true styles=true")
      quit(0)
- if elapsed > 24:
+ if elapsed > (45.0 if role == "host" else 24.0):
   push_error("Network scenario timeout " + role)
   quit(1)
  return false

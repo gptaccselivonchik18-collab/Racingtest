@@ -95,7 +95,10 @@ try:
         client, client_log = launch('client', proxy.getsockname()[1])
         try:
             assert client.wait(timeout=28) == 0, client_log.read_text(encoding='utf-8', errors='replace')
-            assert host.wait(timeout=10) == 0, host_log.read_text(encoding='utf-8', errors='replace')
+            # The impaired proxy can drop the final disconnect datagram.
+            # Keep relaying until ENet detects the departed peer; ten seconds
+            # can expire before transport cleanup. All state checks stay strict.
+            assert host.wait(timeout=40) == 0, host_log.read_text(encoding='utf-8', errors='replace')
         finally:
             stop.set()
             worker.join(timeout=2)
