@@ -42,6 +42,7 @@ func run() -> void:
  game.practice.configure({"enabled": false})
  ball.feed(Vector3(1, 4, 5), Vector3(0, -2, -2))
  var bumps := 0
+ var diving_receives := 0
  var sets := 0
  var spikes := 0
  var jumps := 0
@@ -50,12 +51,13 @@ func run() -> void:
   await physics_frame
  for bot in manager.bots.values():
   bumps += int(bot.contact_kinds.get(1, 0))
+  diving_receives += int(bot.contact_kinds.get(ContextAthlete.DIVE, 0))
   sets += int(bot.contact_kinds.get(0, 0))
   spikes += int(bot.contact_kinds.get(2, 0))
   jumps += bot.jumps
   both_teams[bot.court_team] += bot.contact_count
- print("BOT RALLY: bump=%d set=%d spike=%d jumps=%d contacts=%s" % [bumps, sets, spikes, jumps, str(both_teams)])
- check(bumps >= 2, "Autonomous bots run to and receive a freely moving ball")
+ print("BOT RALLY: bump=%d dive=%d set=%d spike=%d jumps=%d contacts=%s" % [bumps, diving_receives, sets, spikes, jumps, str(both_teams)])
+ check(bumps + diving_receives >= 2, "Autonomous bots run to and receive freely moving balls with standing or diving saves")
  check(sets >= 1 and spikes >= 1 and jumps >= 1, "Autonomous play combines reception, set and a real jump attack")
  check(both_teams[0] > 0 and both_teams[1] > 0, "Both teams participate without human commands")
  check(not game.rules.ended, "Solo free play has no match faults or forced restarts")
