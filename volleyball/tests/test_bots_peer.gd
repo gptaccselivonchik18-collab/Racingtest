@@ -10,6 +10,7 @@ var first_position := Vector3.ZERO
 var snapshot_seen := false
 var pickup_id := 0
 var pickup_sent := false
+var service_rotated := false
 
 func _initialize() -> void:
  call_deferred("run")
@@ -71,6 +72,17 @@ func _process(dt: float) -> bool:
    phase = 4
    phase_time = 0
   elif phase == 4 and game.lan.match_active and acknowledged(3):
+   if not service_rotated:
+    if game.game_bots.current_server is VolleyGameBot:
+     fail("Mixed teams did not offer the first serve to a human")
+    # Two real side-outs rotate past the two humans to the first bot.
+    for i in range(2):
+     game.lan.award(1)
+     game.lan.round_wait = -1
+     game.lan.award(0)
+     game.lan.round_wait = -1
+    game.lan.reset_round()
+    service_rotated = true
    var server: VolleyGameBot = game.game_bots.bots[-100]
    if server.serves == 0 or server.contact_count == 0:
     return false

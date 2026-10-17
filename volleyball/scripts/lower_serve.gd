@@ -31,7 +31,7 @@ func _ready() -> void:
  panel.add_theme_stylebox_override("panel", game.hud._panel(Color("132b3c"), 20))
  add_child(panel)
  content = VBoxContainer.new()
- content.add_theme_constant_override("separation", 14)
+ content.add_theme_constant_override("separation", 8)
  panel.add_child(content)
  resized.connect(_layout)
  _layout()
@@ -44,11 +44,11 @@ func _process(_dt: float) -> void:
 
 func _layout() -> void:
  if stage == 0:
-  panel.position = Vector2(size.x * 0.25, size.y * 0.22)
-  panel.size = Vector2(size.x * 0.5, size.y * 0.56)
+  panel.position = Vector2(size.x * 0.15, 12)
+  panel.size = Vector2(size.x * 0.70, 0)
  else:
-  panel.position = Vector2(size.x * 0.24, 12)
-  panel.size = Vector2(size.x * 0.52, 120)
+  panel.position = Vector2(12, 12)
+  panel.size = Vector2(minf(260, size.x * 0.28), 0)
 
 func _clear() -> void:
  for child in content.get_children():
@@ -58,7 +58,7 @@ func _clear() -> void:
 func _label(text: String) -> Label:
  var label := Label.new()
  label.text = text
- label.add_theme_font_size_override("font_size", 20)
+ label.add_theme_font_size_override("font_size", 18)
  label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  content.add_child(label)
  return label
@@ -89,7 +89,7 @@ func open() -> bool:
  slider.max_value = 5.0
  slider.step = 0.1
  slider.value = height
- slider.custom_minimum_size.y = 54
+ slider.custom_minimum_size.y = 40
  slider.value_changed.connect(func(v: float): height = v; value.text = "Высота дуги: +%.1f м от точки удара" % v)
  content.add_child(slider)
  _label(height_hint())
@@ -101,11 +101,14 @@ func open() -> bool:
 func choose_target() -> void:
  stage = 1
  _clear()
- _label("Коснитесь места на ПОЛОВИНЕ СОПЕРНИКА")
- game.hud._native_button(content, "← Изменить высоту / отменить", func(): close(); open())
- var center := Vector3(0, 0, -source_side * 5.6)
- top_camera.position = center + Vector3.UP * 18
+ _label("ЦЕЛЬ ПОДАЧИ\nКоснитесь поля соперника")
+ game.hud._native_button(content, "← Высота / отмена", func(): close(); open())
+ var center := Vector3(0, 0, -source_side * 4.5)
+ # The enclosure has a ceiling at 12 m: an outside camera sees the roof.
+ top_camera.position = center + Vector3.UP * 10
  top_camera.look_at(center, Vector3(0, 0, -source_side))
+ # Reserve a sidebar; the controls must not cover selectable court areas.
+ top_camera.h_offset = -top_camera.size * (size.x / maxf(1, size.y)) * 0.14
  top_camera.current = true
  _layout()
 

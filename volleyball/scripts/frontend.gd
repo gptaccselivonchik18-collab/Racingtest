@@ -47,7 +47,7 @@ func _ready() -> void:
  author.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(author)
  var version := Label.new()
- version.text = "0.23"
+ version.text = "0.24"
  version.add_theme_font_size_override("font_size", 15)
  version.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(version)
@@ -281,7 +281,7 @@ func _refresh() -> void:
   var teams := [PackedStringArray(), PackedStringArray()]
   for id in game.lan.players:
    var entry: Dictionary = game.lan.players[id]
-   teams[entry.team].append("№%d%s" % [entry.slot + 1, " (вы)" if id == multiplayer.get_unique_id() else ""])
+   teams[entry.team].append(str(entry.get("nickname", "Игрок")) + (" (вы)" if id == multiplayer.get_unique_id() else ""))
   roster_label.text = "Сторона A   " + ", ".join(teams[0]) + "\nСторона Б   " + ", ".join(teams[1]) if game.lan.match_active else "Свободная разминка • %d игроков" % game.lan.players.size()
 
 func enter_court() -> void:

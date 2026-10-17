@@ -22,6 +22,7 @@ var frame_rate: VolleyFrameRate
 var feedback_text := ""
 var feedback_color := Color.WHITE
 var feedback_left := 0.0
+var net_contact_times: Dictionary = {}
 
 func _ready() -> void:
  if OS.get_name() in ["iOS", "Android"]:
@@ -117,17 +118,29 @@ func _physics_process(_dt: float) -> void:
  var actors: Array = lan.players.values().map(func(entry: Dictionary): return entry.actor) if lan.active else [athlete]
  actors.append_array(game_bots.bots.values())
  for actor in actors:
-  if actor.action == VolleyAthlete.Action.IDLE or rules.ended:
-   continue
-  for index in range(actor.get_slide_collision_count()):
-   var collision: KinematicCollision3D = actor.get_slide_collision(index)
-   if collision.get_collider().get_meta("surface", "") == "net":
-    record_fault(actor, "Касание сетки игроком")
-    rules.net_contact(true)
-  for wrist in actor.wrists:
-   if absf(wrist.z) < VolleyAthlete.HAND_RADIUS + 0.025 and absf(wrist.x) < 4.5 and wrist.y >= 1.43 and wrist.y <= 2.49:
-    record_fault(actor, "Касание сетки игроком")
-    rules.net_contact(true)
+  check_net_contact(actor, _dt)
+
+func player_touches_net(actor: ContextAthlete) -> bool:
+ for index in range(actor.get_slide_collision_count()):
+  var collision: KinematicCollision3D = actor.get_slide_collision(index)
+  if collision.get_collider().get_meta("surface", "") == "net":
+   return true
+ for wrist in actor.wrists:
+  # Use the palm, not the larger assisted ball-contact radius.
+  if absf(wrist.z) < 0.065 and absf(wrist.x) < 4.5 and wrist.y >= 1.43 and wrist.y <= 2.47:
+   return true
+ return false
+
+func check_net_contact(actor: ContextAthlete, dt: float) -> void:
+ var id := actor.get_instance_id()
+ var live := lan.round_live if lan.match_active else game_bots.last_team >= 0 if game_bots.solo_match else rules.touches > 0
+ if not live or rules.ended or actor.action not in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] or not player_touches_net(actor):
+  net_contact_times.erase(id)
+  return
+ # Ignore a single animated-frame graze; a real sustained touch still faults.
+ net_contact_times[id] = float(net_contact_times.get(id, 0)) + dt
+ if net_contact_times[id] >= 0.075:
+  record_fault(actor, "Касание сетки игроком")
 
 func record_fault(actor: ContextAthlete, text: String) -> void:
  if rules.ended:
@@ -152,6 +165,8 @@ func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3
    rules.fault("Розыгрыш начинается подачей из-за задней линии")
   elif (actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)) != (lan.serve_team if lan.match_active else game_bots.serve_team):
    rules.fault("Подаёт другая команда")
+  elif is_instance_valid(game_bots.current_server) and actor != game_bots.current_server:
+   rules.fault("Сейчас подача другого игрока команды")
  if is_instance_valid(game_bots):
   game_bots.note_touch(actor, kind)
  if kind == ContextAthlete.BLOCK:

@@ -196,8 +196,12 @@ func _process(dt: float) -> void:
   return
  if network_age >= 0:
   network_age += dt
-  var target := network_position + velocity * minf(network_age, 0.08)
-  position = position.lerp(target, 1.0 - exp(-30.0 * dt))
+  # Integrate between packets, then correct error. Chasing a stationary
+  # 30 Hz target alone repeatedly slows and accelerates a 120 Hz camera.
+  if network_age <= 0.12:
+   position += velocity * dt
+  var target := network_position + velocity * minf(network_age, 0.12)
+  position = position.lerp(target, 1.0 - exp(-10.0 * dt))
  # Server snapshots remain authoritative; evaluate limb curves every rendered
  # frame so a 30 Hz network update does not freeze arms between packets.
  action_time += dt
@@ -314,6 +318,15 @@ func jump(from_approach := false) -> void:
   approach_jump = from_approach
   takeoff_speed = Vector2(velocity.x, velocity.z).length()
   velocity.y = sqrt(2.0 * 9.81 * style_stats.movement().jump_height) * lerpf(0.88, 1.0, energy)
+  if from_approach and absf(global_position.z) < 5.0:
+   # Plant before taking off: keep a useful approach without carrying the
+   # torso into the net for the whole ballistic flight.
+   var side := signf(global_position.z)
+   var duration := 2.0 * velocity.y / 9.81
+   var toward_net := -velocity.z * side
+   var available := maxf(0, absf(global_position.z) - 0.65)
+   if toward_net > available / duration:
+    velocity.z = -side * available / duration
   energy = maxf(0, energy - style_stats.movement().jump_cost)
 
 func dive() -> bool:
@@ -451,7 +464,7 @@ func _physics_process(dt: float) -> void:
     var turn := 1.0 - maxf(0, horizontal.normalized().dot(move_axis.normalized()))
     horizontal = horizontal.move_toward(move_axis * speed, lerpf(acceleration, braking, turn) * dt)
    if jump_windup > 0:
-    horizontal *= exp(-1.6 * dt)
+    horizontal *= exp(-6.0 * dt)
   velocity.x = horizontal.x
   velocity.z = horizontal.y
   lean = lean.lerp(Vector2.ZERO if lower_serve_active or float_serve_active else body_tilt(), 1.0 - exp(-9.0 * dt))

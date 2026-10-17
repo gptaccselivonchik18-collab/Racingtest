@@ -134,4 +134,4 @@ func movement() -> Dictionary:
  var j := n("jump")
  var speed_gain := factor("speed")
  var jump_gain := factor("jump")
- return {"speed": lerpf(2.8, 7.2, w) * speed_gain, "acceleration": lerpf(7, 19, w) * speed_gain, "braking": lerpf(14, 28, w) * speed_gain, "turn": lerpf(2.5, 6.5, w) * sqrt(speed_gain), "drain": lerpf(0.030, 0.010, w) / speed_gain, "jump_height": lerpf(0.60, 2.0, j) * jump_gain, "plant": lerpf(0.16, 0.04, j) / sqrt(jump_gain), "jump_cost": lerpf(0.11, 0.045, j) / jump_gain, "air": lerpf(0.40, 0.90, j) * sqrt(jump_gain), "landing": lerpf(1.35, 0.65, j), "landing_recovery": lerpf(0.28, 0.10, j) / sqrt(jump_gain)}
+ return {"speed": lerpf(2.8, 7.2, w) * speed_gain, "acceleration": lerpf(5, 13, w) * speed_gain, "braking": lerpf(14, 28, w) * speed_gain, "turn": lerpf(2.5, 6.5, w) * sqrt(speed_gain), "drain": lerpf(0.030, 0.010, w) / speed_gain, "jump_height": lerpf(0.60, 2.0, j) * jump_gain, "plant": lerpf(0.16, 0.04, j) / sqrt(jump_gain), "jump_cost": lerpf(0.11, 0.045, j) / jump_gain, "air": lerpf(0.40, 0.90, j) * sqrt(jump_gain), "landing": lerpf(1.35, 0.65, j), "landing_recovery": lerpf(0.28, 0.10, j) / sqrt(jump_gain)}

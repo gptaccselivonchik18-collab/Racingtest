@@ -17,6 +17,8 @@ var scores := [0, 0]
 var sets := [0, 0]
 var match_winner := -1
 var serve_team := 0
+var serving_turn := [0, -1]
+var current_server: ContextAthlete
 var round_wait := -1.0
 var last_actor: ContextAthlete
 var last_team := -1
@@ -30,6 +32,7 @@ var receivers := [0, 0]
 var receive_dives := [false, false]
 var intercepts := [Vector3.ZERO, Vector3.ZERO]
 var arrival := [0.0, 0.0]
+var contact_heights := [1.35, 1.35]
 var ui_controls: Array[Control] = []
 var count_labels: Array[Label] = []
 var hint: Label
@@ -145,6 +148,27 @@ func members(team: int) -> Array:
 func is_match() -> bool:
  return solo_match or game.lan.match_active
 
+func reset_service(first_team: int) -> void:
+ serving_turn = [-1, -1]
+ serving_turn[first_team] = 0
+ current_server = null
+
+func advance_service(winner: int, previous: int) -> void:
+ # The winner keeps its current server; a side-out rotates the new team.
+ if winner != previous:
+  serving_turn[winner] += 1
+
+func serving_actor(team: int) -> ContextAthlete:
+ var candidates := members(team)
+ candidates.sort_custom(func(a: ContextAthlete, b: ContextAthlete):
+  if (a is VolleyGameBot) != (b is VolleyGameBot):
+   return not a is VolleyGameBot
+  return absi(a.bot_id) < absi(b.bot_id) if a is VolleyGameBot else game.lan.player_id(a) < game.lan.player_id(b))
+ if candidates.is_empty():
+  return null
+ current_server = candidates[maxi(0, serving_turn[team]) % candidates.size()]
+ return current_server
+
 func note_touch(actor: ContextAthlete, kind: int) -> void:
  if actor is VolleyGameBot and kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
   actor.is_server = false
@@ -168,6 +192,7 @@ func reset_rally() -> void:
  last_touch_time = -10
  receivers = [0, 0]
  receive_dives = [false, false]
+ contact_heights = [1.35, 1.35]
  samples.clear()
  think_left = 0
  for bot in bots.values():
@@ -193,6 +218,7 @@ func predict() -> void:
  samples.clear()
  receivers = [0, 0]
  receive_dives = [false, false]
+ contact_heights = [1.35, 1.35]
  if game.ball.held or game.automatic_serve_busy():
   return
  for bot in bots.values():
@@ -255,6 +281,7 @@ func start_solo() -> bool:
  sets = [0, 0]
  match_winner = -1
  serve_team = human_team
+ reset_service(serve_team)
  game.athlete.court_team = human_team
  var side := 1.0 if human_team == 0 else -1.0
  game.athlete.position = Vector3(0, 0.02, side * 6.3)
@@ -287,24 +314,26 @@ func reset_round() -> void:
   bot.position = home(bot.court_team, bot.slot)
   bot.velocity = Vector3.ZERO
  var side := 1.0 if serve_team == 0 else -1.0
- var server: ContextAthlete = game.athlete
- if counts[serve_team] > 0:
-  server = bots[bot_id(serve_team, 0)]
- else:
-  server.position = Vector3(0, 0.02, side * 9.7)
-  server.velocity = Vector3.ZERO
+ var server := serving_actor(serve_team)
+ if not is_instance_valid(server):
+  return
+ server.position = Vector3(0, 0.02, side * 9.7)
+ server.velocity = Vector3.ZERO
  if server is VolleyGameBot:
   server.prepare_serve()
  else:
   game.ball.feed(server.position + Vector3(0, 0.25, -side * 0.5), Vector3.ZERO)
   server.camera_yaw = 0 if side > 0 else PI
+  server.visual.rotation.y = server.camera_yaw
   game.rig.yaw = server.camera_yaw
+  server.last_result = "Ваша подача • подберите мяч за задней линией"
 
 func award(winner: int) -> void:
  if not solo_match or round_wait >= 0 or match_winner >= 0:
   return
  winner = clampi(winner, 0, 1)
  match_winner = VolleyMatchScore.point(scores, sets, winner)
+ advance_service(winner, serve_team)
  serve_team = winner
  round_wait = 2.0
  game.show_feedback(VolleyMatchScore.label(scores, sets, match_winner), false)

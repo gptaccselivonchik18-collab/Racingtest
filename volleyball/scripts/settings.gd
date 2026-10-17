@@ -10,6 +10,15 @@ var button_scale := 1.0
 var show_jump_set := true
 var shift_lock := true
 var orientation := 4
+var nickname := "Игрок"
+
+static func clean_nickname(value: String) -> String:
+ var result := ""
+ for letter in value.strip_edges():
+  var code := letter.unicode_at(0)
+  if code >= 32 and code != 127 and code not in [0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069]:
+   result += letter
+ return result.left(24).strip_edges() if not result.strip_edges().is_empty() else "Игрок"
 
 func load_settings(athlete: VolleyAthlete) -> void:
  var file := ConfigFile.new()
@@ -20,6 +29,7 @@ func load_settings(athlete: VolleyAthlete) -> void:
   install_keys()
   return
  sensitivity = clampf(float(file.get_value("camera", "sensitivity", 1)), 0.3, 2.5)
+ nickname = clean_nickname(str(file.get_value("player", "nickname", "Игрок")))
  shift_lock = bool(file.get_value("camera", "lock", true))
  button_scale = clampf(float(file.get_value("hud", "scale", 1)), 0.7, 1.4)
  show_jump_set = bool(file.get_value("hud", "jump_set", true))
@@ -65,6 +75,7 @@ func rebind(action: String, keycode: int) -> bool:
 
 func save(athlete: VolleyAthlete) -> Error:
  var file := ConfigFile.new()
+ file.set_value("player", "nickname", clean_nickname(nickname))
  file.set_value("camera", "sensitivity", sensitivity)
  file.set_value("camera", "lock", shift_lock)
  file.set_value("hud", "scale", button_scale)

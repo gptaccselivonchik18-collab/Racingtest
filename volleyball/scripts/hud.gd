@@ -218,6 +218,27 @@ func _menu() -> void:
  _refresh_keys()
  _native_button(bindings, "Атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
  var testing := _tab("Спортсмен")
+ var nick_label := Label.new()
+ nick_label.text = "Ваш ник · виден другим игрокам"
+ testing.add_child(nick_label)
+ var nick_row := HBoxContainer.new()
+ testing.add_child(nick_row)
+ var nickname := LineEdit.new()
+ nickname.name = "Nickname"
+ nickname.text = settings.nickname
+ nickname.placeholder_text = "Введите ник"
+ nickname.max_length = 24
+ nickname.custom_minimum_size.y = 46
+ nickname.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ nick_row.add_child(nickname)
+ var apply_nickname := func():
+  settings.nickname = VolleySettings.clean_nickname(nickname.text)
+  nickname.text = settings.nickname
+  _save()
+  game.lan.rename_local(settings.nickname)
+  nickname.release_focus()
+ _native_button(nick_row, "Сохранить", apply_nickname)
+ nickname.text_submitted.connect(func(_text: String): apply_nickname.call())
  var explanation := Label.new()
  explanation.text = "65 — стандарт. Скрытого потолка нет: 999 и 9999 продолжают усиливать действие. Множитель показан ниже."
  explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

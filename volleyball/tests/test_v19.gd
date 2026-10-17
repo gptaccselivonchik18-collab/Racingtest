@@ -165,6 +165,10 @@ func run() -> void:
  check(ball.can_pick_up_for(game.athlete), "A ball stopped beside the boundary remains reachable for pickup")
  manager.configure({"counts": [1, 1]})
  check(manager.start_solo() and manager.solo_match and game.rules.strict, "A scored solo team match can start with bots")
+ # The human now serves first. Select the next rotation slot to exercise
+ # the bot's physical pickup and missed-toss recovery below.
+ manager.serving_turn[manager.serve_team] = 1
+ manager.reset_round()
  check(manager.bots[-100].is_server, "A bot can be selected as the formal match server")
  var match_server: VolleyGameBot = manager.bots[-100]
  for tick in range(120):
@@ -204,7 +208,7 @@ func run() -> void:
  game.lan.ready_seconds = 4
  var ready: Dictionary = game.lan.readiness()
  check(ready.totals == [2, 2] and game.lan.begin_match(), "Consenting humans and bots form two mixed teams")
- check(manager.bots[-100].is_server, "LAN rounds also select and reset a bot server")
+ check(manager.current_server == game.athlete and not manager.bots[-100].is_server, "LAN rounds include the human first instead of always selecting a bot server")
  manager.configure({"counts": [2, 2]})
  check(not game.lan.match_active, "Changing bot composition returns a running room to free play for fresh consent")
  game.lan.leave()

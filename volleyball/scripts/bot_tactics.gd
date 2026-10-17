@@ -29,14 +29,21 @@ func human_pickup_near() -> bool:
 func choose_receivers() -> void:
  var difficulty := VolleyBotDifficulty.profile(manager.difficulty)
  for team in range(2):
+  if manager.last_team == team and (manager.last_kind in [3, 4] or manager.touches >= 3):
+   # Yield an outgoing serve/third touch. Extra teammates near the flight
+   # path must not chase their own serve or add an illegal fourth touch.
+   continue
   var side := 1.0 if team == 0 else -1.0
+  var teammates := manager.members(team)
+  var solo_attack := teammates.size() == 1 and manager.last_team != team and manager.last_kind not in [3, 4]
   var candidates: Dictionary = {}
-  for actor: ContextAthlete in manager.members(team):
+  for actor: ContextAthlete in teammates:
    if actor == manager.last_actor and manager.last_kind != ContextAthlete.BLOCK:
     continue
    if actor is VolleyGameBot and (actor.cooldown > 0 or actor.action == VolleyAthlete.Action.RECOVER or (actor.action == VolleyAthlete.Action.STRIKE and actor.hit_used)):
     continue
    var id: int = actor.bot_id if actor is VolleyGameBot else manager.game.lan.player_id(actor) if manager.game.lan.active else 1
+   var physical := actor.style_stats.movement()
    for sample in manager.samples:
     var point: Vector3 = sample.at
     if point.z * side < 0.48 or point.y < 0.18 or point.y > 3.6 or sample.v.y > 2:
@@ -45,11 +52,11 @@ func choose_receivers() -> void:
     target.y = 0.02
     var distance := flat(target, actor.position)
     var reaction: float = float(difficulty.reaction) if actor is VolleyGameBot else 0.12
-    var speed: float = float(actor.style_stats.movement().speed)
+    var speed: float = float(physical.speed)
     var movement := float(difficulty.anticipation) if actor is VolleyGameBot else 0.8 if actor.move_axis.length() > 0.15 else 0.0
     var available := maxf(0, float(sample.time) - reaction)
     var initial := maxf(0, Vector2(actor.velocity.x, actor.velocity.z).dot(Vector2(target.x - actor.position.x, target.z - actor.position.z).normalized()))
-    var acceleration: float = float(actor.style_stats.movement().acceleration)
+    var acceleration: float = float(physical.acceleration)
     var accelerating := minf(available, maxf(0, speed - initial) / acceleration)
     var running := initial * accelerating + 0.5 * acceleration * accelerating * accelerating + speed * maxf(0, available - accelerating)
     var reachable := running * movement + (0.75 if actor is VolleyGameBot else 1.45)
@@ -66,14 +73,14 @@ func choose_receivers() -> void:
      if distance > run_time * speed * movement + slide + 0.75:
       continue
      diving = true
-    var high := manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5
+    var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
     var preferred := 2.95 if high else 2.05 if manager.last_team == team else 1.35
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
     cost += 0.55 if diving else 0.0
     if not actor is VolleyGameBot:
      cost -= 0.85 # A human already in reach gets room to play.
     if not candidates.has(id) or cost < float(candidates[id].cost):
-     candidates[id] = {"cost": cost, "target": target, "arrival": manager.clock + float(sample.time), "actor": actor, "dive": diving}
+     candidates[id] = {"cost": cost, "target": target, "arrival": manager.clock + float(sample.time), "actor": actor, "dive": diving, "height": point.y}
   var selected := 0
   var cost := INF
   for id in candidates:
@@ -93,6 +100,7 @@ func choose_receivers() -> void:
    manager.intercepts[team] = candidates[selected].target
    manager.arrival[team] = candidates[selected].arrival
    manager.receive_dives[team] = candidates[selected].dive
+   manager.contact_heights[team] = candidates[selected].height
    var receiver: ContextAthlete = candidates[selected].actor
    if receiver is VolleyGameBot:
     var kind := VolleyAthlete.Technique.OVERHEAD if manager.last_team == team and manager.touches > 0 else VolleyAthlete.Technique.UNDERHAND
@@ -172,7 +180,7 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
    chosen = teammate
  if chosen != actor:
   return {}
- return {"target": target, "time": time, "commit": commit}
+ return {"target": target, "time": time, "commit": commit, "height": clampf(ball.position.y, 2.8, 4.2)}
 
 func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bool) -> Vector3:
  var team: int = setter.court_team
@@ -181,6 +189,12 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
  var lead := Vector3(recipient.velocity.x, 0, recipient.velocity.z) * minf(0.75, until_contact + 0.35)
  lead = lead.limit_length(2.0)
  var point := recipient.position + lead
+ if recipient is VolleyGameBot:
+  # A fixed receiving lane avoids chasing a target that is recomputed from
+  # the recipient's own support movement on every frame.
+  point = manager.home(team, recipient.slot)
+  point.z = side * (2.15 if attacking else 3.0)
+  point.x = clampf(point.x, -3.2, 3.2)
  # Offer a forward approach that the recipient can actually reach; a deep
  # human is still a teammate, not an invisible spectator outside a bot grid.
  var forward := 0.70 if attacking else 0.40
@@ -196,7 +210,8 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
  var key := "%d:%d:%s" % [actor.bot_id, own_touches, attacking]
  var previous: Dictionary = plans.get(key, {})
  if not previous.is_empty() and float(previous.epoch) == manager.last_touch_time and is_instance_valid(previous.recipient) and previous.recipient in manager.members(actor.court_team):
-  previous.target = pass_point(previous.recipient, actor, attacking)
+  if not previous.recipient is VolleyGameBot:
+   previous.target = pass_point(previous.recipient, actor, attacking)
   return previous
  var friend: ContextAthlete
  var best := -INF

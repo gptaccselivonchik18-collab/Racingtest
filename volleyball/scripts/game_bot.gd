@@ -76,8 +76,10 @@ func _physics_process(dt: float) -> void:
 func steer(target: Vector3, stop := 0.20) -> void:
  destination = target
  var offset := Vector2(target.x - position.x, target.z - position.z)
- var braking: float = maxf(stop, Vector2(velocity.x, velocity.z).length() * 0.12)
- var desired := offset.normalized() * clampf((offset.length() - stop) / maxf(braking, 0.3), 0, 1)
+ var movement := style_stats.movement()
+ var distance := maxf(0, offset.length() - stop)
+ var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * 0.65)
+ var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
  sprint = offset.length() > 2.5
  if offset.length() > 0.6 and action == Action.IDLE:
@@ -209,7 +211,8 @@ func decide(_dt: float) -> void:
    var kind := Technique.UNDERHAND
    if manager.last_team == court_team and manager.touches > 0:
     kind = Technique.OVERHEAD
-   if manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5 and ball.position.y > 2.5:
+   var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
+   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5) or solo_attack) and float(manager.contact_heights[court_team]) > 2.65:
     kind = Technique.SPIKE
    if kind == Technique.UNDERHAND and horizontal > 1.6 and ball.position.y < 1.15 and remaining < 0.2:
     if dive():
@@ -227,6 +230,9 @@ func decide(_dt: float) -> void:
    if planned_kind == Technique.SPIKE and not airborne() and remaining < 0.45:
     jump(true)
     if velocity.y > 0:
+     # Jump to this ball, not to the maximum stat apex every time.
+     var lift := clampf(float(manager.contact_heights[court_team]) - 2.25, 0.25, float(style_stats.movement().jump_height))
+     velocity.y = minf(velocity.y, sqrt(19.62 * lift))
      jumps += 1
    var local_height := ball.position.y - position.y
    var reachable := local_height < (3.0 if planned_kind == Technique.SPIKE else 2.65) and local_height > (1.85 if planned_kind == Technique.SPIKE else 0.4)
@@ -280,9 +286,14 @@ func attempt_block(side: float) -> bool:
  steer(plan.target, 0.08)
  camera_yaw = 0 if side > 0 else PI
  # Jump from the predicted contact time, not only after the ball is struck.
- var rise := sqrt(2.0 * float(style_stats.movement().jump_height) / 9.81)
+ var lift := clampf(float(plan.get("height", 3.0)) - 2.25, 0.45, float(style_stats.movement().jump_height))
+ var rise := sqrt(2.0 * lift / 9.81)
  if bool(plan.commit) and float(plan.time) <= rise + 0.10 and absf(position.z) < 1.35 and absf(position.x - Vector3(plan.target).x) < 0.85:
   jump()
+  if velocity.y > 0.1:
+   velocity.y = minf(velocity.y, sqrt(19.62 * lift))
+   velocity.x *= 0.15
+   velocity.z = 0
   if velocity.y > 0.1 and begin_action(BLOCK):
    jumps += 1
  return true
@@ -294,7 +305,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  contacts += 1
  jump_serving = false
  contact_kinds[strike_technique] = int(contact_kinds.get(strike_technique, 0)) + 1
- cooldown = 0.65
+ cooldown = float(VolleyBotDifficulty.profile(manager.difficulty).tempo) * 0.45
  if strike_technique == BLOCK:
   manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, incoming + delta)
   return delta

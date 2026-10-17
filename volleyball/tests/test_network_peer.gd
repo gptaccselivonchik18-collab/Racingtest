@@ -13,6 +13,9 @@ var admitted: Array[int] = []
 var moved := false
 var stopped := false
 var released := false
+var initial_name_seen := false
+var renamed_name_seen := false
+var rename_sent := false
 
 func _initialize() -> void:
  var args := OS.get_cmdline_user_args()
@@ -27,6 +30,7 @@ func run() -> void:
  game.frontend.start_solo()
  game.hud.set_process(false)
  if role == "host":
+  game.hud.settings.nickname = "Host.🏐"
   if game.lan.host_room(port) != OK:
    quit(1)
   print("NETWORK_HOST_READY")
@@ -35,6 +39,7 @@ func run() -> void:
    game.lan.multiplayer.connected_to_server.disconnect(game.lan._connected)
    game.lan.multiplayer.connected_to_server.connect(func(): game.lan.hello.rpc_id(1, VolleyLAN.PROTOCOL - 1, {}))
   game.athlete.stats.set_stat("set", 315)
+  game.hud.settings.nickname = "Гость.🏐"
   game.lan.join_room(endpoint, port)
 
 func _process(dt: float) -> bool:
@@ -52,6 +57,8 @@ func _process(dt: float) -> bool:
    if id not in admitted:
     admitted.append(id)
    var a: ContextAthlete = game.lan.players[id].actor
+   initial_name_seen = initial_name_seen or game.lan.players[id].nickname == "Гость.🏐"
+   renamed_name_seen = renamed_name_seen or game.lan.players[id].nickname == "Guest.Renamed"
    if a.stats.values.set != 315:
     push_error("Client style state lost during reconnect")
     quit(1)
@@ -61,7 +68,8 @@ func _process(dt: float) -> bool:
    released = released or (a.strike_technique == 1 and a.action == VolleyAthlete.Action.STRIKE)
   if admitted.size() == 2 and game.lan.players.size() == 1:
    print("NETWORK_HOST_RESULT rejoined=true moved=%s stopped=%s released=%s" % [moved, stopped, released])
-   quit(0 if moved and stopped and released else 1)
+   print("NETWORK_NICKNAMES initial=", initial_name_seen, " renamed=", renamed_name_seen)
+   quit(0 if moved and stopped and released and initial_name_seen and renamed_name_seen else 1)
  else:
   if phase == 1:
    if elapsed >= rejoin_at:
@@ -85,10 +93,19 @@ func _process(dt: float) -> bool:
    if phase == 0 and age > 1.2 and not released:
     released = true
     game.lan.local_action("bump", "release")
+   if phase == 0 and age > 1.7 and not rename_sent:
+    rename_sent = true
+    game.hud.settings.nickname = "Guest.Renamed"
+    game.lan.rename_local(game.hud.settings.nickname)
    if age > 3.0:
-    if game.lan.snapshot_count - start_snapshots < 20 or game.lan.players.size() != 2 or not game.ball.replica or game.athlete.stats.values.set != 315:
-     push_error("Replication failed through impaired network")
+    if game.athlete.get_node("TeamTag").visible or not game.lan.players[1].actor.get_node("TeamTag").visible or not game.lan.players[1].actor.get_node("TeamTag").text.contains("Host.🏐"):
+     push_error("Personal name visibility did not replicate through the room")
      quit(1)
+     return false
+    if game.lan.snapshot_count - start_snapshots < 20 or game.lan.players.size() != 2 or not game.ball.replica or game.athlete.stats.values.set != 315:
+     push_error("Replication failed through impaired network: phase=%s snapshots=%s players=%s ball_replica=%s Set=%s" % [phase, game.lan.snapshot_count - start_snapshots, game.lan.players.size(), game.ball.replica, game.athlete.stats.values.set])
+     quit(1)
+     return false
     game.lan.leave()
     if phase == 0:
      phase = 1
