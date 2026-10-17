@@ -164,6 +164,24 @@ func run() -> void:
  manager.configure({"counts": [1, 1]})
  check(manager.start_solo() and manager.solo_match and game.rules.strict, "A scored solo team match can start with bots")
  check(manager.bots[-100].is_server, "A bot can be selected as the formal match server")
+ var match_server: VolleyGameBot = manager.bots[-100]
+ for tick in range(120):
+  await physics_frame
+  if ball.held and ball.athlete == match_server:
+   break
+ check(ball.held and match_server.is_server, "A nominated server retains its role after physically picking up the ball")
+ game.lower_serve.cancel_sequence()
+ game.float_serve.cancel_sequence()
+ ball.drop()
+ ball.feed(match_server.position + Vector3(0, 0.25, -0.5), Vector3.ZERO)
+ game.rules.reset(true)
+ game.rules.floor_contact(ball.feed_position)
+ var previous_contacts := match_server.contact_count
+ for tick in range(1200):
+  await physics_frame
+  if match_server.contact_count > previous_contacts:
+   break
+ check(match_server.contact_count > previous_contacts and not match_server.is_server, "A missed first toss is retrieved and served again without stalling the match")
  manager.last_team = 0
  manager.on_floor(Vector3(0, VolleyBall.RADIUS, -4))
  check(manager.scores == [1, 0] and manager.round_wait > 0, "Solo bot matches award points and schedule a new rally")

@@ -166,9 +166,11 @@ func decide(_dt: float) -> void:
    steer(Vector3(clampf(ball.position.x, -7.75, 7.75), 0.02, clampf(ball.position.z, -11.75, 11.75)), 0.7)
    if ball.can_pick_up_for(self):
     ball.athlete = self
+    var nominated_server := is_server
     if ball.pick_up():
      serve_wait = 0.55
      manager.reset_rally()
+     is_server = nominated_server
    return
  if attempt_block(side):
   return
