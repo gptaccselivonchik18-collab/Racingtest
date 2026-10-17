@@ -14,6 +14,9 @@ func match_scenario(count: int, seconds: int) -> void:
  var game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
  game.frontend.start_solo()
+ # Fix delivery scatter as well as player RNG, so CI replays the same match.
+ game.lower_serve.rng.seed = 260001 + count
+ game.float_serve.rng.seed = 260101 + count
  game.hud.set_process(false)
  game.rig.set_process(false)
  game.athlete.set_physics_process(false)
@@ -78,7 +81,7 @@ func check_finite(bot: VolleyGameBot) -> void:
   quit(1)
 func run() -> void:
  await match_scenario(3, 60)
- await match_scenario(1, 30)
- await match_scenario(6, 60)
+ await match_scenario(1, 60)
+ await match_scenario(6, 90)
  print("BOT RALLIES PASSED (%d checks)" % checks if failures == 0 else "BOT RALLIES FAILED %d / %d" % [failures, checks])
  quit(0 if failures == 0 else 1)
