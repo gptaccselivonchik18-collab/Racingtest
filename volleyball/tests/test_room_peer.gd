@@ -88,6 +88,12 @@ func _process(dt: float) -> bool:
    match_seen = true
    if game.athlete.court_team < 0 or game.lan.selection_zone.visible:
     fail("Guest did not receive the match transition")
+   var ids: Array = game.lan.players.keys()
+   if game.lan.players[ids[0]].team != 0 or game.lan.players[ids[1]].team != 0 or game.lan.players[ids[2]].team != 1:
+    fail("Guest kept the preselection roster instead of the chosen teams")
+   for entry in game.lan.players.values():
+    if entry.actor.court_team != entry.team:
+     fail("Guest body/team assignment disagrees with the roster")
    gate.saw_match.rpc_id(1)
   if gate.finished:
    print("ROOM_CLIENT_PASSED bot=%s match=%s snapshots=%d" % [bot_seen, match_seen, game.lan.snapshot_count])

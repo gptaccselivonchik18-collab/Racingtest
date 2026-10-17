@@ -119,8 +119,10 @@ func run() -> void:
  game.lan._update_readiness(3.1)
  check(game.lan.match_active and game.lan.players[1].team == 0 and game.lan.players[999].team == 1, "All selected humans are assigned by the half they chose")
  check(game.rules.strict and not game.lan.selection_zone.visible, "Only an agreed match enables rules and hides selection zones")
+ game.lan.serve_flags[1] = true
+ game.lan.owners[1] = "primary"
  game.lan.start_free_play()
- check(not game.lan.match_active and game.lan.selection_zone.visible and not game.rules.strict, "Host can return the room to free play")
+ check(not game.lan.match_active and game.lan.selection_zone.visible and not game.rules.strict and not game.lan.serve_flags[1] and game.lan.owners[1].is_empty(), "Returning to free play clears interrupted serve/action state")
  # Replica position advances on render frames between network packets.
  other.replica = true
  other.network_age = -1

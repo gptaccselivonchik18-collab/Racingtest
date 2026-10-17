@@ -276,6 +276,8 @@ func roster(entries: Array) -> void:
   if entry is Array and entry.size() == 4:
    ids.append(entry[0])
    _spawn(entry[0], entry[1], entry[2])
+   players[entry[0]].team = entry[1]
+   players[entry[0]].slot = entry[2]
    _apply_skills(players[entry[0]].actor, entry[3])
  for id in players.keys():
   if id not in ids:
@@ -674,6 +676,8 @@ func refresh_contacts() -> void:
 func start_free_play() -> void:
  if not hosting:
   return
+ game.lower_serve.cancel_sequence()
+ game.float_serve.cancel_sequence()
  match_active = false
  round_live = false
  round_wait = -1
@@ -683,7 +687,12 @@ func start_free_play() -> void:
  game.rules.reset()
  game.rules.strict = false
  game.serving = false
- for entry in players.values():
+ for id in players:
+  var entry: Dictionary = players[id]
+  serve_flags[id] = false
+  owners[id] = ""
+  entry.actor.cancel_input()
+  entry.actor.action = VolleyAthlete.Action.IDLE
   entry.actor.court_team = -1
   entry.actor.get_node("TeamTag").text = "ИГРОК"
  if not is_instance_valid(selection_zone):
