@@ -17,6 +17,8 @@ var contact_kinds: Dictionary = {}
 var planned_kind := -1
 var jump_serving := false
 var toss_time := 0.0
+var noticed_touch := -INF
+var reaction_until := 0.0
 
 func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77
@@ -73,7 +75,8 @@ func steer(target: Vector3, stop := 0.20) -> void:
  destination = target
  var offset := Vector2(target.x - position.x, target.z - position.z)
  var braking: float = maxf(stop, Vector2(velocity.x, velocity.z).length() * 0.12)
- move_axis = offset.normalized() * clampf((offset.length() - stop) / maxf(braking, 0.3), 0, 1)
+ var desired := offset.normalized() * clampf((offset.length() - stop) / maxf(braking, 0.3), 0, 1)
+ move_axis = manager.tactics.spaced_axis(self, desired)
  sprint = offset.length() > 2.5
  if offset.length() > 0.6 and action == Action.IDLE:
   camera_yaw = atan2(-offset.x, -offset.y)
@@ -82,6 +85,9 @@ func decide(_dt: float) -> void:
  var game := manager.game
  var ball: VolleyBall = game.ball
  var side := 1.0 if court_team == 0 else -1.0
+ if noticed_touch != manager.last_touch_time:
+  noticed_touch = manager.last_touch_time
+  reaction_until = manager.clock + float(VolleyBotDifficulty.profile(manager.difficulty).reaction) * (0.82 + fposmod(absi(bot_id) * 0.173, 0.36))
  look_target = ball.position
  look_target_valid = true
  if (manager.solo_match and manager.round_wait >= 0) or (game.lan.match_active and game.lan.round_wait >= 0):
@@ -148,6 +154,10 @@ func decide(_dt: float) -> void:
   return
  var dead := ball.position.y < 0.65 and ball.linear_velocity.length() < 3.0 and not ball.pending_feed
  if dead and cooldown <= 0 and not game.automatic_serve_busy():
+  if not is_server and manager.tactics.human_pickup_near():
+   state = "cover"
+   steer(manager.tactics.support(self))
+   return
   var closest: ContextAthlete = null
   var best := INF
   # In scored play only the nominated server retrieves before a serve.
@@ -173,13 +183,16 @@ func decide(_dt: float) -> void:
     ball.athlete = self
     var nominated_server := is_server
     if ball.pick_up():
-     serve_wait = 0.55
+     serve_wait = float(VolleyBotDifficulty.profile(manager.difficulty).tempo) + rng.randf_range(0.05, 0.25)
      manager.reset_rally()
      is_server = nominated_server
    return
  if attempt_block(side):
   return
  if manager.receivers[court_team] == bot_id:
+  if manager.clock < reaction_until and action == Action.IDLE:
+   steer(manager.tactics.support(self))
+   return
   state = "intercept"
   var at: Vector3 = manager.intercepts[court_team]
   at.x = clampf(at.x, -7.6, 7.6)
@@ -225,10 +238,7 @@ func decide(_dt: float) -> void:
   planned_kind = -1
  if action == Action.IDLE:
   state = "cover"
-  var support := manager.home(court_team, slot)
-  if manager.last_team == court_team:
-   support.z = side * (1.9 if manager.touches < 2 else 3.0)
-  support.x = clampf(support.x + ball.position.x * 0.18, -3.7, 3.7)
+  var support := manager.tactics.support(self)
   steer(support)
   camera_yaw = 0 if side > 0 else PI
 
@@ -276,6 +286,8 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  var apex := 2.8 if own_side else maxf(2.0, 3.7 - last_contact_point.y * 0.4)
  apex *= float(profile.get("arc", profile.get("lift", 1.0)))
  var outgoing: Vector3 = manager.game.ball.solve_launch(last_contact_point, target, apex, spin)
+ if own_side:
+  outgoing = manager.game.ball.solve_pass(last_contact_point, target, apex, spin)
  if strike_technique in [Technique.SPIKE, TIP] and air_attack:
   outgoing = manager.game.ball.solve_power_serve(last_contact_point, target, lerpf(14, 27, style_stats.n("spike")) * lerpf(0.8, 1.0, quality), spin)
  elif strike_technique == Technique.JUMP_SERVE:

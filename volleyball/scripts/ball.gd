@@ -120,6 +120,25 @@ func solve_launch(start: Vector3, destination: Vector3, apex: float, launch_spin
   speed += correction
  return speed
 
+func solve_pass(start: Vector3, contact: Vector3, apex: float, launch_spin: Vector3) -> Vector3:
+ # Meet a moving teammate above their hands on descent rather than aim a
+ # floor landing under their feet. This is solved only before the contact.
+ var upward := upward_for_height(maxf(apex, contact.y - start.y + 0.5))
+ var duration := (upward + sqrt(maxf(0.1, upward * upward + 19.62 * (start.y - contact.y)))) / 9.81
+ var steps := maxi(1, roundi(duration * 120))
+ duration = steps / 120.0
+ var speed := (contact - start) / duration + Vector3.UP * 4.905 * duration
+ for iteration in range(4):
+  var at := start
+  var v := speed
+  var spin := launch_spin
+  for tick in range(steps):
+   v += (Vector3.DOWN * 9.81 + aero_force(v, spin) / mass) / 120.0
+   spin *= 1.0 - angular_damp / 120.0
+   at += v / 120.0
+  speed += (contact - at) / duration
+ return speed
+
 func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dictionary:
  var at := start
  var net_height := INF
@@ -205,7 +224,7 @@ func can_pick_up() -> bool:
  return can_pick_up_for(athlete)
 
 func can_pick_up_for(candidate: VolleyAthlete) -> bool:
- if held or pending_feed or (last_velocity if replica else linear_velocity).length() > 3.0:
+ if held or (pending_feed and not replica) or (last_velocity if replica else linear_velocity).length() > 3.0:
   return false
  var offset := global_position - candidate.global_position
  if Vector2(offset.x, offset.z).length() > 1.6 or offset.y > 2.0 or offset.y < -0.2:

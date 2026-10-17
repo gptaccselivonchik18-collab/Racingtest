@@ -129,6 +129,8 @@ func run() -> void:
  manager.receivers[1] = server.bot_id
  manager.intercepts[1] = Vector3(1.4, 0.02, -4)
  manager.arrival[1] = manager.clock + 0.1
+ server.noticed_touch = manager.last_touch_time
+ server.reaction_until = manager.clock
  await frames(70)
  print("BOT DIVE: attempts=%d kinds=%s state=%s" % [server.dives, str(server.contact_kinds), server.state])
  check(server.dives > 0 and int(server.contact_kinds.get(7, 0)) > 0, "Bot chooses a real diving save for a low ball beyond standing reach")

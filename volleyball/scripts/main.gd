@@ -370,6 +370,11 @@ func pickup_or_drop() -> void:
  if ball.held:
   ball.drop()
  else:
+  # The last bot to serve may still be the ball's actor. The HUD tests the
+  # human's reach; the action must use that same person, including in solo.
+  if not ball.can_pick_up_for(athlete):
+   return
+  ball.athlete = athlete
   if ball.pick_up() and rules.strict and ((lan.match_active and lan.round_live) or (game_bots.solo_match and game_bots.last_team >= 0)):
    record_fault(athlete, "Задержка мяча")
 

@@ -32,6 +32,10 @@ var control_sliders := {}
 var category_picker: OptionButton
 var stat_grid: GridContainer
 var resume_button: Button
+var navigation: VBoxContainer
+var nav_scroll: ScrollContainer
+var nav_buttons: Array[Button] = []
+var menu_mode: Label
 
 func _ready() -> void:
  process_mode = Node.PROCESS_MODE_ALWAYS
@@ -91,8 +95,11 @@ func _layout() -> void:
  status.position = Vector2(margin + 70, 28)
  status.size = Vector2(size.x - margin * 2 - 260, 44)
  height_rect = Rect2(Vector2(size.x * 0.5 - 140, 104), Vector2(280, 50))
- menu.position = Vector2(maxf(16, size.x * 0.045), 12)
- menu.size = Vector2(size.x - menu.position.x * 2, size.y - 24)
+ var menu_width := minf(1120, size.x - 32)
+ menu.position = Vector2((size.x - menu_width) * 0.5, 12)
+ menu.size = Vector2(menu_width, size.y - 24)
+ if is_instance_valid(nav_scroll):
+  nav_scroll.custom_minimum_size.x = 156 if size.x < 1000 else 204
  if is_instance_valid(stat_grid):
   stat_grid.columns = 2 if menu.size.x > 620 else 1
  if is_instance_valid(editor_bar):
@@ -101,12 +108,18 @@ func _layout() -> void:
 
 func _menu() -> void:
  menu_blocker = ColorRect.new()
- menu_blocker.color = Color(0.02, 0.05, 0.08, 0.88)
+ menu_blocker.color = Color(0.015, 0.04, 0.06, 0.91)
  menu_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  menu_blocker.visible = false
  add_child(menu_blocker)
  menu = PanelContainer.new()
- menu.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("10283a")))
+ var shell := VolleySettingsTheme.box("091f2a", 22)
+ shell.set_border_width_all(1)
+ shell.border_color = Color("38515a")
+ shell.shadow_color = Color(0, 0, 0, 0.35)
+ shell.shadow_size = 18
+ menu.add_theme_stylebox_override("panel", shell)
+ menu.theme = VolleySettingsTheme.build()
  menu.add_theme_font_override("font", VolleyMenuArt.typeface())
  menu.visible = false
  add_child(menu)
@@ -117,24 +130,44 @@ func _menu() -> void:
  header.add_theme_constant_override("separation", 16)
  content.add_child(header)
  var title := Label.new()
- title.text = "VOLLEY / LAB"
+ title.text = "VOLLEY / LAB  /"
  title.add_theme_font_size_override("font_size", 20)
- title.add_theme_color_override("font_color", Color("d9f36b"))
+ title.add_theme_color_override("font_color", Color("f4f0e5"))
  header.add_child(title)
+ menu_mode = Label.new()
+ menu_mode.text = "НАСТРОЙКИ"
+ menu_mode.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ menu_mode.add_theme_font_size_override("font_size", 12)
+ menu_mode.add_theme_color_override("font_color", Color("ff9b76"))
+ header.add_child(menu_mode)
  category_picker = OptionButton.new()
- category_picker.custom_minimum_size = Vector2(220, 44)
- category_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ category_picker.visible = false
  category_picker.item_selected.connect(func(index: int): tabs.current_tab = index)
  header.add_child(category_picker)
  _native_button(header, "✕", toggle_menu).custom_minimum_size = Vector2(44, 44)
+ var workspace := HBoxContainer.new()
+ workspace.size_flags_vertical = Control.SIZE_EXPAND_FILL
+ workspace.add_theme_constant_override("separation", 16)
+ content.add_child(workspace)
+ nav_scroll = ScrollContainer.new()
+ nav_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+ nav_scroll.follow_focus = true
+ nav_scroll.custom_minimum_size.x = 156
+ workspace.add_child(nav_scroll)
+ navigation = VBoxContainer.new()
+ navigation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ navigation.add_theme_constant_override("separation", 6)
+ nav_scroll.add_child(navigation)
  tabs = TabContainer.new()
  tabs.tabs_visible = false
  tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
- tabs.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("142e40"), 12))
+ tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ tabs.add_theme_stylebox_override("panel", VolleySettingsTheme.box("112d39", 16))
  tabs.tab_changed.connect(func(index: int):
   if index < category_picker.item_count:
-   category_picker.select(index))
- content.add_child(tabs)
+   category_picker.select(index)
+  _refresh_navigation_style())
+ workspace.add_child(tabs)
  var practice := _tab("Тренировка")
  var list := OptionButton.new()
  list.custom_minimum_size.y = 52
@@ -197,7 +230,10 @@ func _menu() -> void:
   var stat_key: String = key
   var card := PanelContainer.new()
   card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  card.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("1c3a4c"), 12))
+  var card_style := VolleySettingsTheme.box("1b3a46", 14)
+  card_style.border_width_top = 2
+  card_style.border_color = Color("3a6267")
+  card.add_theme_stylebox_override("panel", card_style)
   stat_grid.add_child(card)
   var body := VBoxContainer.new()
   body.add_theme_constant_override("separation", 4)
@@ -216,6 +252,9 @@ func _menu() -> void:
   value.step = 1
   value.value = game.athlete.stats.values[key]
   value.custom_minimum_size = Vector2(90, 44)
+  value.add_theme_font_size_override("font_size", 24)
+  value.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_CENTER
+  value.get_line_edit().add_theme_color_override("font_color", Color("b9e995"))
   value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
   value.value_changed.connect(func(v: float): _change_stat(stat_key, v))
   _native_button(row, "−", func(): value.value -= 10).custom_minimum_size = Vector2(44, 44)
@@ -259,9 +298,35 @@ func _menu() -> void:
 
 func refresh_navigation() -> void:
  category_picker.clear()
+ for button in nav_buttons:
+  navigation.remove_child(button)
+  button.queue_free()
+ nav_buttons.clear()
  for index in range(tabs.get_tab_count()):
   category_picker.add_item(tabs.get_tab_title(index))
+  var tab_index := index
+  var button := Button.new()
+  button.text = "%02d   %s" % [index + 1, tabs.get_tab_title(index)]
+  button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+  button.custom_minimum_size = Vector2(144, 44)
+  button.pressed.connect(func(): tabs.current_tab = tab_index)
+  navigation.add_child(button)
+  nav_buttons.append(button)
  category_picker.select(tabs.current_tab)
+ _refresh_navigation_style()
+
+func _refresh_navigation_style() -> void:
+ for index in range(nav_buttons.size()):
+  VolleySettingsTheme.navigation(nav_buttons[index], index == tabs.current_tab)
+ if tabs.current_tab >= 0 and tabs.current_tab < nav_buttons.size():
+  call_deferred("_scroll_current_category")
+
+func _scroll_current_category() -> void:
+ if not is_instance_valid(nav_scroll) or tabs.current_tab < 0 or tabs.current_tab >= nav_buttons.size():
+  return
+ var button: Button = nav_buttons[tabs.current_tab]
+ if is_instance_valid(button) and nav_scroll.is_ancestor_of(button):
+  nav_scroll.ensure_control_visible(button)
 
 func _editor() -> void:
  editor_bar = PanelContainer.new()
@@ -323,12 +388,28 @@ func _tab(title: String) -> VBoxContainer:
  list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  list.add_theme_constant_override("separation", 10)
  scroll.add_child(list)
+ var heading := Label.new()
+ heading.text = title.to_upper()
+ heading.add_theme_font_override("font", VolleyMenuArt.typeface(750))
+ heading.add_theme_font_size_override("font_size", 25)
+ heading.add_theme_color_override("font_color", Color("f4f0e5"))
+ list.add_child(heading)
+ var accent := ColorRect.new()
+ accent.color = Color("ff9b76")
+ accent.custom_minimum_size = Vector2(48, 3)
+ accent.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+ accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ list.add_child(accent)
  return list
 
 func _slider(parent: Node, title: String, low: float, high: float, value: float, callback: Callable, step_value := 1.0) -> HSlider:
+ var card := PanelContainer.new()
+ card.add_theme_stylebox_override("panel", VolleySettingsTheme.box("193945", 12))
  var row := VBoxContainer.new()
+ card.add_child(row)
  var label := Label.new()
- label.text = "  %s: %.2f" % [title, value]
+ label.text = "%s  ·  %.2f" % [title, value]
+ label.add_theme_color_override("font_color", Color("c4d9d8"))
  row.add_child(label)
  var slider := HSlider.new()
  slider.min_value = low
@@ -336,9 +417,9 @@ func _slider(parent: Node, title: String, low: float, high: float, value: float,
  slider.step = step_value
  slider.value = value
  slider.custom_minimum_size = Vector2(180, 44)
- slider.value_changed.connect(func(v: float): label.text = "  %s: %.2f" % [title, v]; callback.call(v))
+ slider.value_changed.connect(func(v: float): label.text = "%s  ·  %.2f" % [title, v]; callback.call(v))
  row.add_child(slider)
- parent.add_child(row)
+ parent.add_child(card)
  return slider
 
 func _refresh_keys() -> void:

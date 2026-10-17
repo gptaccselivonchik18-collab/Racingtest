@@ -41,6 +41,9 @@ func _physics_process(dt: float) -> void:
  if not scheduled:
   waiting += dt
   var idle_ball := ball.position.y < 0.65 and ball.linear_velocity.length() < 3.5
+  if idle_ball and is_instance_valid(practice.game.game_bots) and practice.game.game_bots.tactics.human_pickup_near():
+   waiting = 0
+   return
   var escaped := absf(ball.position.x) > 8 or absf(ball.position.z) > 12
   if waiting >= practice.interval and (idle_ball or escaped):
    begin_cycle(true)

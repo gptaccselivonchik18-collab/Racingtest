@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 21
+const PROTOCOL := 22
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -116,6 +116,7 @@ func join_room(address: String, port := PORT) -> Error:
  status = "Подключение к " + address + "…"
  connecting_for = 0
  game.ball.replica = true
+ game.ball.pending_feed = false
  game.ball.freeze = true
  game.athlete.replica = true
  game.athlete.set_physics_process(false)

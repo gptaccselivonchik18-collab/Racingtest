@@ -7,6 +7,10 @@ var game: Node3D
 var bots: Dictionary = {}
 var counts := [0, 0]
 var level := 65.0
+var difficulty := 2
+var tactics := VolleyBotTactics.new()
+var difficulty_picker: OptionButton
+var difficulty_hint: Label
 var human_team := 0
 var solo_match := false
 var scores := [0, 0]
@@ -31,13 +35,14 @@ var hint: Label
 
 func _ready() -> void:
  name = "GameBots"
+ tactics.manager = self
  process_mode = Node.PROCESS_MODE_ALWAYS
 
 func authority() -> bool:
  return not game.lan.active or game.lan.hosting
 
 func settings_state() -> Dictionary:
- return {"counts": counts.duplicate(), "level": level, "human_team": human_team}
+ return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty}
 
 func configure(values: Dictionary, broadcast := true) -> bool:
  if broadcast and not authority():
@@ -45,6 +50,9 @@ func configure(values: Dictionary, broadcast := true) -> bool:
  var requested: Variant = values.get("counts", counts)
  var skill: Variant = values.get("level", level)
  var side: Variant = values.get("human_team", human_team)
+ var chosen: Variant = values.get("difficulty", VolleyBotDifficulty.closest(float(skill)) if (skill is float or skill is int) and is_finite(float(skill)) else difficulty)
+ if not chosen is int or chosen < 0 or chosen >= VolleyBotDifficulty.NAMES.size():
+  return false
  if not requested is Array or requested.size() != 2 or not (skill is float or skill is int) or not is_finite(float(skill)) or not side is int or side not in [0, 1]:
   return false
  for n in requested:
@@ -55,7 +63,8 @@ func configure(values: Dictionary, broadcast := true) -> bool:
  if solo_match and broadcast:
   end_solo()
  counts = requested.duplicate()
- level = float(skill)
+ difficulty = chosen
+ level = VolleyBotDifficulty.SKILLS[difficulty] if values.has("difficulty") and not values.has("level") else float(skill)
  human_team = side
  for team in range(2):
   for slot in range(MAX_PER_TEAM):
@@ -106,11 +115,17 @@ static func bot_id(team: int, slot: int) -> int:
 
 func home(team: int, slot: int) -> Vector3:
  var n: int = counts[team]
+ n += members(team).filter(func(a): return not a is VolleyGameBot).size()
  var side := 1.0 if team == 0 else -1.0
  if n == 1:
   return Vector3(0, 0.02, side * 4.2)
- var width := mini(n, 3)
- return Vector3((slot % 3 - (width - 1) * 0.5) * 2.7, 0.02, side * (1.9 + (slot / 3) * 4.0))
+ if n == 2:
+  return Vector3((-1.0 if slot == 0 else 1.0) * 1.9, 0.02, side * 4.5)
+ if n == 3:
+  return Vector3((-2.1 if slot == 0 else 2.1) if slot < 2 else 0.0, 0.02, side * (2.7 if slot < 2 else 6.1))
+ if n == 4:
+  return Vector3((-1.0 if slot % 2 == 0 else 1.0) * 2.1, 0.02, side * (2.7 if slot < 2 else 6.1))
+ return Vector3((slot % 3 - 1) * 2.7, 0.02, side * (2.4 if slot < 3 else 6.2))
 
 func members(team: int) -> Array:
  var result: Array = []
@@ -144,6 +159,7 @@ func note_touch(actor: ContextAthlete, kind: int) -> void:
  think_left = 0
 
 func reset_rally() -> void:
+ tactics.reset()
  last_actor = null
  last_team = -1
  touches = 0
@@ -185,6 +201,7 @@ func predict() -> void:
  for tick in range(72):
   var previous := at
   v += (Vector3.DOWN * 9.81 + game.ball.aero_force(v, spin) / game.ball.mass) * 0.05
+  spin *= 1.0 - game.ball.angular_damp * 0.05
   at += v * 0.05
   if previous.z * at.z < 0 and at.y < 2.65 and at.y > 1.3 and absf(at.x) < 4.9:
    v.z *= -0.45
@@ -198,51 +215,15 @@ func predict() -> void:
   samples.append({"at": at, "v": v, "time": (tick + 1) * 0.05})
   if at.y <= VolleyBall.RADIUS:
    break
- for team in range(2):
-  var best := INF
-  var side := 1.0 if team == 0 else -1.0
-  for bot: VolleyGameBot in bots.values():
-   if bot.court_team != team or (bot == last_actor and last_kind != ContextAthlete.BLOCK) or bot.cooldown > 0 or bot.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER]:
-    continue
-   for sample in samples:
-    var point: Vector3 = sample.at
-    if point.z * side < 0.48 or point.y < 0.4 or point.y > 3.6 or sample.v.y > 2.0:
-     continue
-    var target := point + Vector3(0, 0, side * 0.34)
-    target.y = 0.02
-    var distance := Vector2(target.x - bot.position.x, target.z - bot.position.z).length()
-    var reachable: float = float(sample.time) * float(bot.style_stats.movement().speed) * 0.90 + 0.60
-    if distance > reachable:
-     continue
-    var want_high := last_team == team and touches >= 2 and absf(point.z) < 4.5
-    var preferred := 2.95 if want_high else 2.05 if last_team == team else 1.35
-    var cost := absf(point.y - preferred) * 0.8 + distance * 0.20 + float(sample.time) * 0.12
-    # Let a nearby human play; bots cover balls beyond the human's reach.
-    for human in members(team):
-     if human is VolleyGameBot:
-      continue
-     if Vector2(point.x - human.position.x, point.z - human.position.z).length() < 1.15:
-      cost += 2.5
-    if cost < best:
-     best = cost
-     receivers[team] = bot.bot_id
-     intercepts[team] = target
-     arrival[team] = clock + float(sample.time)
+ tactics.choose_receivers()
 
 func target_for(actor: VolleyGameBot, kind: int) -> Vector3:
  var side := 1.0 if actor.court_team == 0 else -1.0
- var teammates := members(actor.court_team).filter(func(a): return a != actor)
  var own_touches := touches if last_team == actor.court_team else 0
- if kind in [VolleyAthlete.Technique.UNDERHAND, VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET] and own_touches < 2 and not teammates.is_empty():
-  var friend: ContextAthlete = teammates[0]
-  var nearest := INF
-  for teammate in teammates:
-   var d: float = teammate.position.distance_squared_to(Vector3(0, 0, side * 2.5))
-   if d < nearest:
-    nearest = d
-    friend = teammate
-  # Set into a reachable corridor, not onto a teammate's feet.
-  return Vector3(clampf(friend.position.x, -3.4, 3.4), VolleyBall.RADIUS, side * clampf(absf(friend.position.z), 1.8, 5.4))
+ if kind in [VolleyAthlete.Technique.UNDERHAND, VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET, ContextAthlete.DIVE] and own_touches < 2:
+  var plan := tactics.pass_plan(actor, kind)
+  if not plan.is_empty():
+   return plan.target
  var opponents := members(1 - actor.court_team)
  var best := Vector3(0, VolleyBall.RADIUS, -side * 6.5)
  var space := -INF
@@ -330,20 +311,39 @@ func on_floor(at: Vector3) -> void:
 func add_settings(hud: VolleyHUD) -> void:
  var list := hud._tab("Игровые боты")
  var note := Label.new()
- note.text = "Самостоятельные игроки • до 6 ботов на сторону.\nВ комнате добавляет хост. Тренер включается отдельно."
+ note.text = "Командная игра с людьми и ботами. В комнате состав меняет создатель."
  note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  list.add_child(note)
+ difficulty_picker = OptionButton.new()
+ difficulty_picker.custom_minimum_size.y = 48
+ for title in VolleyBotDifficulty.NAMES:
+  difficulty_picker.add_item("Сложность · " + title)
+ difficulty_picker.select(difficulty)
+ difficulty_picker.item_selected.connect(func(i: int): configure({"difficulty": i}))
+ list.add_child(difficulty_picker)
+ ui_controls.append(difficulty_picker)
+ difficulty_hint = Label.new()
+ difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ list.add_child(difficulty_hint)
+ var teams_row := HBoxContainer.new()
+ teams_row.add_theme_constant_override("separation", 18)
+ list.add_child(teams_row)
  for team in range(2):
   var side: int = team
   var row := HBoxContainer.new()
+  row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
   row.add_theme_constant_override("separation", 12)
   var label := Label.new()
   label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
   row.add_child(label)
   count_labels.append(label)
-  ui_controls.append(hud._native_button(row, "−", func(): change_count(side, -1)))
-  ui_controls.append(hud._native_button(row, "+", func(): change_count(side, 1)))
-  list.add_child(row)
+  var minus := hud._native_button(row, "−", func(): change_count(side, -1))
+  minus.custom_minimum_size.x = 42
+  ui_controls.append(minus)
+  var plus := hud._native_button(row, "+", func(): change_count(side, 1))
+  plus.custom_minimum_size.x = 42
+  ui_controls.append(plus)
+  teams_row.add_child(row)
  var presets := HBoxContainer.new()
  for n in [1, 3, 6]:
   var amount: int = n
@@ -362,7 +362,6 @@ func add_settings(hud: VolleyHUD) -> void:
  side_pick.item_selected.connect(func(i: int): configure({"human_team": i}))
  list.add_child(side_pick)
  ui_controls.append(side_pick)
- ui_controls.append(hud._slider(list, "Характеристики ботов", 0, 150, level, func(v: float): configure({"level": v})))
  var start := hud._native_button(list, "Матч с ботами", func():
   if start_solo():
    hud.toggle_menu())
@@ -389,7 +388,9 @@ func _process(_dt: float) -> void:
  if not is_instance_valid(hint) or not game.hud.menu.visible:
   return
  for team in range(2):
-  count_labels[team].text = "КОМАНДА %s     %d ботов" % ["A" if team == 0 else "Б", counts[team]]
+  count_labels[team].text = "%s  ·  %d ботов" % ["A" if team == 0 else "Б", counts[team]]
+ difficulty_picker.select(difficulty)
+ difficulty_hint.text = "СЛОЖНОСТЬ · " + VolleyBotDifficulty.NAMES[difficulty] + "\nМеняет реакцию, предугадывание, точность и все 8 характеристик."
  for control in ui_controls:
   if control is BaseButton:
    control.disabled = not authority() or (control.has_meta("solo_only") and game.lan.active)

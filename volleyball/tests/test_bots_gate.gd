@@ -1,6 +1,10 @@
 extends Node
 var phases: Dictionary = {}
 var finished := false
+var pickup_requested := false
+@rpc("authority", "call_remote", "reliable")
+func request_pickup() -> void:
+ pickup_requested = true
 @rpc("any_peer", "call_remote", "reliable")
 func observed(phase: int) -> void:
  if multiplayer.is_server():

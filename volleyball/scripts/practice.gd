@@ -13,6 +13,7 @@ var level := 65.0
 var bot: VolleyPracticeBot
 var controls: Array[Control] = []
 var hint: Label
+var difficulty_picker: OptionButton
 
 func _ready() -> void:
  name = "Practice"
@@ -119,7 +120,15 @@ func add_settings(hud: VolleyHUD) -> void:
  controls.append(hud._slider(panel, "Интервал подачи нового мяча, сек", 1.5, 12, interval, func(v: float): configure({"interval": v}), 0.5))
  controls.append(hud._slider(panel, "Цель: влево / вправо", -4, 4, target_x, func(v: float): configure({"target_x": v}), 0.25))
  controls.append(hud._slider(panel, "Глубина цели за сеткой", 1.5, 8, target_depth, func(v: float): configure({"target_depth": v}), 0.25))
- controls.append(hud._slider(panel, "Характеристики бота", 0, 150, level, func(v: float): configure({"level": v})))
+ var difficulty := OptionButton.new()
+ difficulty_picker = difficulty
+ difficulty.custom_minimum_size.y = 48
+ for title in VolleyBotDifficulty.NAMES:
+  difficulty.add_item("Сложность тренера · " + title)
+ difficulty.select(VolleyBotDifficulty.closest(level))
+ difficulty.item_selected.connect(func(i: int): configure({"level": VolleyBotDifficulty.SKILLS[i]}))
+ panel.add_child(difficulty)
+ controls.append(difficulty)
  controls.append(hud._native_button(panel, "Вернуться в свободную игру (создатель)", func():
   if game.lan.hosting:
    game.lan.start_free_play()))
@@ -139,6 +148,7 @@ func _process(_dt: float) -> void:
  if not is_instance_valid(hint) or not game.hud.menu.visible:
   return
  hint.text = "Тренер повторяет выбранные действия. В матче отдыхает.\n" + ("В комнате бота настраивает создатель." if game.lan.active else "Бот работает в одиночной игре и в сетевой разминке.")
+ difficulty_picker.select(VolleyBotDifficulty.closest(level))
  for control in controls:
   if control is BaseButton:
    control.disabled = not can_configure()
