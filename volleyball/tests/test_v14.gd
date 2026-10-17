@@ -27,6 +27,7 @@ func pose(actor: ContextAthlete, kind: int, at: Vector3, yaw: float) -> void:
  actor.visual.rotation = Vector3(0, yaw, 0)
  actor.camera_yaw = yaw
  actor.camera_pitch = 0.4
+ actor.approach_jump = kind == 2
  actor.begin_action(kind)
  actor.charged_for = 0.2
  if kind != ContextAthlete.BLOCK:

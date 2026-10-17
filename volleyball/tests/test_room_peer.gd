@@ -118,6 +118,8 @@ func _process(dt: float) -> bool:
    score_seen = true
    gate.saw_score.rpc_id(1)
   if not bot_seen and game.practice.enabled and is_instance_valid(game.practice.bot) and game.practice.bot.replica and game.practice.bot.air_attack and game.practice.bot.position.y > 0.4:
+   if not game.practice.bot.approach_jump:
+    fail("A remote power attack lost its approach jump state")
    bot_seen = true
    if game.practice.configure({"enabled": false}):
     fail("A guest could override the host's bot")

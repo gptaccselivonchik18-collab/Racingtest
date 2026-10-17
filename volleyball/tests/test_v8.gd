@@ -30,6 +30,7 @@ func flight(kind: int, tilt: Vector2, side := 1.0) -> Vector3:
  a.action = VolleyAthlete.Action.IDLE
  a.holding_ball = false
  a.tilt = tilt
+ a.approach_jump = kind == 2
  a.begin_action(kind)
  a.charged_for = 0.2
  a.release()
@@ -101,6 +102,7 @@ func run() -> void:
   a.holding_ball = false
   a.action = VolleyAthlete.Action.IDLE
   a.dive_time = -1
+  a.approach_jump = kind == 2
   a.begin_action(kind)
   for i in range(30):
    a.action_time += 1.0 / 120
@@ -133,6 +135,7 @@ func run() -> void:
  a.position = Vector3(0, 0.02, 5)
  a.action = VolleyAthlete.Action.IDLE
  a.tilt = Vector2.ZERO
+ a.approach_jump = a.position.y > 0.12
  a.begin_action(2)
  for i in range(40):
   a._update_pose(1.0 / 120)
@@ -152,6 +155,7 @@ func run() -> void:
  a.action = VolleyAthlete.Action.IDLE
  a.velocity = Vector3(3, 1, -2)
  a.takeoff_speed = 4
+ a.approach_jump = a.position.y > 0.12
  a.begin_action(2)
  for i in range(40):
   a._update_pose(1.0 / 120)

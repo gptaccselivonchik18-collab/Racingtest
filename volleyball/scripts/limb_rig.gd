@@ -121,7 +121,7 @@ func apply_pose(dt := 0.0) -> void:
  number.transform = Transform3D(motion.torso_basis, Vector3(0, 1.23, 0) + motion.body_offset + motion.torso_basis * Vector3(0, 0.02, 0.16))
  update_head()
  neck.global_transform = Transform3D(a.visual.global_basis.scaled_local(Vector3(1, 1.25, 1)), a.visual.to_global(Vector3(0, 1.60, 0) + motion.body_offset))
- var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.technique
+ var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.planned_technique() if a.action == VolleyAthlete.Action.PREPARE else a.technique
  for i in range(2):
   var side := -1.0 if i == 0 else 1.0
   var shoulder := motion.shoulder(i)

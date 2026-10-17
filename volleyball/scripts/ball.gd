@@ -105,10 +105,12 @@ func solve_launch(start: Vector3, destination: Vector3, apex: float, launch_spin
  for iteration in range(3):
   var at := start
   var v := speed
+  var spin := launch_spin
   var step := 1.0 / 120.0
   var time := 0.0
   for tick in range(360):
-   v += (Vector3.DOWN * 9.81 + aero_force(v, launch_spin) / mass) * step
+   v += (Vector3.DOWN * 9.81 + aero_force(v, spin) / mass) * step
+   spin *= 1.0 - angular_damp * step
    at += v * step
    time += step
    if at.y <= VolleyBall.RADIUS:
@@ -131,6 +133,19 @@ func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dic
   if at.y <= VolleyBall.RADIUS:
    break
  return {"landing": at, "net_height": net_height}
+
+func solve_lifted_hit(start: Vector3, destination: Vector3, apex: float, spin: Vector3) -> Vector3:
+ # Low standing contact needs lift, not a downward spike vector. Solve the
+ # chosen strength/distance before contact, then leave the free ball alone.
+ var launch := solve_launch(start, destination, apex, spin)
+ if start.z * destination.z >= 0:
+  return launch
+ for attempt in range(9):
+  if power_serve_flight(start, launch, spin).net_height >= 2.76:
+   break
+  apex = minf(apex * 1.45 + 0.20, 8.0)
+  launch = solve_launch(start, destination, apex, spin)
+ return launch
 
 func power_serve_landing(start: Vector3, velocity: Vector3, spin: Vector3) -> Vector3:
  return power_serve_flight(start, velocity, spin).landing
@@ -261,6 +276,8 @@ func _ready() -> void:
  collision_mask = 1
  linear_damp = 0.0
  angular_damp = 0.15
+ linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+ angular_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
  contact_monitor = true
  max_contacts_reported = 8
  body_entered.connect(_on_body_entered)
@@ -382,6 +399,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
    for candidate in candidates:
     if not is_instance_valid(candidate) or (candidate is ContextAthlete and (candidate.lower_serve_active or candidate.float_serve_active)):
      continue
+    if candidate is ContextAthlete:
+     candidate.contact_incoming_spin = state.angular_velocity
     var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity, attack_for(candidate)) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
      clear_float()

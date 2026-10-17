@@ -180,6 +180,7 @@ func run() -> void:
  check(a.strike_technique == ContextAthlete.TIP, "Short airborne tap is distinct Tip")
  a.action = VolleyAthlete.Action.IDLE
  game.begin_primary()
+ a.approach_jump = true
  a.charged_for = 0.2
  game.finish_action("primary")
  check(a.strike_technique == 2, "Held airborne action is power Spike")

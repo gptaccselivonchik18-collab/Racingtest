@@ -25,7 +25,10 @@ func sample(kind: int, value: float, incoming := Vector3(16, -24, 30)) -> Dictio
  a.dive_time = -1
  a.holding_ball = false
  a.velocity = Vector3(0, 2, 0) if kind == ContextAthlete.BLOCK else Vector3.ZERO
+ a.position.y = 1.2 if kind == 2 else 0.02
+ a.approach_jump = kind == 2
  a.position.z = 9.6 if kind == 3 else 5.0
+ a.jump_origin = Vector3(0, 0, a.position.z)
  a.begin_action(kind)
  a.charged_for = 0.2
  a.power = 0.82

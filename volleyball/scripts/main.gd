@@ -39,6 +39,7 @@ func _ready() -> void:
  ball.position = Vector3(0, 0.2, 1)
  athlete.serve_solver = ball.solve_launch
  athlete.power_serve_solver = ball.solve_power_serve
+ athlete.lifted_attack_solver = ball.solve_lifted_hit
  var preview := VolleyTossPreview.new()
  preview.name = "TossPreview"
  preview.ball = ball

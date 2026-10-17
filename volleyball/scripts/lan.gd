@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 20
+const PROTOCOL := 21
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -202,6 +202,7 @@ func _spawn(id: int, team: int, slot: int) -> void:
  actor.collision_mask = 1
  actor.serve_solver = game.ball.solve_launch
  actor.power_serve_solver = game.ball.solve_power_serve
+ actor.lifted_attack_solver = game.ball.solve_lifted_hit
  actor.replica = not hosting
  actor.set_physics_process(hosting)
  var tag := Label3D.new()
@@ -597,12 +598,12 @@ func _process(dt: float) -> void:
   for first in range(0, poses.size(), 2):
    for peer_id in players:
     if peer_id != 1 and _peer_ready(peer_id):
-     snapshot.rpc_id(peer_id, poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message)
+     snapshot.rpc_id(peer_id, poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message, game.ball.angular_velocity)
  elif _peer_ready(1):
   input_state.rpc_id(1, game.athlete.move_axis, game.athlete.tilt, game.rig.yaw, game.rig.pitch)
 
 @rpc("authority", "call_remote", "unreliable_ordered", 2)
-func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, held_by: int, mode: int, score: Array, message: String) -> void:
+func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, held_by: int, mode: int, score: Array, message: String, ball_spin := Vector3.ZERO) -> void:
  if hosting or not connected:
   return
  snapshot_count += 1
@@ -618,6 +619,7 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
  ball_age = 0
  game.ball.rotation = spin_pose
  game.ball.last_velocity = speed
+ game.ball.angular_velocity = ball_spin
  game.ball.held = held_by == multiplayer.get_unique_id()
  game.ball.athlete = game.athlete
  game.ball.held_mode = mode
@@ -653,7 +655,7 @@ func reject_join(reason: String) -> void:
   changed.emit()
 
 func pack_actor(a: ContextAthlete, id := 0) -> Array:
- return [id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active]
+ return [id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active, a.approach_jump]
 
 func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0) -> void:
  a.accept_network_position(pose[1])
@@ -662,6 +664,7 @@ func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0) -> void:
  a.action = pose[4]
  a.technique = pose[5]
  a.strike_technique = pose[6]
+ a.approach_jump = pose[31]
  a.block_held = a.action == VolleyAthlete.Action.STRIKE and a.strike_technique == ContextAthlete.BLOCK
  a.action_time = pose[7]
  a.power = pose[8]
@@ -867,7 +870,7 @@ func orient_player(yaw: float) -> void:
 
 @rpc("authority", "call_remote", "unreliable_ordered", 3)
 func bot_snapshot(pose: Array) -> void:
- if not hosting and game.practice.enabled and is_instance_valid(game.practice.bot) and pose.size() == 31:
+ if not hosting and game.practice.enabled and is_instance_valid(game.practice.bot) and pose.size() == 32:
   apply_actor_pose(game.practice.bot, pose, -1)
 
 @rpc("authority", "call_remote", "reliable")
@@ -893,5 +896,5 @@ func game_bot_snapshot(poses: Array, holder: int) -> void:
  if hosting or not connected:
   return
  for pose in poses:
-  if pose.size() == 31 and game.game_bots.bots.has(pose[0]):
+  if pose.size() == 32 and game.game_bots.bots.has(pose[0]):
    apply_actor_pose(game.game_bots.bots[pose[0]], pose, holder)

@@ -66,7 +66,7 @@ func begin_cycle(with_feed: bool) -> void:
  cycles += 1
  var kind := Technique.UNDERHAND if selected_mode < 2 else Technique.OVERHEAD if selected_mode < 4 else Technique.SPIKE if selected_mode == 4 else Technique.SERVE
  if selected_mode == 4:
-  jump()
+  jump(true)
  begin_action(kind)
  scheduled = true
  supplied = with_feed

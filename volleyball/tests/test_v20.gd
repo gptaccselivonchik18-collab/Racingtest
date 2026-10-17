@@ -25,6 +25,9 @@ func reset_actor(at := Vector3(0, 1.3, 3)) -> void:
  a.action = VolleyAthlete.Action.IDLE
  a.dive_time = -1
  a.position = at
+ if at.y < 0.1:
+  a.velocity = Vector3.DOWN * 6
+  a.move_and_slide()
  a.jump_origin = Vector3(at.x, 0, at.z)
  a.velocity = Vector3.ZERO
  a.visual.rotation = Vector3.ZERO
@@ -163,7 +166,11 @@ func run() -> void:
  var low := hit(4, -250, 65)
  var high := hit(4, 400, 65)
  check(low.is_equal_approx(high) and a.strike_technique == VolleyAthlete.Technique.SPIKE, "Delivery from inside court ignores Serve and becomes a normal hit")
- check(hit(4, 65, 300).length() > hit(4, 65, -200).length() * 1.3, "Inside-court delivery responds to Spike skill")
+ var skilled_hit := hit(4, 65, 300)
+ var skilled_flight: Dictionary = game.ball.power_serve_flight(a.last_contact_point, skilled_hit, a.outgoing_spin(Vector3.ZERO, skilled_hit))
+ var novice_hit := hit(4, 65, -200)
+ var novice_flight: Dictionary = game.ball.power_serve_flight(a.last_contact_point, novice_hit, a.outgoing_spin(Vector3.ZERO, novice_hit))
+ check(absf(skilled_flight.landing.z) > absf(novice_flight.landing.z) + 1, "Inside-court standing delivery gains depth and control from Spike skill")
  check(not hit(9.6, -200, 65).is_equal_approx(hit(9.6, 300, 65)), "Rear-zone delivery responds to Serve skill")
  reset_actor(Vector3(0, 1.2, 8.6))
  a.jump_origin.z = 9.7
@@ -176,7 +183,7 @@ func run() -> void:
  a.begin_action(VolleyAthlete.Technique.JUMP_SERVE)
  a.charged_for = 0.2
  a.release()
- check(a.strike_technique == VolleyAthlete.Technique.SPIKE, "Jumping backward from inside court cannot acquire Serve bonuses")
+ check(a.strike_technique == ContextAthlete.TIP, "An ordinary jump from inside court stays a feint and cannot acquire Serve bonuses")
  for controller in [game.lower_serve, game.float_serve]:
   low = Vector3.ZERO
   var first := auto_sample(controller, 4, -200, 65)

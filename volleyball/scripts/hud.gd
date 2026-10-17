@@ -701,6 +701,8 @@ func _process(dt: float) -> void:
  _refresh_context()
  buttons.primary.text = ("БРОСИТЬ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПОДБРОС") if game.holding_ball() else "АТАКА" if a.airborne() or game.running_approach() or a.approach_armed or a.jump_windup > 0 else "ПОДАЧА" if game.serving else "АТАКА"
  buttons.secondary.text = ("К ПОДАЧЕ" if (game.holding_ball() and game.ball.aiming_throw()) else "ПРИЦЕЛ\nБРОСКА") if game.holding_ball() else "БЛОК" if a.airborne() else "ПАС"
+ if not game.holding_ball() and a.airborne() and not a.approach_jump and not game.serving:
+  buttons.primary.text = "ФИНТ"
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
  buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"

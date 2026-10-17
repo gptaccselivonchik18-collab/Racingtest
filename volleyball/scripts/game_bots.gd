@@ -89,6 +89,7 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     actor.position = home(team, slot)
     actor.serve_solver = game.ball.solve_launch
     actor.power_serve_solver = game.ball.solve_power_serve
+    actor.lifted_attack_solver = game.ball.solve_lifted_hit
     actor.set_physics_process(not actor.replica)
     bots[id] = actor
    var bot: VolleyGameBot = bots[id]

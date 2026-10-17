@@ -42,7 +42,7 @@ func update(dt: float) -> void:
  if dt > 0:
   acceleration = acceleration.lerp((a.velocity - last_velocity) / dt, 1.0 - exp(-12.0 * dt))
  last_velocity = a.velocity
- var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.technique
+ var kind: int = a.strike_technique if a.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] else a.planned_technique() if a.action == VolleyAthlete.Action.PREPARE else a.technique
  var speed := Vector2(a.velocity.x, a.velocity.z).length()
  var air := a.airborne()
  var blend := 1.0 - exp(-14.0 * dt) if dt > 0 else 1.0

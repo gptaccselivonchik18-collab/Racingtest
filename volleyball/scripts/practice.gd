@@ -58,6 +58,7 @@ func configure(values: Dictionary, broadcast := true) -> bool:
   add_child(bot)
   bot.serve_solver = game.ball.solve_launch
   bot.power_serve_solver = game.ball.solve_power_serve
+  bot.lifted_attack_solver = game.ball.solve_lifted_hit
   bot.set_physics_process(not bot.replica)
  if is_instance_valid(bot):
   bot.visible = enabled

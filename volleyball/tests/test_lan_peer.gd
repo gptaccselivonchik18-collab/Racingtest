@@ -36,6 +36,7 @@ var endpoint := "127.0.0.1"
 var gate: Node
 var ack_sent := false
 var bot_seen := false
+var spin_seen := false
 
 func _initialize() -> void:
  var args := OS.get_cmdline_user_args()
@@ -173,6 +174,7 @@ func _process(dt: float) -> bool:
    if index == 1:
     game.lan.local_action("stats", "press", {"skill": "spike", "value": 250.0})
   if joined_at >= 0:
+   spin_seen = spin_seen or game.ball.angular_velocity.length() > 0.1
    var age := elapsed - joined_at
    for entry in game.lan.players.values():
     if entry.actor.stats.values.set == 136 and entry.actor.stats.values.spike == 250:
@@ -224,7 +226,7 @@ func _process(dt: float) -> bool:
    if age > 8 and not reported and float_seen:
     reported = true
     client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
-    client_passed = client_passed and stats_seen and view_seen and float_seen
+    client_passed = client_passed and stats_seen and view_seen and float_seen and spin_seen
     client_passed = client_passed and bot_seen and game.practice.bot.replica
     client_passed = client_passed and (private_local_seen if index == 1 else private_remote_seen)
     print("LAN_PRIVATE_HELPERS client=%d own=%s foreign_hidden=%s" % [index, private_local_seen, private_remote_seen])

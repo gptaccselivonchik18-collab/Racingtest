@@ -208,7 +208,7 @@ func decide(_dt: float) -> void:
    camera_yaw = atan2(-toward.x, -toward.z)
    camera_pitch = deg_to_rad(55 if planned_kind == Technique.OVERHEAD else 20)
    if planned_kind == Technique.SPIKE and not airborne() and remaining < 0.45:
-    jump()
+    jump(true)
     if velocity.y > 0:
      jumps += 1
    var local_height := ball.position.y - position.y
