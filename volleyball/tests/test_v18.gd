@@ -73,7 +73,9 @@ func run() -> void:
   check(game.practice.configure({"enabled": true, "modes": [mode], "anchor": Vector3(0, 0.02, side * 6), "interval": 1.5}), "Coach accepts action %d on either half" % mode)
   var bot: VolleyPracticeBot = game.practice.bot
   var previous := bot.contacts
-  ball.feed(Vector3(3, 0.3, 8), Vector3.ZERO)
+  # Keep the feeder's idle ball away from the human pickup area. The coach
+  # now intentionally waits if a human can already take possession.
+  ball.feed(Vector3(3, 0.3, 4), Vector3.ZERO)
   for tick in range(600):
    await physics_frame
    if bot.contacts > previous:
