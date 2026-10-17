@@ -71,6 +71,10 @@ func run() -> void:
   athlete.action = VolleyAthlete.Action.IDLE
   athlete.begin_action(kind)
   athlete.release()
+  # This is a launch-model fixture, independent of the service-zone/input
+  # context that can deliberately convert a requested serve into an attack.
+  athlete.strike_technique = kind
+  athlete.action = VolleyAthlete.Action.STRIKE
   athlete.strike_power = 0.82
   var key := athlete.style_stats.skill_for(kind)
   athlete.style_stats.set_stat(key, 150)
@@ -179,3 +183,4 @@ func run() -> void:
  await frames(3)
  print("V23 TESTS PASSED (%d checks)" % checks if failures == 0 else "V23 TESTS FAILED %d / %d" % [failures, checks])
  quit(0 if failures == 0 else 1)
+
