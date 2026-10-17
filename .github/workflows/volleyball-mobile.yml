@@ -1,0 +1,229 @@
+name: Volleyball mobile builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['volleyball/**', '.github/workflows/volleyball-mobile.yml']
+  pull_request:
+    branches: [main]
+    paths: ['volleyball/**', '.github/workflows/volleyball-mobile.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volleyball-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: volleyball
+
+jobs:
+  validate:
+    name: Godot import and gameplay tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash ci/install_godot.sh editor-only
+      - name: Import and test
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          python3 ci/verify_models.py
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/import.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' build/logs/import.log; then exit 1; fi
+          godot --headless --max-fps 60 --path . --quit-after 180 2>&1 | tee build/logs/boot-smoke.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/boot-smoke.log; then exit 1; fi
+          grep -q 'VOLLEY_BOOT_READY' build/logs/boot-smoke.log
+          godot --headless --path . --script tests/test_runner.gd 2>&1 | tee build/logs/tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/tests.log; then exit 1; fi
+          grep -q 'ALL TESTS PASSED' build/logs/tests.log
+          godot --headless --path . --script tests/test_mobile_v2.gd 2>&1 | tee build/logs/mobile-v2-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/mobile-v2-tests.log; then exit 1; fi
+          grep -q 'V2 TESTS PASSED' build/logs/mobile-v2-tests.log
+          godot --headless --path . --script tests/test_playability.gd 2>&1 | tee build/logs/playability.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/playability.log; then exit 1; fi
+          grep -q 'PLAYABILITY PASSED' build/logs/playability.log
+          godot --headless --path . --script tests/test_v4.gd 2>&1 | tee build/logs/v4-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v4-tests.log; then exit 1; fi
+          grep -q 'V4 TESTS PASSED' build/logs/v4-tests.log
+          godot --headless --path . --script tests/test_v5.gd 2>&1 | tee build/logs/v5-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v5-tests.log; then exit 1; fi
+          grep -q 'V5 TESTS PASSED' build/logs/v5-tests.log
+          godot --headless --path . --script tests/test_v6.gd 2>&1 | tee build/logs/v6-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v6-tests.log; then exit 1; fi
+          grep -q 'V6 TESTS PASSED' build/logs/v6-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_serves.gd 2>&1 | tee build/logs/serve-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/serve-tests.log; then exit 1; fi
+          grep -q 'SERVE TESTS PASSED' build/logs/serve-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v7.gd 2>&1 | tee build/logs/v7-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v7-tests.log; then exit 1; fi
+          grep -q 'V7 TESTS PASSED' build/logs/v7-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v8.gd 2>&1 | tee build/logs/v8-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v8-tests.log; then exit 1; fi
+          grep -q 'V8 TESTS PASSED' build/logs/v8-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v9.gd 2>&1 | tee build/logs/v9-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v9-tests.log; then exit 1; fi
+          grep -q 'V9 TESTS PASSED' build/logs/v9-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v10.gd 2>&1 | tee build/logs/v10-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v10-tests.log; then exit 1; fi
+          grep -q 'V10 TESTS PASSED' build/logs/v10-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v11.gd 2>&1 | tee build/logs/v11-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v11-tests.log; then exit 1; fi
+          grep -q 'V11 TESTS PASSED' build/logs/v11-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v12.gd 2>&1 | tee build/logs/v12-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v12-tests.log; then exit 1; fi
+          grep -q 'V12 TESTS PASSED' build/logs/v12-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v13.gd 2>&1 | tee build/logs/v13-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v13-tests.log; then exit 1; fi
+          grep -q 'V13 TESTS PASSED' build/logs/v13-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v14.gd 2>&1 | tee build/logs/v14-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v14-tests.log; then exit 1; fi
+          grep -q 'V14 TESTS PASSED' build/logs/v14-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v15.gd 2>&1 | tee build/logs/v15-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v15-tests.log; then exit 1; fi
+          grep -q 'V15 TESTS PASSED' build/logs/v15-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v16.gd 2>&1 | tee build/logs/v16-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v16-tests.log; then exit 1; fi
+          grep -q 'V16 TESTS PASSED' build/logs/v16-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v18.gd 2>&1 | tee build/logs/v18-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v18-tests.log; then exit 1; fi
+          grep -q 'V18 TESTS PASSED' build/logs/v18-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v19.gd 2>&1 | tee build/logs/v19-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v19-tests.log; then exit 1; fi
+          grep -q 'V19 TESTS PASSED' build/logs/v19-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v20.gd 2>&1 | tee build/logs/v20-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v20-tests.log; then exit 1; fi
+          grep -q 'V20 TESTS PASSED' build/logs/v20-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v21.gd 2>&1 | tee build/logs/v21-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v21-tests.log; then exit 1; fi
+          grep -q 'V21 TESTS PASSED' build/logs/v21-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v22.gd 2>&1 | tee build/logs/v22-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v22-tests.log; then exit 1; fi
+          grep -q 'V22 TESTS PASSED' build/logs/v22-tests.log
+          godot --headless --fixed-fps 120 --path . --script tests/test_v23.gd 2>&1 | tee build/logs/v23-tests.log
+          if grep -E 'SCRIPT ERROR|ERROR:' build/logs/v23-tests.log; then exit 1; fi
+          grep -q 'V23 TESTS PASSED' build/logs/v23-tests.log
+          python3 ci/test_bots.py godot | tee build/logs/bots-integration.log
+          python3 ci/test_lan.py godot "$(hostname -I | cut -d ' ' -f1)" | tee build/logs/lan-integration.log
+          python3 ci/test_room.py godot "$(hostname -I | cut -d ' ' -f1)" | tee build/logs/room-integration.log
+          python3 ci/test_network.py godot | tee build/logs/network-integration.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-Validation-Logs
+          path: volleyball/build/logs/
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-24.04
+    needs: validate
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.1'
+      - run: bash ci/install_godot.sh
+      - name: Configure SDK and debug signing
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs "$HOME/.config/godot"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/volleyball-debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/volleyball-debug.keystore" >> "$GITHUB_ENV"
+          echo 'GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey' >> "$GITHUB_ENV"
+          echo 'GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android' >> "$GITHUB_ENV"
+          cat > "$HOME/.config/godot/editor_settings-4.6.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+      - name: Export and verify APK
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/android-import.log
+          godot --headless --path . --export-debug Android build/VolleyballSimulator-Android.apk 2>&1 | tee build/logs/android-export.log
+          test -s build/VolleyballSimulator-Android.apk
+          unzip -t build/VolleyballSimulator-Android.apk | tee build/logs/apk-contents.log
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose build/VolleyballSimulator-Android.apk | tee build/logs/apk-signature.log
+          "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging build/VolleyballSimulator-Android.apk | tee build/logs/apk-manifest.log
+          grep -q "org.volleylab.simulator" build/logs/apk-manifest.log
+          grep -q "uses-permission: name='android.permission.INTERNET'" build/logs/apk-manifest.log
+          grep -q "versionCode='23'" build/logs/apk-manifest.log
+          grep -q "versionName='0.23.0'" build/logs/apk-manifest.log
+          # Current target uses INTERNET for LAN; raising it to 37 requires runtime permission support.
+          grep -q "targetSdkVersion:'36'" build/logs/apk-manifest.log
+          unzip -l build/VolleyballSimulator-Android.apk | grep 'lib/arm64-v8a/libgodot_android.so'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolleyballSimulator-Android
+          path: volleyball/build/VolleyballSimulator-Android.apk
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-Android-Logs
+          path: volleyball/build/logs/
+
+  ios:
+    name: iPhone arm64 unsigned IPA
+    runs-on: macos-15
+    needs: validate
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash ci/install_godot.sh
+      - name: Import Godot project
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          godot --headless --path . --editor --import 2>&1 | tee build/logs/ios-import.log
+      - name: Build and verify unsigned physical-device IPA
+        run: bash ci/build_ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolleyballSimulator-iOS-Unsigned
+          path: volleyball/build/VolleyballSimulator-iOS-Unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Volleyball-iOS-Logs
+          path: volleyball/build/logs/
+
+  release:
+    name: Publish verified packages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VolleyballSimulator-*
+          merge-multiple: true
+          path: packages
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.23' --notes-file release-notes.txt --prerelease
