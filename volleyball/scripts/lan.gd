@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 18
+const PROTOCOL := 19
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -42,6 +42,10 @@ func player_id(actor: ContextAthlete) -> int:
  for id in players:
   if players[id].actor == actor:
    return id
+ if is_instance_valid(game.game_bots):
+  for id in game.game_bots.bots:
+   if game.game_bots.bots[id] == actor:
+    return id
  return 0
 
 func _ready() -> void:
@@ -128,6 +132,9 @@ func leave() -> void:
   discovery.stop_search()
  if is_instance_valid(game.practice):
   game.practice.configure({"enabled": false}, false)
+ if is_instance_valid(game.game_bots):
+  game.game_bots.end_solo()
+  game.game_bots.configure({"counts": [0, 0]}, false)
  active = false
  match_active = false
  round_live = false
@@ -482,11 +489,14 @@ func reset_round() -> void:
   actor.holding_ball = false
   owners[id] = ""
   serve_flags[id] = false
+ game.game_bots.reset_rally()
  var server: ContextAthlete = game.athlete
  for entry in players.values():
   if entry.team == serve_team:
    server = entry.actor
    break
+ if game.game_bots.counts[serve_team] > 0:
+  server = game.game_bots.bots[VolleyGameBots.bot_id(serve_team, 0)]
  var side := 1.0 if serve_team == 0 else -1.0
  server.position = Vector3(0, 0.02, side * 9.6)
  server.velocity = Vector3.ZERO
@@ -498,6 +508,8 @@ func reset_round() -> void:
  game.ball.feed(server.position + Vector3(0, 0.25, -side * 0.55), Vector3.ZERO)
  game.previous_ball_valid = false
  round_wait = -1
+ if server is VolleyGameBot:
+  server.prepare_serve()
 
 func award_floor(at: Vector3) -> void:
  if not hosting or not match_active or round_wait >= 0:
@@ -564,6 +576,16 @@ func _process(dt: float) -> void:
    for peer_id in players:
     if peer_id != 1 and _peer_ready(peer_id):
      bot_snapshot.rpc_id(peer_id, pack_actor(game.practice.bot))
+  var bot_poses := []
+  var bot_holder := 0
+  for bot in game.game_bots.bots.values():
+   bot_poses.append(pack_actor(bot, bot.bot_id))
+   if game.ball.held and game.ball.athlete == bot:
+    bot_holder = bot.bot_id
+  for first in range(0, bot_poses.size(), 2):
+   for peer_id in players:
+    if peer_id != 1 and _peer_ready(peer_id):
+     game_bot_snapshot.rpc_id(peer_id, bot_poses.slice(first, first + 2), bot_holder)
   # Stay below the ENet MTU at 12 players; one large unreliable packet
   # would fragment and magnify loss on mobile Wi-Fi.
   for first in range(0, poses.size(), 2):
@@ -672,6 +694,8 @@ func refresh_contacts() -> void:
  game.ball.contact_athletes = players.values().map(func(entry: Dictionary): return entry.actor) if active else [game.athlete]
  if is_instance_valid(game.practice) and game.practice.enabled and is_instance_valid(game.practice.bot):
   game.ball.contact_athletes.append(game.practice.bot)
+ if is_instance_valid(game.game_bots):
+  game.ball.contact_athletes.append_array(game.game_bots.bots.values())
 
 func start_free_play() -> void:
  if not hosting:
@@ -679,6 +703,7 @@ func start_free_play() -> void:
  game.lower_serve.cancel_sequence()
  game.float_serve.cancel_sequence()
  match_active = false
+ game.game_bots.reset_rally()
  round_live = false
  round_wait = -1
  ready_seconds = 0
@@ -719,7 +744,9 @@ func readiness() -> Dictionary:
   if team >= 0:
    selected += 1
    teams[team].append(id)
- return {"teams": teams, "selected": selected, "signature": signature, "valid": players.size() >= 2 and selected == players.size() and not teams[0].is_empty() and not teams[1].is_empty() and teams[0].size() <= 6 and teams[1].size() <= 6}
+ var totals := [teams[0].size() + game.game_bots.counts[0], teams[1].size() + game.game_bots.counts[1]]
+ signature += str(game.game_bots.counts)
+ return {"teams": teams, "totals": totals, "selected": selected, "signature": signature, "valid": players.size() >= 1 and selected == players.size() and totals[0] >= 1 and totals[1] >= 1 and totals[0] <= 6 and totals[1] <= 6}
 
 func _update_readiness(dt: float) -> void:
  if match_active:
@@ -734,7 +761,7 @@ func _update_readiness(dt: float) -> void:
    ready_message += " • нужны две команды по 1–6 игроков"
   return
  ready_seconds += dt
- ready_message = "Все готовы • A %d / Б %d • матч через %d" % [ready.teams[0].size(), ready.teams[1].size(), ceili(3.0 - ready_seconds)]
+ ready_message = "Все готовы • A %d / Б %d • матч через %d" % [ready.totals[0], ready.totals[1], ceili(3.0 - ready_seconds)]
  if ready_seconds >= 3.0:
   begin_match()
 
@@ -766,6 +793,9 @@ func begin_match() -> bool:
    elif _peer_ready(id):
     orient_player.rpc_id(id, actor.camera_yaw)
    slot += 1
+ for bot in game.game_bots.bots.values():
+  bot.reset_plan()
+  bot.position = game.game_bots.home(bot.court_team, bot.slot)
  if is_instance_valid(game.practice.bot):
   game.practice.bot.cancel_input()
   game.practice.bot.action = VolleyAthlete.Action.IDLE
@@ -797,6 +827,8 @@ func _send_room_state(with_bot := true) -> void:
  for peer_id in players:
   if peer_id != 1 and _peer_ready(peer_id):
    room_state.rpc_id(peer_id, match_active, round_live, ready_message, game.practice.settings_state() if with_bot and is_instance_valid(game.practice) else {})
+   if with_bot and is_instance_valid(game.game_bots):
+    game_bots_state.rpc_id(peer_id, game.game_bots.settings_state())
 
 @rpc("authority", "call_remote", "reliable")
 func room_state(in_match: bool, live: bool, message: String, practice_state: Dictionary) -> void:
@@ -829,3 +861,24 @@ func bot_snapshot(pose: Array) -> void:
 func contact_feedback(text: String, failed: bool) -> void:
  if not hosting:
   game.show_feedback(text, failed)
+
+
+func send_game_bots() -> void:
+ if not hosting:
+  return
+ for peer_id in players:
+  if peer_id != 1 and _peer_ready(peer_id):
+   game_bots_state.rpc_id(peer_id, game.game_bots.settings_state())
+
+@rpc("authority", "call_remote", "reliable")
+func game_bots_state(state: Dictionary) -> void:
+ if not hosting and connected:
+  game.game_bots.configure(state, false)
+
+@rpc("authority", "call_remote", "unreliable_ordered", 4)
+func game_bot_snapshot(poses: Array, holder: int) -> void:
+ if hosting or not connected:
+  return
+ for pose in poses:
+  if pose.size() == 31 and game.game_bots.bots.has(pose[0]):
+   apply_actor_pose(game.game_bots.bots[pose[0]], pose, holder)

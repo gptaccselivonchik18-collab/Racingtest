@@ -68,8 +68,7 @@ func run() -> void:
  check(paused and ui.menu.visible, "Menu pauses gameplay")
  await process_frame
  await process_frame
- var menu_content := ui.menu.get_child(0)
- var resume := menu_content.get_child(menu_content.get_child_count() - 1) as Button
+ var resume := ui.resume_button
  var native_click := InputEventMouseButton.new()
  native_click.device = InputEvent.DEVICE_ID_EMULATION
  native_click.button_index = MOUSE_BUTTON_LEFT

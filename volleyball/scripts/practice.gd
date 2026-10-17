@@ -85,7 +85,7 @@ func target_for(mode: int) -> Vector3:
  return Vector3(target_x, VolleyBall.RADIUS, z)
 
 func add_settings(hud: VolleyHUD) -> void:
- var panel := hud._tab("Бот / комната")
+ var panel := hud._tab("Тренер")
  hint = Label.new()
  hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  panel.add_child(hint)
@@ -137,7 +137,7 @@ func add_settings(hud: VolleyHUD) -> void:
 func _process(_dt: float) -> void:
  if not is_instance_valid(hint) or not game.hud.menu.visible:
   return
- hint.text = "Выберите действия: бот повторяет их по очереди. Если мяч у игрока, бот ждёт. Для нового мяча дождитесь приземления. В матче бот отдыхает.\n" + ("В комнате бота настраивает создатель." if game.lan.active else "Бот работает в одиночной игре и в сетевой разминке.")
+ hint.text = "Тренер повторяет выбранные действия. В матче отдыхает.\n" + ("В комнате бота настраивает создатель." if game.lan.active else "Бот работает в одиночной игре и в сетевой разминке.")
  for control in controls:
   if control is BaseButton:
    control.disabled = not can_configure()

@@ -17,6 +17,7 @@ var frontend: VolleyFrontend
 var lower_serve: VolleyLowerServe
 var float_serve: VolleyFloatServe
 var practice: VolleyPractice
+var game_bots: VolleyGameBots
 var frame_rate: VolleyFrameRate
 var feedback_text := ""
 var feedback_color := Color.WHITE
@@ -76,7 +77,11 @@ func _ready() -> void:
  practice = VolleyPractice.new()
  practice.game = self
  add_child(practice)
+ game_bots = VolleyGameBots.new()
+ game_bots.game = self
+ add_child(game_bots)
  hud.add_bot_settings()
+ game_bots.add_settings(hud)
  frontend = VolleyFrontend.new()
  frontend.game = self
  layer.add_child(frontend)
@@ -85,57 +90,7 @@ func automatic_serve_busy() -> bool:
  return (is_instance_valid(lower_serve) and is_instance_valid(lower_serve.busy_actor)) or (is_instance_valid(float_serve) and is_instance_valid(float_serve.busy_actor))
 
 func _court() -> void:
- var world := WorldEnvironment.new()
- var env := Environment.new()
- env.background_mode = Environment.BG_COLOR
- env.background_color = Color("101e32")
- env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
- env.ambient_light_color = Color("b7cde0")
- env.ambient_light_energy = 0.35
- env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
- world.environment = env
- add_child(world)
- var sun := DirectionalLight3D.new()
- sun.rotation_degrees = Vector3(-48, -30, 0)
- sun.light_energy = 0.85
- sun.shadow_enabled = true
- add_child(sun)
- VolleyGeometry.box(self, Vector3(0, -0.21, 0), Vector3(40, 0.4, 40), Color("1b3042"))
- VolleyGeometry.collider(self, Vector3(0, -0.2, 0), Vector3(40, 0.4, 40)).set_meta("surface", "floor")
- VolleyGeometry.box(self, Vector3(0, 0.005, 0), Vector3(13, 0.01, 22), Color("2c686b"))
- VolleyGeometry.box(self, Vector3(0, 0.015, 0), Vector3(9, 0.01, 18), Color("b66b4a"))
- for z in [-9.0, -3.0, 0.0, 3.0, 9.0]:
-  VolleyGeometry.box(self, Vector3(0, 0.024, z), Vector3(9.05, 0.012, 0.05), Color("f6e9c9"))
- for x in [-4.5, 4.5]:
-  VolleyGeometry.box(self, Vector3(x, 0.024, 0), Vector3(0.05, 0.012, 18.05), Color("f6e9c9"))
- # Net: continuous thin collision sheet (cord mesh visually), top at 2.43 m.
- VolleyGeometry.collider(self, Vector3(0, 1.93, 0), Vector3(9.7, 1.0, 0.035)).set_meta("surface", "net")
- VolleyGeometry.collider(self, Vector3(0, 2.43, 0), Vector3(9.8, 0.06, 0.045)).set_meta("surface", "net")
- for x in [-4.5, 4.5]:
-  VolleyGeometry.box(self, Vector3(x, 2.68, 0), Vector3(0.025, 1.3, 0.025), Color("f1a993"))
-  VolleyGeometry.collider(self, Vector3(x, 2.68, 0), Vector3(0.025, 1.3, 0.025)).set_meta("surface", "antenna")
- for i in range(49):
-  VolleyGeometry.box(self, Vector3(-4.8 + i * 0.2, 1.93, 0), Vector3(0.012, 1, 0.012), Color("9daeb5"))
- for i in range(6):
-  VolleyGeometry.box(self, Vector3(0, 1.43 + i * 0.2, 0), Vector3(9.6, 0.012, 0.012), Color("9daeb5"))
- VolleyGeometry.box(self, Vector3(0, 2.43, 0), Vector3(9.8, 0.06, 0.045), Color("f8f2df"))
- for x in [-4.9, 4.9]:
-  VolleyGeometry.box(self, Vector3(x, 1.3, 0), Vector3(0.12, 2.6, 0.12), Color("d9ac54"))
-  VolleyGeometry.collider(self, Vector3(x, 1.3, 0), Vector3(0.12, 2.6, 0.12))
- for side in [-1, 1]:
-  for row in range(3):
-   VolleyGeometry.box(self, Vector3(side * (8 + row * 0.8), 0.4 + row * 0.4, 0), Vector3(0.75, 0.6, 19), Color("263d53"))
- for x in [-9, 9]:
-  for z in [-10, 10]:
-   VolleyGeometry.box(self, Vector3(x, 3, z), Vector3(0.15, 6, 0.15), Color("3c5369"))
-   VolleyGeometry.box(self, Vector3(x, 6, z), Vector3(1.4, 0.12, 0.4), Color("f2e7ca"))
- var sign_text := Label3D.new()
- sign_text.text = "V O L L E Y   /   L A B"
- sign_text.font_size = 80
- sign_text.pixel_size = 0.012
- sign_text.position = Vector3(0, 3.2, -11)
- sign_text.modulate = Color("f6d279")
- add_child(sign_text)
+ VolleyCourt.build(self)
 
 func _process(_dt: float) -> void:
  feedback_left = maxf(0, feedback_left - _dt)
@@ -149,7 +104,7 @@ func _process(_dt: float) -> void:
 func _physics_process(_dt: float) -> void:
  if lan.active and not lan.hosting:
   return
- if lan.active and not lan.match_active:
+ if (lan.active and not lan.match_active) or (not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match):
   return
  if not ball.held and not ball.pending_feed:
   if previous_ball_valid:
@@ -171,10 +126,12 @@ func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
+ if is_instance_valid(game_bots):
+  game_bots.note_touch(actor, kind)
  if kind == ContextAthlete.BLOCK:
   var pierced := bool(actor.duel_result.get("pierced", false))
   var text := "БЛОК ПРОБИТ" if pierced else "БЛОК! МЯЧ ОТБИТ"
-  if not lan.active or actor == athlete:
+  if actor == athlete:
    show_feedback(text, pierced)
   if lan.active and lan.hosting and id != 1 and lan.players.has(id):
    lan.contact_feedback.rpc_id(id, text, pierced)
@@ -185,7 +142,9 @@ func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3
     lan.serve_flags[id] = false
   actor.last_result = "Свободная игра • " + actor.last_result
   return
- var side: int = lan.players[id].team if lan.active and lan.players.has(id) else (0 if actor.position.z >= 0 else 1)
+ if not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match:
+  return
+ var side: int = actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)
  rules.touch(side, id, kind, actor.strike_count)
  if lan.active:
   lan.last_touch_team = side
@@ -212,7 +171,10 @@ func _on_surface(surface: String) -> void:
   return
  if lan.active and not lan.match_active:
   return
+ if not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match:
+  return
  if surface == "floor":
+  game_bots.on_floor(ball.global_position)
   rules.floor_contact(ball.global_position)
   if lan.active and lan.round_live:
    lan.award_floor(ball.global_position)
@@ -220,6 +182,9 @@ func _on_surface(surface: String) -> void:
   rules.net_contact(false, true)
 
 func repeat_drill() -> void:
+ if game_bots.solo_match:
+  game_bots.reset_round()
+  return
  if lan.active:
   lan.local_action("next")
   return
@@ -284,6 +249,8 @@ func begin_primary() -> bool:
  if not action_owner.is_empty():
   return false
  if ball.held:
+  if not holding_ball():
+   return false
   if ball.held_mode == VolleyBall.HeldMode.THROW:
    ball.throw_held()
    return true
@@ -309,6 +276,8 @@ func begin_secondary() -> bool:
  if not action_owner.is_empty():
   return false
  if ball.held:
+  if not holding_ball():
+   return false
   ball.toggle_held_mode()
   return true
  elif athlete.begin_action(ContextAthlete.BLOCK if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD):
@@ -351,6 +320,8 @@ func cancel_action(role: String) -> void:
   action_owner = ""
 
 func pickup_or_drop() -> void:
+ if ball.held and not holding_ball():
+  return
  cancel_action("")
  if ball.held:
   ball.drop()

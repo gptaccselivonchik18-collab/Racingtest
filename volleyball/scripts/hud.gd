@@ -29,6 +29,9 @@ var editor_bar: PanelContainer
 var editor_scale: HSlider
 var stat_sliders := {}
 var control_sliders := {}
+var category_picker: OptionButton
+var stat_grid: GridContainer
+var resume_button: Button
 
 func _ready() -> void:
  process_mode = Node.PROCESS_MODE_ALWAYS
@@ -88,8 +91,10 @@ func _layout() -> void:
  status.position = Vector2(margin + 70, 28)
  status.size = Vector2(size.x - margin * 2 - 260, 44)
  height_rect = Rect2(Vector2(size.x * 0.5 - 140, 104), Vector2(280, 50))
- menu.position = Vector2(size.x * 0.08, size.y * 0.07)
- menu.size = Vector2(size.x * 0.84, size.y * 0.86)
+ menu.position = Vector2(maxf(16, size.x * 0.045), 12)
+ menu.size = Vector2(size.x - menu.position.x * 2, size.y - 24)
+ if is_instance_valid(stat_grid):
+  stat_grid.columns = 2 if menu.size.x > 620 else 1
  if is_instance_valid(editor_bar):
   editor_bar.position = Vector2(size.x * 0.16, 16)
   editor_bar.size = Vector2(size.x * 0.68, 64)
@@ -101,18 +106,34 @@ func _menu() -> void:
  menu_blocker.visible = false
  add_child(menu_blocker)
  menu = PanelContainer.new()
- menu.add_theme_stylebox_override("panel", _panel(Color("132b3c")))
+ menu.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("10283a")))
+ menu.add_theme_font_override("font", VolleyMenuArt.typeface())
  menu.visible = false
  add_child(menu)
  var content := VBoxContainer.new()
- content.add_theme_constant_override("separation", 12)
+ content.add_theme_constant_override("separation", 8)
  menu.add_child(content)
+ var header := HBoxContainer.new()
+ header.add_theme_constant_override("separation", 16)
+ content.add_child(header)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.18"
- title.add_theme_font_size_override("font_size", 24)
- content.add_child(title)
+ title.text = "VOLLEY / LAB"
+ title.add_theme_font_size_override("font_size", 20)
+ title.add_theme_color_override("font_color", Color("d9f36b"))
+ header.add_child(title)
+ category_picker = OptionButton.new()
+ category_picker.custom_minimum_size = Vector2(220, 44)
+ category_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ category_picker.item_selected.connect(func(index: int): tabs.current_tab = index)
+ header.add_child(category_picker)
+ _native_button(header, "✕", toggle_menu).custom_minimum_size = Vector2(44, 44)
  tabs = TabContainer.new()
+ tabs.tabs_visible = false
  tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+ tabs.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("142e40"), 12))
+ tabs.tab_changed.connect(func(index: int):
+  if index < category_picker.item_count:
+   category_picker.select(index))
  content.add_child(tabs)
  var practice := _tab("Тренировка")
  var list := OptionButton.new()
@@ -131,6 +152,8 @@ func _menu() -> void:
  help.text = "ЛКМ: атака. Q: пас / блок. E: пас в прыжке.\nX: нижний приём. V: нижняя подача. B: планер.\nSpace: прыжок. Ctrl: подкат. R: следующий мяч. F: подобрать / опустить.\nРазбег: нажать и отпустить АТАКУ другим пальцем → прыжок.\nСледующий нажим АТАКИ → удар.\nМяч в руках: высота ползунком, основная кнопка → подброс.\nПРИЦЕЛ БРОСКА / Q → выбрать место на площадке → БРОСИТЬ / ЛКМ."
  help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  help.text += "\nНа ПК высота: колесо мыши. Tilt: джойстик / WASD до контакта.\nНижний приём всегда вверх; дольше держать — мягче.\nУдерживая действие, ведите палец для поворота камеры.\nОбычный удар без комбинации: удерживать для меньшей силы, отпустить для касания."
+ help.visible = false
+ _native_button(practice, "Как играть  ▾", func(): help.visible = not help.visible)
  practice.add_child(help)
  var controls := _tab("Управление")
  control_sliders.sensitivity = _slider(controls, "Чувствительность камеры", 0.3, 2.5, settings.sensitivity, func(v: float): settings.sensitivity = v; game.rig.sensitivity = v; _save(), 0.05)
@@ -162,16 +185,29 @@ func _menu() -> void:
  _native_button(bindings, "Атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
  var testing := _tab("Спортсмен")
  var explanation := Label.new()
- explanation.text = "Свободный эксперимент: 65 — исходное значение. 0–100 — ориентир. Можно вводить отрицательные значения и больше 100. Эффект плавно насыщается при крайних числах."
+ explanation.text = "65 — стандарт. Меняйте число или используйте − / +. Ограничений нет."
  explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  testing.add_child(explanation)
+ stat_grid = GridContainer.new()
+ stat_grid.columns = 2
+ stat_grid.add_theme_constant_override("h_separation", 12)
+ stat_grid.add_theme_constant_override("v_separation", 10)
+ testing.add_child(stat_grid)
  for key in VolleyStyleStats.KEYS:
   var stat_key: String = key
+  var card := PanelContainer.new()
+  card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+  card.add_theme_stylebox_override("panel", VolleyMenuArt.panel(Color("1c3a4c"), 12))
+  stat_grid.add_child(card)
+  var body := VBoxContainer.new()
+  body.add_theme_constant_override("separation", 4)
+  card.add_child(body)
   var label := Label.new()
   label.text = VolleyStyleStats.STYLE_LABELS[key]
-  label.add_theme_font_size_override("font_size", 21)
-  testing.add_child(label)
+  label.add_theme_font_size_override("font_size", 18)
+  body.add_child(label)
   var row := HBoxContainer.new()
+  body.add_child(row)
   var value := SpinBox.new()
   value.min_value = 0
   value.max_value = 100
@@ -179,34 +215,53 @@ func _menu() -> void:
   value.allow_lesser = true
   value.step = 1
   value.value = game.athlete.stats.values[key]
-  value.custom_minimum_size = Vector2(180, 52)
+  value.custom_minimum_size = Vector2(90, 44)
   value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
   value.value_changed.connect(func(v: float): _change_stat(stat_key, v))
-  var minus := _native_button(row, "−10", func(): value.value -= 10)
-  minus.custom_minimum_size.x = 64
+  _native_button(row, "−", func(): value.value -= 10).custom_minimum_size = Vector2(44, 44)
   row.add_child(value)
-  var plus := _native_button(row, "+10", func(): value.value += 10)
-  plus.custom_minimum_size.x = 64
-  testing.add_child(row)
+  _native_button(row, "+", func(): value.value += 10).custom_minimum_size = Vector2(44, 44)
   stat_sliders[key] = value
   var detail := Label.new()
   detail.text = VolleyStyleStats.DETAILS[key]
   detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-  testing.add_child(detail)
- _native_button(testing, "Вернуть все характеристики к 65", func():
+  detail.visible = false
+  detail.add_theme_font_size_override("font_size", 14)
+  var more := Button.new()
+  more.text = "На что влияет  ▾"
+  more.flat = true
+  more.alignment = HORIZONTAL_ALIGNMENT_LEFT
+  more.custom_minimum_size.y = 30
+  more.pressed.connect(func(): detail.visible = not detail.visible)
+  body.add_child(more)
+  body.add_child(detail)
+ _native_button(testing, "Сбросить характеристики: 65", func():
   for key in VolleyStyleStats.KEYS:
    stat_sliders[key].value = 65)
- _native_button(content, "Главное меню / выйти из комнаты", func():
+ var footer := HBoxContainer.new()
+ footer.add_theme_constant_override("separation", 12)
+ content.add_child(footer)
+ _native_button(footer, "Главное меню", func():
   _cancel()
   menu.hide()
   menu_blocker.hide()
   get_tree().paused = false
   game.lan.leave()
   game.frontend.show_home())
- _native_button(content, "Продолжить", func():
+ resume_button = _native_button(footer, "Продолжить", func():
   toggle_menu()
   if game.frontend.in_home:
    game.frontend.show_home())
+ for button in footer.get_children():
+  button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ VolleyMenuArt.style_button(footer.get_child(1), true)
+ refresh_navigation()
+
+func refresh_navigation() -> void:
+ category_picker.clear()
+ for index in range(tabs.get_tab_count()):
+  category_picker.add_item(tabs.get_tab_title(index))
+ category_picker.select(tabs.current_tab)
 
 func _editor() -> void:
  editor_bar = PanelContainer.new()
@@ -252,7 +307,9 @@ func end_editor() -> void:
 func _native_button(parent: Node, text: String, callback: Callable) -> Button:
  var button := Button.new()
  button.text = text
- button.custom_minimum_size.y = 50
+ button.custom_minimum_size.y = 44
+ VolleyMenuArt.style_button(button)
+ button.add_theme_font_size_override("font_size", 17)
  button.pressed.connect(callback)
  parent.add_child(button)
  return button
@@ -264,7 +321,7 @@ func _tab(title: String) -> VBoxContainer:
  tabs.add_child(scroll)
  var list := VBoxContainer.new()
  list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
- list.add_theme_constant_override("separation", 12)
+ list.add_theme_constant_override("separation", 10)
  scroll.add_child(list)
  return list
 
@@ -278,7 +335,7 @@ func _slider(parent: Node, title: String, low: float, high: float, value: float,
  slider.max_value = high
  slider.step = step_value
  slider.value = value
- slider.custom_minimum_size = Vector2(300, 44)
+ slider.custom_minimum_size = Vector2(180, 44)
  slider.value_changed.connect(func(v: float): label.text = "  %s: %.2f" % [title, v]; callback.call(v))
  row.add_child(slider)
  parent.add_child(row)

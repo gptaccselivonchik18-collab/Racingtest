@@ -1,0 +1,391 @@
+class_name VolleyGameBots
+extends Node3D
+
+# Deterministic state machines and a shared trajectory predictor; no AI service.
+const MAX_PER_TEAM := 6
+var game: Node3D
+var bots: Dictionary = {}
+var counts := [0, 0]
+var level := 65.0
+var human_team := 0
+var solo_match := false
+var scores := [0, 0]
+var serve_team := 0
+var round_wait := -1.0
+var last_actor: ContextAthlete
+var last_team := -1
+var touches := 0
+var last_kind := -1
+var last_touch_time := -10.0
+var clock := 0.0
+var think_left := 0.0
+var samples: Array = []
+var receivers := [0, 0]
+var intercepts := [Vector3.ZERO, Vector3.ZERO]
+var arrival := [0.0, 0.0]
+var ui_controls: Array[Control] = []
+var count_labels: Array[Label] = []
+var hint: Label
+
+func _ready() -> void:
+ name = "GameBots"
+ process_mode = Node.PROCESS_MODE_ALWAYS
+
+func authority() -> bool:
+ return not game.lan.active or game.lan.hosting
+
+func settings_state() -> Dictionary:
+ return {"counts": counts.duplicate(), "level": level, "human_team": human_team}
+
+func configure(values: Dictionary, broadcast := true) -> bool:
+ if broadcast and not authority():
+  return false
+ var requested: Variant = values.get("counts", counts)
+ var skill: Variant = values.get("level", level)
+ var side: Variant = values.get("human_team", human_team)
+ if not requested is Array or requested.size() != 2 or not (skill is float or skill is int) or not is_finite(float(skill)) or not side is int or side not in [0, 1]:
+  return false
+ for n in requested:
+  if not n is int or n < 0 or n > MAX_PER_TEAM:
+   return false
+ if broadcast and game.lan.match_active:
+  game.lan.start_free_play()
+ if solo_match and broadcast:
+  end_solo()
+ counts = requested.duplicate()
+ level = float(skill)
+ human_team = side
+ for team in range(2):
+  for slot in range(MAX_PER_TEAM):
+   var id := bot_id(team, slot)
+   if slot >= counts[team]:
+    if bots.has(id):
+     var removed: VolleyGameBot = bots[id]
+     if game.ball.athlete == removed and game.ball.held:
+      game.ball.drop()
+     if game.ball.athlete == removed:
+      game.ball.athlete = game.athlete
+     if last_actor == removed:
+      last_actor = null
+     if game.lower_serve.busy_actor == removed:
+      game.lower_serve.cancel_sequence()
+     if game.float_serve.busy_actor == removed:
+      game.float_serve.cancel_sequence()
+     bots.erase(id)
+     removed.queue_free()
+    continue
+   if not bots.has(id):
+    var actor := VolleyGameBot.new()
+    actor.name = "Bot_%d_%d" % [team, slot]
+    actor.manager = self
+    actor.bot_id = id
+    actor.court_team = team
+    actor.slot = slot
+    actor.process_mode = Node.PROCESS_MODE_PAUSABLE
+    actor.replica = not authority()
+    add_child(actor)
+    actor.position = home(team, slot)
+    actor.serve_solver = game.ball.solve_launch
+    actor.power_serve_solver = game.ball.solve_power_serve
+    actor.set_physics_process(not actor.replica)
+    bots[id] = actor
+   var bot: VolleyGameBot = bots[id]
+   for key in VolleyStyleStats.KEYS:
+    bot.stats.set_stat(key, level)
+ game.lan.refresh_contacts()
+ think_left = 0
+ if broadcast and game.lan.active:
+  game.lan.send_game_bots()
+ return true
+
+static func bot_id(team: int, slot: int) -> int:
+ return -100 - team * MAX_PER_TEAM - slot
+
+func home(team: int, slot: int) -> Vector3:
+ var n: int = counts[team]
+ var side := 1.0 if team == 0 else -1.0
+ if n == 1:
+  return Vector3(0, 0.02, side * 4.2)
+ var width := mini(n, 3)
+ return Vector3((slot % 3 - (width - 1) * 0.5) * 2.7, 0.02, side * (1.9 + (slot / 3) * 4.0))
+
+func members(team: int) -> Array:
+ var result: Array = []
+ for bot in bots.values():
+  if bot.court_team == team:
+   result.append(bot)
+ if game.lan.active:
+  for entry in game.lan.players.values():
+   var side: int = entry.team if game.lan.match_active else (0 if entry.actor.position.z >= 0 else 1)
+   if side == team:
+    result.append(entry.actor)
+ elif human_team == team:
+  result.append(game.athlete)
+ return result
+
+func is_match() -> bool:
+ return solo_match or game.lan.match_active
+
+func note_touch(actor: ContextAthlete, kind: int) -> void:
+ if actor is VolleyGameBot and kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+  actor.is_server = false
+ var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)
+ if team != last_team:
+  touches = 0
+ if kind != ContextAthlete.BLOCK:
+  touches += 1
+ last_actor = actor
+ last_team = team
+ last_kind = kind
+ last_touch_time = clock
+ think_left = 0
+
+func reset_rally() -> void:
+ last_actor = null
+ last_team = -1
+ touches = 0
+ last_kind = -1
+ last_touch_time = -10
+ receivers = [0, 0]
+ samples.clear()
+ think_left = 0
+ for bot in bots.values():
+  bot.reset_plan()
+  bot.holding_ball = game.ball.held and game.ball.athlete == bot
+
+func _physics_process(dt: float) -> void:
+ if get_tree().paused or not authority() or bots.is_empty():
+  return
+ clock += dt
+ if solo_match and round_wait >= 0:
+  round_wait -= dt
+  if round_wait < 0:
+   reset_round()
+ if solo_match and game.rules.ended and round_wait < 0 and game.rules.last_player != -1:
+  award(1 - last_team)
+ think_left -= dt
+ if think_left <= 0:
+  think_left = 0.10
+  predict()
+
+func predict() -> void:
+ samples.clear()
+ receivers = [0, 0]
+ if game.ball.held or game.automatic_serve_busy():
+  return
+ for bot in bots.values():
+  if bot.jump_serving:
+   return
+ var at: Vector3 = game.ball.position
+ var v: Vector3 = game.ball.linear_velocity
+ var spin: Vector3 = game.ball.angular_velocity
+ for tick in range(72):
+  var previous := at
+  v += (Vector3.DOWN * 9.81 + game.ball.aero_force(v, spin) / game.ball.mass) * 0.05
+  at += v * 0.05
+  if previous.z * at.z < 0 and at.y < 2.65 and at.y > 1.3 and absf(at.x) < 4.9:
+   v.z *= -0.45
+   at.z = signf(previous.z) * 0.20
+  if absf(at.x) > VolleyCourt.INNER_X:
+   at.x = clampf(at.x, -VolleyCourt.INNER_X, VolleyCourt.INNER_X)
+   v.x *= -0.5
+  if absf(at.z) > VolleyCourt.INNER_Z:
+   at.z = clampf(at.z, -VolleyCourt.INNER_Z, VolleyCourt.INNER_Z)
+   v.z *= -0.5
+  samples.append({"at": at, "v": v, "time": (tick + 1) * 0.05})
+  if at.y <= VolleyBall.RADIUS:
+   break
+ for team in range(2):
+  var best := INF
+  var side := 1.0 if team == 0 else -1.0
+  for bot: VolleyGameBot in bots.values():
+   if bot.court_team != team or (bot == last_actor and last_kind != ContextAthlete.BLOCK) or bot.cooldown > 0 or bot.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER]:
+    continue
+   for sample in samples:
+    var point: Vector3 = sample.at
+    if point.z * side < 0.48 or point.y < 0.4 or point.y > 3.6 or sample.v.y > 2.0:
+     continue
+    var target := point + Vector3(0, 0, side * 0.34)
+    target.y = 0.02
+    var distance := Vector2(target.x - bot.position.x, target.z - bot.position.z).length()
+    var reachable: float = float(sample.time) * float(bot.style_stats.movement().speed) * 0.90 + 0.60
+    if distance > reachable:
+     continue
+    var want_high := last_team == team and touches >= 2 and absf(point.z) < 4.5
+    var preferred := 2.95 if want_high else 2.05 if last_team == team else 1.35
+    var cost := absf(point.y - preferred) * 0.8 + distance * 0.20 + float(sample.time) * 0.12
+    # Let a nearby human play; bots cover balls beyond the human's reach.
+    for human in members(team):
+     if human is VolleyGameBot:
+      continue
+     if Vector2(point.x - human.position.x, point.z - human.position.z).length() < 1.15:
+      cost += 2.5
+    if cost < best:
+     best = cost
+     receivers[team] = bot.bot_id
+     intercepts[team] = target
+     arrival[team] = clock + float(sample.time)
+
+func target_for(actor: VolleyGameBot, kind: int) -> Vector3:
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ var teammates := members(actor.court_team).filter(func(a): return a != actor)
+ var own_touches := touches if last_team == actor.court_team else 0
+ if kind in [VolleyAthlete.Technique.UNDERHAND, VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET] and own_touches < 2 and not teammates.is_empty():
+  var friend: ContextAthlete = teammates[0]
+  var nearest := INF
+  for teammate in teammates:
+   var d: float = teammate.position.distance_squared_to(Vector3(0, 0, side * 2.5))
+   if d < nearest:
+    nearest = d
+    friend = teammate
+  # Set into a reachable corridor, not onto a teammate's feet.
+  return Vector3(clampf(friend.position.x, -3.4, 3.4), VolleyBall.RADIUS, side * clampf(absf(friend.position.z), 1.8, 5.4))
+ var opponents := members(1 - actor.court_team)
+ var best := Vector3(0, VolleyBall.RADIUS, -side * 6.5)
+ var space := -INF
+ for x in [-3.0, 0.0, 3.0]:
+  for depth in [3.0, 6.8]:
+   var aim := Vector3(x, VolleyBall.RADIUS, -side * depth)
+   var distance := 20.0
+   for opponent in opponents:
+    distance = minf(distance, Vector2(aim.x - opponent.position.x, aim.z - opponent.position.z).length())
+   # A tiny seeded preference varies equivalent open targets.
+   distance += actor.rng.randf_range(0, 0.18)
+   if distance > space:
+    space = distance
+    best = aim
+ return best
+
+func start_solo() -> bool:
+ if game.lan.active or counts[1 - human_team] == 0:
+  return false
+ game.lower_serve.cancel_sequence()
+ game.float_serve.cancel_sequence()
+ solo_match = true
+ scores = [0, 0]
+ serve_team = human_team
+ game.athlete.court_team = human_team
+ var side := 1.0 if human_team == 0 else -1.0
+ game.athlete.position = Vector3(0, 0.02, side * 6.3)
+ game.athlete.velocity = Vector3.ZERO
+ game.athlete.cancel_input()
+ game.athlete.action = VolleyAthlete.Action.IDLE
+ game.athlete.camera_yaw = 0 if human_team == 0 else PI
+ game.athlete.visual.rotation.y = game.athlete.camera_yaw
+ game.rig.yaw = game.athlete.camera_yaw
+ reset_round()
+ return true
+
+func end_solo() -> void:
+ solo_match = false
+ round_wait = -1
+ game.rules.reset()
+ game.rules.strict = false
+ game.athlete.court_team = -1
+
+func reset_round() -> void:
+ reset_rally()
+ game.rules.reset()
+ game.rules.strict = true
+ game.previous_ball_valid = false
+ game.serving = false
+ round_wait = -1
+ for bot in bots.values():
+  bot.position = home(bot.court_team, bot.slot)
+  bot.velocity = Vector3.ZERO
+ var side := 1.0 if serve_team == 0 else -1.0
+ var server: ContextAthlete = game.athlete
+ if counts[serve_team] > 0:
+  server = bots[bot_id(serve_team, 0)]
+ else:
+  server.position = Vector3(0, 0.02, side * 9.7)
+  server.velocity = Vector3.ZERO
+ if server is VolleyGameBot:
+  server.prepare_serve()
+ else:
+  game.ball.feed(server.position + Vector3(0, 0.25, -side * 0.5), Vector3.ZERO)
+  server.camera_yaw = 0 if side > 0 else PI
+  game.rig.yaw = server.camera_yaw
+
+func award(winner: int) -> void:
+ if not solo_match or round_wait >= 0:
+  return
+ winner = clampi(winner, 0, 1)
+ scores[winner] += 1
+ serve_team = winner
+ round_wait = 2.0
+ game.show_feedback("A %d : %d Б" % scores, false)
+
+func on_floor(at: Vector3) -> void:
+ if solo_match and last_team >= 0:
+  award((1 if at.z >= 0 else 0) if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9 + VolleyBall.RADIUS else 1 - last_team)
+
+func add_settings(hud: VolleyHUD) -> void:
+ var list := hud._tab("Игровые боты")
+ var note := Label.new()
+ note.text = "Самостоятельные игроки • до 6 ботов на сторону.\nВ комнате добавляет хост. Тренер включается отдельно."
+ note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ list.add_child(note)
+ for team in range(2):
+  var side: int = team
+  var row := HBoxContainer.new()
+  row.add_theme_constant_override("separation", 12)
+  var label := Label.new()
+  label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+  row.add_child(label)
+  count_labels.append(label)
+  ui_controls.append(hud._native_button(row, "−", func(): change_count(side, -1)))
+  ui_controls.append(hud._native_button(row, "+", func(): change_count(side, 1)))
+  list.add_child(row)
+ var presets := HBoxContainer.new()
+ for n in [1, 3, 6]:
+  var amount: int = n
+  var button := hud._native_button(presets, "%d × %d" % [n, n], func():
+   var next := [amount, amount]
+   if not game.lan.active:
+    next[human_team] -= 1
+   configure({"counts": next}))
+  button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+  ui_controls.append(button)
+ list.add_child(presets)
+ var side_pick := OptionButton.new()
+ side_pick.add_item("Моя команда: A")
+ side_pick.add_item("Моя команда: Б")
+ side_pick.custom_minimum_size.y = 44
+ side_pick.item_selected.connect(func(i: int): configure({"human_team": i}))
+ list.add_child(side_pick)
+ ui_controls.append(side_pick)
+ ui_controls.append(hud._slider(list, "Характеристики ботов", 0, 150, level, func(v: float): configure({"level": v})))
+ var start := hud._native_button(list, "Матч с ботами", func():
+  if start_solo():
+   hud.toggle_menu())
+ ui_controls.append(start)
+ start.set_meta("solo_only", true)
+ var free := hud._native_button(list, "Свободная игра", func():
+  if game.lan.active:
+   game.lan.start_free_play()
+  else:
+   end_solo())
+ ui_controls.append(free)
+ ui_controls.append(hud._native_button(list, "Убрать игровых ботов", func(): configure({"counts": [0, 0]})))
+ hint = Label.new()
+ hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+ list.add_child(hint)
+ hud.refresh_navigation()
+
+func change_count(team: int, delta: int) -> void:
+ var next := counts.duplicate()
+ next[team] = clampi(next[team] + delta, 0, MAX_PER_TEAM)
+ configure({"counts": next})
+
+func _process(_dt: float) -> void:
+ if not is_instance_valid(hint) or not game.hud.menu.visible:
+  return
+ for team in range(2):
+  count_labels[team].text = "КОМАНДА %s     %d ботов" % ["A" if team == 0 else "Б", counts[team]]
+ for control in ui_controls:
+  if control is BaseButton:
+   control.disabled = not authority() or (control.has_meta("solo_only") and game.lan.active)
+  elif control is Range:
+   control.editable = authority()
+ hint.text = "LAN: всем людям нужно встать в зоны выбора команд; боты займут свою сторону. До 6 участников в команде." if game.lan.active else "Выберите свою команду и нажмите «Матч с ботами». В свободной игре боты тоже активны."

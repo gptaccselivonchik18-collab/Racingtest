@@ -6,7 +6,7 @@ const PORT := 24681
 const SEARCH_DURATION := 15.0
 const PROBE_INTERVAL := 0.05
 const PROBE_BATCH := 8
-const MAGIC := "VOLLEYLAB18"
+const MAGIC := "VOLLEYLAB19"
 var lan: VolleyLAN
 var responder := PacketPeerUDP.new()
 var seeker := PacketPeerUDP.new()
