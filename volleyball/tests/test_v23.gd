@@ -93,16 +93,15 @@ func run() -> void:
  await frames(20)
  bot.set_physics_process(false)
  manager.set_physics_process(false)
- # Most serves deliberately offer humans the first contact, rotating LAN recipients.
+ # A human is no longer a forced recipient, but the chosen aim stays stable.
  var offered := 0
  for i in range(12):
   bot.reset_plan()
   bot.serves = i
   var aim := manager.target_for(bot, 3)
-  if i % 4 != 3:
-   offered += int(absf(aim.x - game.athlete.position.x) < 0.6 and aim.z < 0)
+  offered += int(absf(aim.x - game.athlete.position.x) < 0.6 and aim.z < 0)
   check(aim.is_equal_approx(manager.target_for(bot, 4)), "Serve aim survives toss/strike and jump-serve technique changes")
- check(offered == 9, "Nine of twelve serves offer a reachable reception to the human instead of avoiding them")
+ check(offered < 9, "Serving no longer forces three quarters of deliveries toward the human")
  # The receiver selector itself admits a save that cannot be reached on foot.
  game.athlete.position = Vector3(-7, 0.02, -10)
  bot.position = Vector3(0, 0.02, 4)

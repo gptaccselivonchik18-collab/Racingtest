@@ -20,6 +20,7 @@ var toss_time := 0.0
 var noticed_touch := -INF
 var reaction_until := 0.0
 var serve_aim := Vector3.INF
+var serve_history: Array[Vector3] = []
 
 func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77

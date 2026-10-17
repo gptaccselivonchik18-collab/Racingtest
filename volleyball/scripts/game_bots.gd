@@ -8,6 +8,8 @@ var bots: Dictionary = {}
 var counts := [0, 0]
 var level := 65.0
 var difficulty := 2
+var thinking_level := -1
+var thinking: Dictionary = {}
 var tactics := VolleyBotTactics.new()
 var difficulty_picker: OptionButton
 var difficulty_hint: Label
@@ -44,6 +46,13 @@ func _ready() -> void:
 
 func authority() -> bool:
  return not game.lan.active or game.lan.hosting
+
+func decision_profile() -> Dictionary:
+ # Covering bots evaluate every frame; allocate this only when level changes.
+ if thinking_level != difficulty:
+  thinking_level = difficulty
+  thinking = VolleyBotDifficulty.profile(difficulty)
+ return thinking
 
 func settings_state() -> Dictionary:
  return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty}
@@ -249,27 +258,12 @@ func predict() -> void:
 func target_for(actor: VolleyGameBot, kind: int) -> Vector3:
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
   return tactics.serve_target(actor)
- var side := 1.0 if actor.court_team == 0 else -1.0
  var own_touches := touches if last_team == actor.court_team else 0
  if kind in [VolleyAthlete.Technique.UNDERHAND, VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET, ContextAthlete.DIVE] and own_touches < 2:
   var plan := tactics.pass_plan(actor, kind)
   if not plan.is_empty():
    return plan.target
- var opponents := members(1 - actor.court_team)
- var best := Vector3(0, VolleyBall.RADIUS, -side * 6.5)
- var space := -INF
- for x in [-3.0, 0.0, 3.0]:
-  for depth in [3.0, 6.8]:
-   var aim := Vector3(x, VolleyBall.RADIUS, -side * depth)
-   var distance := 20.0
-   for opponent in opponents:
-    distance = minf(distance, Vector2(aim.x - opponent.position.x, aim.z - opponent.position.z).length())
-   # A tiny seeded preference varies equivalent open targets.
-   distance += actor.rng.randf_range(0, 0.18)
-   if distance > space:
-    space = distance
-    best = aim
- return best
+ return tactics.attack_target(actor, kind)
 
 func start_solo() -> bool:
  if game.lan.active or counts[1 - human_team] == 0:
@@ -424,7 +418,7 @@ func _process(_dt: float) -> void:
  for team in range(2):
   count_labels[team].text = "%s  ·  %d ботов" % ["A" if team == 0 else "Б", counts[team]]
  difficulty_picker.select(difficulty)
- difficulty_hint.text = "СЛОЖНОСТЬ · " + VolleyBotDifficulty.NAMES[difficulty] + "\nМеняет реакцию, предугадывание, точность и все 8 характеристик."
+ difficulty_hint.text = "СЛОЖНОСТЬ · " + VolleyBotDifficulty.NAMES[difficulty] + "\n" + VolleyBotDifficulty.THINKING[difficulty] + "\nМеняются также все 8 характеристик."
  for control in ui_controls:
   if control is BaseButton:
    control.disabled = not authority() or (control.has_meta("solo_only") and game.lan.active)

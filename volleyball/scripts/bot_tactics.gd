@@ -6,11 +6,13 @@ const SPACE := 1.45
 var assignments := [0, 0]
 var assigned_at := [0.0, 0.0]
 var plans: Dictionary = {}
+var shots: Dictionary = {}
 
 func reset() -> void:
  assignments = [0, 0]
  assigned_at = [0.0, 0.0]
  plans.clear()
+ shots.clear()
 
 static func flat(a: Vector3, b: Vector3) -> float:
  return Vector2(a.x - b.x, a.z - b.z).length()
@@ -27,7 +29,7 @@ func human_pickup_near() -> bool:
  return false
 
 func choose_receivers() -> void:
- var difficulty := VolleyBotDifficulty.profile(manager.difficulty)
+ var difficulty := manager.decision_profile()
  for team in range(2):
   if manager.last_team == team and (manager.last_kind in [3, 4] or manager.touches >= 3):
    # Yield an outgoing serve/third touch. Extra teammates near the flight
@@ -45,6 +47,8 @@ func choose_receivers() -> void:
    var id: int = actor.bot_id if actor is VolleyGameBot else manager.game.lan.player_id(actor) if manager.game.lan.active else 1
    var physical := actor.style_stats.movement()
    for sample in manager.samples:
+    if float(sample.time) > float(difficulty.lookahead):
+     continue
     var point: Vector3 = sample.at
     if point.z * side < 0.48 or point.y < 0.18 or point.y > 3.6 or sample.v.y > 2:
      continue
@@ -110,20 +114,72 @@ func choose_receivers() -> void:
 func serve_target(actor: VolleyGameBot) -> Vector3:
  if actor.serve_aim.is_finite():
   return actor.serve_aim
- var side := -1.0 if actor.court_team == 0 else 1.0
- var people: Array = manager.members(1 - actor.court_team).filter(func(p): return not p is VolleyGameBot)
- # Three serves in four offer a human reception. The fourth explores space.
- # Rotate real recipients in LAN, and keep one aim through toss and contact.
- if not people.is_empty() and actor.serves % 4 != 3:
-  var recipient: ContextAthlete = people[(actor.serves / 4 + actor.slot) % people.size()]
-  var point := recipient.position + Vector3(recipient.velocity.x, 0, recipient.velocity.z).limit_length(1.2) * 0.35
-  point.x = clampf(point.x + actor.rng.randf_range(-0.40, 0.40), -3.8, 3.8)
-  point.z = side * clampf(point.z * side + 1.0 + actor.rng.randf_range(-0.35, 0.35), 2.8, 8.4)
-  point.y = VolleyBall.RADIUS
-  actor.serve_aim = point
- else:
-  actor.serve_aim = Vector3(actor.rng.randf_range(-3.1, 3.1), VolleyBall.RADIUS, side * actor.rng.randf_range(3.8, 7.8))
+ actor.serve_aim = choose_shot(actor, true)
+ actor.serve_history.append(actor.serve_aim)
+ if actor.serve_history.size() > 3:
+  actor.serve_history.pop_front()
  return actor.serve_aim
+
+func coverage_at(point: Vector3, opponents: Array, reading: float) -> float:
+ var nearest := 6.0
+ var second := 6.0
+ for opponent: ContextAthlete in opponents:
+  # Only visible position and movement: no human identity or hidden input.
+  var observed := opponent.position + Vector3(opponent.velocity.x, 0, opponent.velocity.z).limit_length(3) * reading * 0.35
+  var distance := flat(point, observed)
+  if distance < nearest:
+   second = nearest
+   nearest = distance
+  elif distance < second:
+   second = distance
+ # A seam between receivers is useful, but never outweighs a truly open lane.
+ return nearest + maxf(0, 1.0 - absf(second - nearest)) * 0.25 * reading
+
+func block_obstruction(origin: Vector3, target: Vector3, opponents: Array) -> float:
+ var fraction := absf(origin.z) / maxf(0.1, absf(target.z - origin.z))
+ var crossing := lerpf(origin.x, target.x, fraction)
+ var obstruction := 0.0
+ for opponent: ContextAthlete in opponents:
+  if absf(opponent.position.z) < 1.6:
+   var ready := 1.0 if opponent.block_held or opponent.airborne() else 0.55
+   obstruction = maxf(obstruction, maxf(0, 1.5 - absf(crossing - opponent.position.x)) * ready)
+ return obstruction
+
+func choose_shot(actor: VolleyGameBot, serving: bool) -> Vector3:
+ var profile := manager.decision_profile()
+ var reading := float(profile.court_read)
+ var opponents := manager.members(1 - actor.court_team)
+ var side := -1.0 if actor.court_team == 0 else 1.0
+ var best := Vector3(0, VolleyBall.RADIUS, side * 6)
+ var best_score := -INF
+ var xs := [-3.3, 0.0, 3.3] if manager.difficulty < 3 else [-3.3, -1.65, 0.0, 1.65, 3.3]
+ for x in xs:
+  for depth in [3.2, 5.5, 7.7]:
+   var target := Vector3(x, VolleyBall.RADIUS, side * depth)
+   # At reception height the ball is still short of its floor target.
+   var receive_at := target - Vector3(0, 0, side * (0.8 if serving else 0.3))
+   var score := coverage_at(receive_at, opponents, reading) * reading
+   score -= absf(x) * (1.0 - reading) * 0.08
+   if not serving:
+    score -= block_obstruction(actor.position, target, opponents) * reading * 1.8
+   else:
+    for previous in actor.serve_history:
+     score -= maxf(0, 2.8 - flat(target, previous)) * (0.18 + reading * 0.45)
+   # Sample once per decision, not every frame or during the ball toss.
+   score += actor.rng.randf_range(-float(profile.decision_noise), float(profile.decision_noise))
+   if score > best_score:
+    best_score = score
+    best = target
+ return best
+
+func attack_target(actor: VolleyGameBot, kind: int) -> Vector3:
+ var key := "%d:%d" % [actor.bot_id, kind]
+ var saved: Dictionary = shots.get(key, {})
+ if not saved.is_empty() and float(saved.epoch) == manager.last_touch_time:
+  return saved.target
+ var target := choose_shot(actor, false)
+ shots[key] = {"epoch": manager.last_touch_time, "target": target}
+ return target
 
 func block_plan(actor: VolleyGameBot) -> Dictionary:
  var ball: VolleyBall = manager.game.ball
@@ -136,6 +192,9 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
  var time := INF
  var commit := false
  var attack := manager.last_team == 1 - actor.court_team and manager.last_kind in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]
+ if not attack and manager.difficulty < 2:
+  # Beginners react to the hit; experienced defenders read the preparation.
+  return {}
  if attack and ball.linear_velocity.z * side > 0:
   # A new strike may precede the next shared 10 Hz prediction. Read its
   # current velocity immediately rather than the previous shot's samples.
@@ -186,7 +245,8 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
  var team: int = setter.court_team
  var side := 1.0 if team == 0 else -1.0
  var until_contact := clampf(manager.arrival[team] - manager.clock, 0, 1.3)
- var lead := Vector3(recipient.velocity.x, 0, recipient.velocity.z) * minf(0.75, until_contact + 0.35)
+ var reading := float(manager.decision_profile().court_read)
+ var lead := Vector3(recipient.velocity.x, 0, recipient.velocity.z) * minf(0.75, until_contact + 0.35) * lerpf(0.15, 1.0, reading)
  lead = lead.limit_length(2.0)
  var point := recipient.position + lead
  if recipient is VolleyGameBot:
@@ -233,8 +293,14 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
    for opponent: ContextAthlete in manager.members(1 - actor.court_team):
     if absf(opponent.position.z) < 3.3:
      open = minf(open, absf(point.x - opponent.position.x))
-   score += minf(open, 3) * 0.45
+   score += minf(open, 3) * 0.45 * float(manager.decision_profile().court_read)
    score += clampf(-teammate.velocity.z * side, -2, 2) * 0.12
+  if manager.difficulty == 0:
+   # A beginner can perform the same techniques, but usually chooses the
+   # closest available partner instead of planning the next attack lane.
+   score = -flat(actor.position, teammate.position)
+  elif manager.difficulty == 1:
+   score = score * 0.35 - flat(actor.position, teammate.position) * 0.25
   if score > best:
    best = score
    friend = teammate
@@ -251,7 +317,20 @@ func support(actor: VolleyGameBot) -> Vector3:
    point.y = 0.02
    return point
  var target := manager.home(actor.court_team, actor.slot)
- target.x = clampf(target.x + manager.game.ball.position.x * 0.12, -3.9, 3.9)
+ var reading := float(manager.decision_profile().coverage)
+ target.x = clampf(target.x + manager.game.ball.position.x * lerpf(0.02, 0.18, reading), -3.9, 3.9)
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ if reading > 0.2 and manager.last_team == 1 - actor.court_team:
+  for teammate: ContextAthlete in manager.members(actor.court_team):
+   if teammate != actor and teammate.block_held:
+    # Rear defenders cover beside the block; front teammates protect tips.
+    if target.z * side > 4:
+     var direction := signf(target.x - teammate.position.x)
+     target.x = clampf(target.x + direction * reading * 0.55, -3.9, 3.9)
+     target.z += side * reading * 0.35
+    else:
+     target.z = side * lerpf(absf(target.z), 2.1, reading)
+    break
  return target
 
 func spaced_axis(actor: VolleyGameBot, desired: Vector2) -> Vector2:
