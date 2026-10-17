@@ -162,7 +162,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
- var error := sample_error(aim, actor.style_stats.n("serve"))
+ var error := sample_error(aim, actor.style_stats.n("serve" if VolleyRules.in_service_zone(actor.service_origin()) else "bump"))
  target = error.target
  slipped = error.slip
  slip_angle = error.angle
@@ -182,8 +182,9 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  actor.action_time = 0
  actor.lower_serve_active = true
  actor.last_result = "Нижняя подача • подброс и замах"
- game.rules.reset(true)
- game.serving = true
+ game.serving = VolleyRules.in_service_zone(actor.service_origin())
+ if not game.rules.strict:
+  game.rules.reset(game.serving)
  elapsed = 0
  released = false
  struck = false
@@ -229,7 +230,8 @@ func _physics_process(dt: float) -> void:
   actor.contact_count += 1
   actor.last_result = "Нижняя подача • соскальзывание" if slipped else "Нижняя подача • мяч в игре"
   game.ball.feed(game.ball.position, speed)
-  game._on_player_touch(actor, game.lan.player_id(actor), VolleyAthlete.Technique.SERVE, game.ball.position, speed)
+  var kind := VolleyAthlete.Technique.SERVE if VolleyRules.in_service_zone(actor.service_origin()) else VolleyAthlete.Technique.UNDERHAND
+  game._on_player_touch(actor, game.lan.player_id(actor), kind, game.ball.position, speed)
  if elapsed >= 0.9:
   if not actor.hit_used:
    actor.last_result = "Нижняя подача • промах при подбросе"

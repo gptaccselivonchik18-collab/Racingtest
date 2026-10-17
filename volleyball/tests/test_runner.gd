@@ -25,7 +25,8 @@ func swing(kind: int) -> void:
  a.holding_ball = false
  a.begin_action(kind)
  a.charged_for = 0.20
- a.release()
+ if kind != ContextAthlete.BLOCK:
+  a.release()
  a.action_time = a.strike_duration * 0.47
  a._update_pose(0.0)
  a.previous_wrists = a.wrists.duplicate()

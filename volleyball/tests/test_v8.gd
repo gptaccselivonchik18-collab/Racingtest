@@ -96,6 +96,8 @@ func run() -> void:
  a.release_time = 0
  var signatures := []
  for kind in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]:
+  a.position.z = 9.6 if kind in [3, 4] else 5.0
+  a.jump_origin = Vector3(0, 0, a.position.z)
   a.holding_ball = false
   a.action = VolleyAthlete.Action.IDLE
   a.dive_time = -1
@@ -104,13 +106,14 @@ func run() -> void:
    a.action_time += 1.0 / 120
    a._update_pose(1.0 / 120)
   a.charged_for = 0.2
-  a.release()
+  if kind != ContextAthlete.BLOCK:
+   a.release()
   var previous := a.wrists[1]
   var max_step := 0.0
   var anatomy := true
   var start := previous
   for i in range(60):
-   a.action_time = minf(float(i) / 120, a.strike_duration)
+   a.action_time = 0.25 + float(i) / 120 if kind == ContextAthlete.BLOCK else minf(float(i) / 120, a.strike_duration)
    a._update_pose(1.0 / 120)
    max_step = maxf(max_step, previous.distance_to(a.wrists[1]))
    previous = a.wrists[1]

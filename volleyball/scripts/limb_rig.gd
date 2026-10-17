@@ -136,6 +136,9 @@ func apply_pose(dt := 0.0) -> void:
   var normal := Vector3(-side, 0, 0)
   if a.action != VolleyAthlete.Action.IDLE:
    normal = Vector3.FORWARD
+  if kind == ContextAthlete.BLOCK and a.action != VolleyAthlete.Action.IDLE:
+   var facing := Basis(Vector3.UP, a.visual.global_rotation.y)
+   normal = a.visual.global_basis.inverse() * VolleyBlockDuel.hand_normal(-facing.z, facing.x, a.body_tilt(), a.style_stats.n("block"))
   if a.holding_ball:
    normal = (Vector3(0.18, 1.40, -0.56) - wrist).normalized()
   var palm := palm_frame(elbow, wrist, normal)

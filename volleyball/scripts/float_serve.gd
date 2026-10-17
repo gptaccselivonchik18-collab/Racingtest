@@ -30,7 +30,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or actor.airborne() or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
- delivery = sample_delivery(aim, actor.style_stats.n("serve"))
+ delivery = sample_delivery(aim, actor.style_stats.n("serve" if VolleyRules.in_service_zone(actor.service_origin()) else "spike"))
  busy_actor = actor
  actor.cancel_input()
  actor.move_axis = Vector2.ZERO
@@ -42,14 +42,15 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  if actor == game.athlete:
   game.rig.yaw = actor.camera_yaw
  actor.action = VolleyAthlete.Action.PREPARE
- actor.technique = VolleyAthlete.Technique.SERVE
- actor.strike_technique = VolleyAthlete.Technique.SERVE
+ actor.technique = actor.delivery_kind()
+ actor.strike_technique = actor.technique
  actor.action_time = 0
  actor.hit_used = false
  actor.float_serve_active = true
  actor.last_result = "Планер • подброс и короткий замах"
- game.rules.reset(true)
- game.serving = true
+ game.serving = VolleyRules.in_service_zone(actor.service_origin())
+ if not game.rules.strict:
+  game.rules.reset(game.serving)
  elapsed = 0
  released = false
  struck = false
@@ -76,7 +77,7 @@ func _physics_process(dt: float) -> void:
  if elapsed >= 0.40 and not struck:
   struck = true
   actor.action = VolleyAthlete.Action.STRIKE
-  actor.strike_duration = actor.mechanic(VolleyAthlete.Technique.SERVE).duration
+  actor.strike_duration = actor.mechanic(actor.strike_technique).duration
   actor.strike_power = 0.72
   actor.action_time = 0
   actor.strike_count += 1
@@ -88,7 +89,7 @@ func _physics_process(dt: float) -> void:
   actor.contact_flash = 0.16
   actor.last_result = "Планер • неточное касание" if delivery.mishit else "Планер • мяч в игре"
   game.ball.launch_float(game.ball.position, velocity, delivery.spin, delivery.skill, delivery.seed)
-  game._on_player_touch(actor, game.lan.player_id(actor), VolleyAthlete.Technique.SERVE, game.ball.position, velocity)
+  game._on_player_touch(actor, game.lan.player_id(actor), actor.delivery_kind(), game.ball.position, velocity)
  if elapsed >= 1.1:
   if not actor.hit_used:
    actor.last_result = "Планер • промах при подбросе"

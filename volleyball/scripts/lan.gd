@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 19
+const PROTOCOL := 20
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -30,6 +30,8 @@ var command_windows: Dictionary = {}
 var tick := 0.0
 var connecting_for := 0.0
 var scores := [0, 0]
+var sets := [0, 0]
+var match_winner := -1
 var round_wait := -1.0
 var last_touch_team := 0
 var serve_team := 0
@@ -474,7 +476,7 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
  return accepted
 
 func reset_round() -> void:
- if not hosting or not match_active:
+ if not hosting or not match_active or match_winner >= 0:
   return
  game.lower_serve.cancel_sequence()
  game.float_serve.cancel_sequence()
@@ -519,9 +521,15 @@ func award_floor(at: Vector3) -> void:
   winner = 1 if at.z >= 0 else 0
  else:
   winner = 1 - last_touch_team
- scores[winner] += 1
+ award(winner)
+
+func award(winner: int) -> void:
+ if not hosting or not match_active or round_wait >= 0 or match_winner >= 0:
+  return
+ match_winner = VolleyMatchScore.point(scores, sets, winner)
  serve_team = winner
  round_wait = 3.0
+ _send_room_state(false)
  changed.emit()
 
 func _process(dt: float) -> void:
@@ -554,10 +562,8 @@ func _process(dt: float) -> void:
     multiplayer.multiplayer_peer.disconnect_peer(id)
     last_input.erase(id)
   if match_active and round_live and game.rules.ended and round_wait < 0:
-   serve_team = 1 - last_touch_team
-   scores[serve_team] += 1
-   round_wait = 3.0
-  if match_active and round_wait >= 0:
+   award(1 - last_touch_team)
+  if match_active and match_winner < 0 and round_wait >= 0:
    round_wait -= dt
    if round_wait < 0:
     reset_round()
@@ -656,6 +662,7 @@ func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0) -> void:
  a.action = pose[4]
  a.technique = pose[5]
  a.strike_technique = pose[6]
+ a.block_held = a.action == VolleyAthlete.Action.STRIKE and a.strike_technique == ContextAthlete.BLOCK
  a.action_time = pose[7]
  a.power = pose[8]
  a.strike_power = pose[9]
@@ -709,6 +716,8 @@ func start_free_play() -> void:
  ready_seconds = 0
  ready_signature = ""
  scores = [0, 0]
+ sets = [0, 0]
+ match_winner = -1
  game.rules.reset()
  game.rules.strict = false
  game.serving = false
@@ -775,6 +784,8 @@ func begin_match() -> bool:
   return false
  match_active = true
  scores = [0, 0]
+ sets = [0, 0]
+ match_winner = -1
  serve_team = 0
  for team in range(2):
   var slot := 0
@@ -826,17 +837,19 @@ func _send_room_state(with_bot := true) -> void:
   return
  for peer_id in players:
   if peer_id != 1 and _peer_ready(peer_id):
-   room_state.rpc_id(peer_id, match_active, round_live, ready_message, game.practice.settings_state() if with_bot and is_instance_valid(game.practice) else {})
+   room_state.rpc_id(peer_id, match_active, round_live, ready_message, game.practice.settings_state() if with_bot and is_instance_valid(game.practice) else {}, sets, match_winner)
    if with_bot and is_instance_valid(game.game_bots):
     game_bots_state.rpc_id(peer_id, game.game_bots.settings_state())
 
 @rpc("authority", "call_remote", "reliable")
-func room_state(in_match: bool, live: bool, message: String, practice_state: Dictionary) -> void:
+func room_state(in_match: bool, live: bool, message: String, practice_state: Dictionary, set_scores: Array, winner: int) -> void:
  if hosting:
   return
  match_active = in_match
  round_live = live
  ready_message = message
+ sets = set_scores
+ match_winner = winner
  if not practice_state.is_empty():
   game.practice.configure(practice_state, false)
  if not is_instance_valid(selection_zone):

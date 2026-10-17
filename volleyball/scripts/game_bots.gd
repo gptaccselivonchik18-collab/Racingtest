@@ -10,6 +10,8 @@ var level := 65.0
 var human_team := 0
 var solo_match := false
 var scores := [0, 0]
+var sets := [0, 0]
+var match_winner := -1
 var serve_team := 0
 var round_wait := -1.0
 var last_actor: ContextAthlete
@@ -157,7 +159,7 @@ func _physics_process(dt: float) -> void:
  if get_tree().paused or not authority() or bots.is_empty():
   return
  clock += dt
- if solo_match and round_wait >= 0:
+ if solo_match and match_winner < 0 and round_wait >= 0:
   round_wait -= dt
   if round_wait < 0:
    reset_round()
@@ -263,6 +265,8 @@ func start_solo() -> bool:
  game.float_serve.cancel_sequence()
  solo_match = true
  scores = [0, 0]
+ sets = [0, 0]
+ match_winner = -1
  serve_team = human_team
  game.athlete.court_team = human_team
  var side := 1.0 if human_team == 0 else -1.0
@@ -284,6 +288,8 @@ func end_solo() -> void:
  game.athlete.court_team = -1
 
 func reset_round() -> void:
+ if match_winner >= 0:
+  return
  reset_rally()
  game.rules.reset()
  game.rules.strict = true
@@ -308,13 +314,13 @@ func reset_round() -> void:
   game.rig.yaw = server.camera_yaw
 
 func award(winner: int) -> void:
- if not solo_match or round_wait >= 0:
+ if not solo_match or round_wait >= 0 or match_winner >= 0:
   return
  winner = clampi(winner, 0, 1)
- scores[winner] += 1
+ match_winner = VolleyMatchScore.point(scores, sets, winner)
  serve_team = winner
  round_wait = 2.0
- game.show_feedback("A %d : %d Б" % scores, false)
+ game.show_feedback(VolleyMatchScore.label(scores, sets, match_winner), false)
 
 func on_floor(at: Vector3) -> void:
  if solo_match and last_team >= 0:

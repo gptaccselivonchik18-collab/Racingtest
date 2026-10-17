@@ -134,6 +134,11 @@ func decide(_dt: float) -> void:
     cancel_input()
    cooldown = 0.4
   return
+ if block_held:
+  move_axis = Vector2.ZERO
+  if hit_used or not airborne() or ball.position.z * side > 1.2 or action_time > 1.3:
+   end_block()
+  return
  if action == Action.RECOVER:
   planned_kind = -1
   move_axis *= 0.5
@@ -248,8 +253,6 @@ func attempt_block(side: float) -> bool:
  if absf(position.z) < 1.25:
   jump()
   if velocity.y > 0.1 and begin_action(BLOCK):
-   charged_for = 0.16
-   release()
    jumps += 1
  return true
 

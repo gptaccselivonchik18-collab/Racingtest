@@ -11,6 +11,13 @@ var ended := false
 var message := ""
 var serving := false
 var serve_crossed := false
+var unreceived_serve := false
+var serving_team := -1
+
+static func in_service_zone(origin: Vector3) -> bool:
+ # The full rear runoff is available, including beyond either sideline.
+ # Jump serves use the take-off position, not the landing/contact position.
+ return absf(origin.z) > 9.0
 
 func reset(is_serve := false) -> void:
  team = -1
@@ -21,6 +28,8 @@ func reset(is_serve := false) -> void:
  ended = false
  serving = is_serve
  serve_crossed = false
+ unreceived_serve = false
+ serving_team = -1
  message = ""
 
 func fault(text: String) -> void:
@@ -28,9 +37,28 @@ func fault(text: String) -> void:
   ended = true
   message = text
 
-func touch(side: int, player: int, kind: int, action_id: int) -> bool:
+func touch(side: int, player: int, kind: int, action_id: int, height := 0.0) -> bool:
  if ended:
   return false
+ if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+  if strict and (touches > 0 or unreceived_serve):
+   fault("Подача во время розыгрыша")
+   return false
+  serving = true
+  serve_crossed = false
+  unreceived_serve = true
+  serving_team = side
+ elif strict and unreceived_serve:
+  if side == serving_team:
+   fault("Касание своей подачи")
+   return false
+  if kind == ContextAthlete.BLOCK:
+   fault("Блок подачи")
+   return false
+  if kind in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP] and height > 2.43 + VolleyBall.RADIUS:
+   fault("Атака подачи выше сетки")
+   return false
+  unreceived_serve = false
  if team != side:
   team = side
   touches = 0
@@ -80,7 +108,7 @@ func crossing(from: Vector3, to: Vector3) -> void:
   serve_crossed = true
 
 func serve_contact(origin: Vector3) -> void:
- if absf(origin.x) > 4.5 or absf(origin.z) <= 9.0:
+ if not in_service_zone(origin):
   fault("Ошибка подачи: заступ")
 
 func net_contact(player_contact: bool, antenna := false) -> void:

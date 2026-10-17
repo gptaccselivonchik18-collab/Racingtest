@@ -170,7 +170,7 @@ func update(dt: float) -> void:
   if a.action == VolleyAthlete.Action.PREPARE:
    wrist = draw
   elif a.action == VolleyAthlete.Action.STRIKE:
-   wrist = arc(draw, contact, follow, phase)
+   wrist = origins[i].lerp(contact, smoothstep(0, windup, a.action_time)) if kind == 6 and origins.size() == 2 else arc(draw, contact, follow, phase)
   elif a.action == VolleyAthlete.Action.RECOVER:
    wrist = origins[i].lerp(idle, smoothstep(0, float(a.mechanic(kind).recovery), a.action_time)) if origins.size() == 2 else idle
   if a.action != VolleyAthlete.Action.IDLE:

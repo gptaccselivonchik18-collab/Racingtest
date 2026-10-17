@@ -723,7 +723,9 @@ func _process(dt: float) -> void:
  elif game.running_approach():
   status.text = "Разбег: нажмите и отпустите АТАКУ → прыжок с замахом"
  if game.lan.active:
-  status.text = "A %d : %d Б • %d/12 • " % [game.lan.scores[0], game.lan.scores[1], game.lan.players.size()] + (game.rules.message if game.rules.ended else a.last_result)
+  status.text = VolleyMatchScore.label(game.lan.scores, game.lan.sets, game.lan.match_winner) + " • %d/12 • " % game.lan.players.size() + (game.rules.message if game.rules.ended else a.last_result)
+ elif game.game_bots.solo_match:
+  status.text = VolleyMatchScore.label(game.game_bots.scores, game.game_bots.sets, game.game_bots.match_winner) + " • " + (game.rules.message if game.rules.ended else a.last_result)
  if game.lan.active and not game.lan.match_active:
   status.text = game.lan.ready_message + " • " + a.last_result
  if edit_mode:
@@ -759,16 +761,17 @@ func _draw() -> void:
   draw_circle(knob, 15, Color("f4cf77"))
   draw_string(font, height_rect.position + Vector2(0, -12), "ПОДБРОС +%.2f м" % game.ball.release_height(), HORIZONTAL_ALIGNMENT_CENTER, height_rect.size.x, 17, Color("f4cf77"))
   draw_string(font, height_rect.position + Vector2(0, 68), "0.35 м     высота над руками     3.50 м", HORIZONTAL_ALIGNMENT_CENTER, height_rect.size.x, 12, Color("cad9df"))
- if game.athlete.action == VolleyAthlete.Action.PREPARE and not game.athlete.attack_ready and not edit_mode:
+ if game.athlete.action == VolleyAthlete.Action.PREPARE and game.athlete.technique != ContextAthlete.BLOCK and not game.athlete.attack_ready and not edit_mode:
   var at := Vector2(size.x * 0.5 - 90, size.y - 108)
   draw_style_box(_panel(Color(0.03, 0.09, 0.14, 0.8)), Rect2(at - Vector2(10, 23), Vector2(200, 48)))
   draw_string(font, at - Vector2(0, 5), ("ДОЛЬШЕ → МЯГЧЕ  %d%%" if game.athlete.is_receive(game.athlete.technique) else "СИЛА  %d%%") % int(game.athlete.power * 100), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color("f4cf77"))
   draw_line(at + Vector2(0, 12), at + Vector2(180, 12), Color("334d5c"), 5)
   draw_line(at + Vector2(0, 12), at + Vector2(180 * game.athlete.power, 12), Color("f4cf77"), 5)
  if game.feedback_left > 0 and not edit_mode:
-  var box := Rect2(Vector2(size.x * 0.5 - 200, size.y * 0.29), Vector2(400, 58))
-  draw_style_box(_panel(Color(0.025, 0.07, 0.11, 0.94)), box)
-  draw_string(font, box.position + Vector2(8, 37), game.feedback_text, HORIZONTAL_ALIGNMENT_CENTER, 384, 23, game.feedback_color)
+  if not game.feedback_text.is_empty():
+   var box := Rect2(Vector2(size.x * 0.5 - 200, size.y * 0.29), Vector2(400, 58))
+   draw_style_box(_panel(Color(0.025, 0.07, 0.11, 0.94)), box)
+   draw_string(font, box.position + Vector2(8, 37), game.feedback_text, HORIZONTAL_ALIGNMENT_CENTER, 384, 23, game.feedback_color)
   for x in [-1, 1]:
    draw_line(size * 0.5 + Vector2(x * 14, -10), size * 0.5 + Vector2(x * 25, -18), game.feedback_color, 4, true)
  draw_string(font, Vector2(24, size.y - 12), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("a7bdc9"))

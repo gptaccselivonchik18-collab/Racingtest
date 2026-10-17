@@ -7,6 +7,8 @@ var phase := 0
 var phase_time := 0.0
 var bot_seen := false
 var match_seen := false
+var block_stage := 0
+var score_seen := false
 
 func _initialize() -> void:
  call_deferred("run")
@@ -50,6 +52,29 @@ func _process(dt: float) -> bool:
   elif phase == 1 and gate.observed.size() == 2:
    if game.practice.bot.contacts < 1:
     return false
+   for id in game.lan.players:
+    if id != 1:
+     var actor: ContextAthlete = game.lan.players[id].actor
+     actor.set_physics_process(false)
+     actor.cancel_input()
+     actor.action = VolleyAthlete.Action.IDLE
+     actor.position = Vector3(3, 2, 5)
+     actor.velocity = Vector3.ZERO
+   gate.hold_blocks.rpc()
+   phase = 10
+   phase_time = 0
+  elif phase == 10 and phase_time > 1.0:
+   for id in game.lan.players:
+    if id != 1 and (not game.lan.players[id].actor.block_held or game.lan.owners[id] != "secondary"):
+     fail("Reliable remote block press did not remain held")
+   gate.release_blocks.rpc()
+   phase = 11
+   phase_time = 0
+  elif phase == 11 and phase_time > 0.7:
+   for id in game.lan.players:
+    if id != 1 and (game.lan.players[id].actor.block_held or not game.lan.owners[id].is_empty()):
+     fail("Reliable remote block release left a stuck block")
+   print("ROOM_REMOTE_BLOCK_HOLD_RELEASE_PASSED")
    var ids: Array = game.lan.players.keys()
    for i in range(ids.size()):
     var actor: ContextAthlete = game.lan.players[ids[i]].actor
@@ -71,13 +96,27 @@ func _process(dt: float) -> bool:
    var ids: Array = game.lan.players.keys()
    if game.lan.players[ids[0]].team != 0 or game.lan.players[ids[1]].team != 0 or game.lan.players[ids[2]].team != 1:
     fail("Chosen teams were not applied authoritatively")
-   print("ROOM_HOST_PASSED bot_contacts=%d all_humans_ready=true teams=2:1" % game.practice.bot.contacts)
+   game.lan.sets = [2, 2]
+   game.lan.scores = [14, 15]
+   game.lan.award(1)
+   phase = 12
+   phase_time = 0
+  elif phase == 12 and gate.scored.size() == 2:
+   print("ROOM_HOST_PASSED bot_contacts=%d all_humans_ready=true teams=2:1 victory_replicated=true" % game.practice.bot.contacts)
    gate.finish.rpc()
    phase = 4
    phase_time = 0
   elif phase == 4 and phase_time > 1:
    quit(0)
  elif game.lan.connected:
+  if gate.block_stage > block_stage:
+   block_stage = gate.block_stage
+   game.lan.local_action("secondary", "press" if block_stage == 1 else "release")
+  if not score_seen and game.lan.match_winner == 1 and game.lan.scores == [14, 16]:
+   if game.lan.sets != [2, 3]:
+    fail("Guest received the wrong set victory state")
+   score_seen = true
+   gate.saw_score.rpc_id(1)
   if not bot_seen and game.practice.enabled and is_instance_valid(game.practice.bot) and game.practice.bot.replica and game.practice.bot.air_attack and game.practice.bot.position.y > 0.4:
    bot_seen = true
    if game.practice.configure({"enabled": false}):
@@ -97,5 +136,5 @@ func _process(dt: float) -> bool:
    gate.saw_match.rpc_id(1)
   if gate.finished:
    print("ROOM_CLIENT_PASSED bot=%s match=%s snapshots=%d" % [bot_seen, match_seen, game.lan.snapshot_count])
-   quit(0 if bot_seen and match_seen else 1)
+   quit(0 if bot_seen and match_seen and score_seen else 1)
  return false

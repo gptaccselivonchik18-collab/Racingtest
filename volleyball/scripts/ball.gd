@@ -83,7 +83,10 @@ func toss_velocity() -> Vector3:
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
  forward = -Basis(Vector3.UP, athlete.camera_yaw).z if athlete is ContextAthlete else forward.normalized().rotated(Vector3.UP, toss_yaw)
- var drift: float = athlete.mechanic(VolleyAthlete.Technique.SERVE).toss_drift if athlete is ContextAthlete else 0.35
+ var drift := 0.35
+ if athlete is ContextAthlete:
+  var kind: int = athlete.delivery_kind()
+  drift = float(athlete.mechanic(kind).get("toss_drift", lerpf(0.50, 0.20, athlete.style_stats.n("spike"))))
  return forward * drift + Vector3.UP * upward_for_height(release_height()) + athlete.velocity
 
 func aiming_throw() -> bool:
@@ -322,10 +325,7 @@ func remember_contact(actor: ContextAthlete) -> void:
   attack_quality = actor.quality
   attack_kind = actor.strike_technique
  elif actor.strike_technique == ContextAthlete.BLOCK and not actor.duel_result.is_empty():
-  var source: Variant = attack_owner.get_ref() if attack_owner != null else null
   var result := actor.duel_result.duplicate()
-  if is_instance_valid(source):
-   source.last_result = "Атака пробила блок" if result.pierced else "Атака остановлена блоком"
   if result.pierced:
    # A second actual blocker faces a weakened attack, never the original pace.
    attack_quality *= 0.85

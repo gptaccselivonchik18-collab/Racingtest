@@ -113,47 +113,68 @@ func _physics_process(_dt: float) -> void:
   previous_ball_valid = true
  else:
   previous_ball_valid = false
- if athlete.action != VolleyAthlete.Action.IDLE and not rules.ended:
-  for index in range(athlete.get_slide_collision_count()):
-   var collision := athlete.get_slide_collision(index)
+ var actors: Array = lan.players.values().map(func(entry: Dictionary): return entry.actor) if lan.active else [athlete]
+ actors.append_array(game_bots.bots.values())
+ for actor in actors:
+  if actor.action == VolleyAthlete.Action.IDLE or rules.ended:
+   continue
+  for index in range(actor.get_slide_collision_count()):
+   var collision: KinematicCollision3D = actor.get_slide_collision(index)
    if collision.get_collider().get_meta("surface", "") == "net":
+    record_fault(actor, "Касание сетки игроком")
     rules.net_contact(true)
-  for wrist in athlete.wrists:
+  for wrist in actor.wrists:
    if absf(wrist.z) < VolleyAthlete.HAND_RADIUS + 0.025 and absf(wrist.x) < 4.5 and wrist.y >= 1.43 and wrist.y <= 2.49:
+    record_fault(actor, "Касание сетки игроком")
     rules.net_contact(true)
+
+func record_fault(actor: ContextAthlete, text: String) -> void:
+ if rules.ended:
+  return
+ var side := VolleyBall.team_of(actor)
+ if lan.match_active:
+  lan.last_touch_team = side
+  lan.round_live = true
+ if game_bots.solo_match:
+  game_bots.last_team = side
+  rules.last_player = lan.player_id(actor)
+ rules.fault(text)
 
 func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
+ var first_match_touch: bool = (lan.match_active and not lan.round_live) or (game_bots.solo_match and game_bots.last_team < 0)
+ if first_match_touch:
+  rules.reset()
+  if kind not in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+   rules.fault("Розыгрыш начинается подачей из-за задней линии")
+  elif (actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)) != (lan.serve_team if lan.match_active else game_bots.serve_team):
+   rules.fault("Подаёт другая команда")
  if is_instance_valid(game_bots):
   game_bots.note_touch(actor, kind)
  if kind == ContextAthlete.BLOCK:
   var pierced := bool(actor.duel_result.get("pierced", false))
-  var text := "БЛОК ПРОБИТ" if pierced else "БЛОК! МЯЧ ОТБИТ"
   if actor == athlete:
-   show_feedback(text, pierced)
+   show_feedback("", pierced)
   if lan.active and lan.hosting and id != 1 and lan.players.has(id):
-   lan.contact_feedback.rpc_id(id, text, pierced)
+   lan.contact_feedback.rpc_id(id, "", pierced)
+ if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE, VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]:
+  serving = false
+  if lan.active and lan.serve_flags.has(id):
+   lan.serve_flags[id] = false
  if lan.active and not lan.match_active:
-  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
-   serving = false
-   if lan.serve_flags.has(id):
-    lan.serve_flags[id] = false
   actor.last_result = "Свободная игра • " + actor.last_result
   return
  if not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match:
   return
  var side: int = actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)
- rules.touch(side, id, kind, actor.strike_count)
+ rules.touch(side, id, kind, actor.strike_count, _point.y)
  if lan.active:
   lan.last_touch_team = side
   lan.round_live = true
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
-  rules.serve_contact(actor.jump_origin if kind == VolleyAthlete.Technique.JUMP_SERVE else actor.position)
-  serving = false
-  if lan.active and lan.serve_flags.has(id):
-   lan.serve_flags[id] = false
+  rules.serve_contact(actor.service_origin())
 
 func holding_ball() -> bool:
  return ball.held and ball.athlete == athlete
@@ -174,12 +195,27 @@ func _on_surface(surface: String) -> void:
  if not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match:
   return
  if surface == "floor":
-  game_bots.on_floor(ball.global_position)
+  if rules.ended:
+   if game_bots.solo_match and game_bots.last_team >= 0:
+    game_bots.award(1 - game_bots.last_team)
+   if lan.active and lan.round_live:
+    lan.award(1 - lan.last_touch_team)
+   return
+  var service_fault := rules.serving and not rules.serve_crossed
   rules.floor_contact(ball.global_position)
-  if lan.active and lan.round_live:
-   lan.award_floor(ball.global_position)
+  if service_fault:
+   if game_bots.solo_match and game_bots.last_team >= 0:
+    game_bots.award(1 - game_bots.last_team)
+   if lan.active and lan.round_live:
+    lan.award(1 - lan.last_touch_team)
+  else:
+   game_bots.on_floor(ball.global_position)
+   if lan.active and lan.round_live:
+    lan.award_floor(ball.global_position)
  elif surface == "antenna":
   rules.net_contact(false, true)
+ elif surface in ["boundary", "world"]:
+  rules.fault("Аут: касание ограждения")
 
 func repeat_drill() -> void:
  if game_bots.solo_match:
@@ -253,11 +289,14 @@ func begin_primary() -> bool:
    return false
   if ball.held_mode == VolleyBall.HeldMode.THROW:
    ball.throw_held()
+   if rules.strict:
+    record_fault(athlete, "Бросок удерживаемого мяча")
    return true
-  athlete.technique = VolleyAthlete.Technique.JUMP_SERVE if training.selected == 6 else VolleyAthlete.Technique.SERVE
+  athlete.technique = athlete.delivery_kind(training.selected == 6)
   ball.toss()
-  serving = true
-  rules.reset(true)
+  serving = VolleyRules.in_service_zone(athlete.global_position)
+  if serving and not rules.strict:
+   rules.reset(true)
   return true
  if athlete.attack_ready:
   return athlete.hit_approach()
@@ -266,7 +305,7 @@ func begin_primary() -> bool:
   return true
  var kind := VolleyAthlete.Technique.SPIKE
  if serving:
-  kind = VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE
+  kind = athlete.delivery_kind(athlete.airborne())
  if athlete.begin_action(kind):
   action_owner = "primary"
   return true
@@ -297,17 +336,21 @@ func finish_action(role: String) -> void:
   return
  if action_owner != role:
   return
+ if athlete.block_held:
+  athlete.end_block()
+  action_owner = ""
+  return
  if athlete.approach_armed:
   athlete.launch_approach()
   action_owner = ""
   return
  if ball.held and role == "secondary":
   ball.throw_held()
+  if rules.strict:
+   record_fault(athlete, "Бросок удерживаемого мяча")
  elif athlete.action == VolleyAthlete.Action.PREPARE:
   if role == "primary":
-   athlete.technique = (VolleyAthlete.Technique.JUMP_SERVE if athlete.airborne() else VolleyAthlete.Technique.SERVE) if serving else (VolleyAthlete.Technique.SPIKE)
-  elif role == "secondary":
-   athlete.technique = ContextAthlete.BLOCK if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD
+   athlete.technique = athlete.delivery_kind(athlete.airborne()) if serving else VolleyAthlete.Technique.SPIKE
   athlete.release()
  action_owner = ""
 
@@ -326,7 +369,8 @@ func pickup_or_drop() -> void:
  if ball.held:
   ball.drop()
  else:
-  ball.pick_up()
+  if ball.pick_up() and rules.strict and ((lan.match_active and lan.round_live) or (game_bots.solo_match and game_bots.last_team >= 0)):
+   record_fault(athlete, "Задержка мяча")
 
 func serve_start() -> void:
  # Explicit training reset, never part of an automatic contact or pickup.
@@ -343,12 +387,10 @@ func serve_start() -> void:
 func show_feedback(text: String, failed: bool) -> void:
  feedback_text = text
  feedback_color = Color("ff987d") if failed else Color("bbf275")
- feedback_left = 1.3
+ feedback_left = 0.32 if text.is_empty() else 1.3
  if OS.get_name() in ["Android", "iOS"]:
   Input.vibrate_handheld(35 if failed else 65)
 
 func _on_block_missed(actor: ContextAthlete, id: int) -> void:
- if not lan.active or actor == athlete:
-  show_feedback("БЛОК: НЕТ КАСАНИЯ", true)
- elif lan.hosting and lan.players.has(id):
-  lan.contact_feedback.rpc_id(id, "БЛОК: НЕТ КАСАНИЯ", true)
+ # No contact means no flash or vibration; a miss never claims a hit.
+ pass

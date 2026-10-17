@@ -26,7 +26,8 @@ func swing(kind: int) -> void:
  a.holding_ball = false
  a.begin_action(kind)
  a.charged_for = 0.25
- a.release()
+ if kind != ContextAthlete.BLOCK:
+  a.release()
  a.action_time = a.strike_duration * 0.47
  a._update_pose(0)
  a.previous_wrists = a.wrists.duplicate()
@@ -58,10 +59,10 @@ func run() -> void:
  a.position = Vector3(0, 1, -1)
  swing(6)
  game._on_player_touch(a, 1, 6, a.wrists[0], Vector3.UP)
- check(game.feedback_left > 1 and game.feedback_text.contains("ОТБИТ"), "A real block has a persistent visible success cue")
+ check(game.feedback_left > 0 and game.feedback_text.is_empty(), "A real block has a short visible cue without text")
  a.duel_result = {"pierced": true}
  game._on_player_touch(a, 1, 6, a.wrists[0], Vector3.UP)
- check(game.feedback_text.contains("ПРОБИТ"), "A pierced block has distinct visible feedback")
+ check(game.feedback_text.is_empty() and game.feedback_color == Color("ff987d"), "A pierced block has distinct nonverbal feedback")
  a.duel_result.clear()
  a.position = Vector3(3.5, 0.02, 8)
  a.action = VolleyAthlete.Action.IDLE

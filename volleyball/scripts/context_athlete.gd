@@ -15,7 +15,7 @@ func _init() -> void:
  stats = style_stats
 
 func mechanic(kind: int) -> Dictionary:
- return style_stats.profile(Technique.SERVE if lower_serve_active and kind == Technique.UNDERHAND else kind)
+ return style_stats.profile(Technique.SERVE if lower_serve_active and kind == Technique.UNDERHAND and VolleyRules.in_service_zone(service_origin()) else kind)
 
 @export var air_acceleration := 0.65
 var replica := false
@@ -64,6 +64,24 @@ var look_target := Vector3.ZERO
 var look_target_valid := false
 var court_team := -1
 var duel_result: Dictionary = {}
+var block_held := false
+var block_contact_cooldown := 0.0
+
+func service_origin() -> Vector3:
+ return jump_origin if airborne() else global_position
+
+func delivery_kind(jumping := false) -> int:
+ if VolleyRules.in_service_zone(service_origin()):
+  return Technique.JUMP_SERVE if jumping else Technique.SERVE
+ return Technique.SPIKE
+
+func end_block() -> void:
+ if not block_held:
+  return
+ block_held = false
+ action = Action.RECOVER
+ action_time = 0
+ last_result = ""
 
 func hold_position() -> Vector3:
  if pose_ready and is_instance_valid(limb_rig) and limb_rig.motion.initialized:
@@ -200,19 +218,36 @@ func begin_action(kind: int) -> bool:
   return false
  technique = kind
  strike_technique = kind
+ block_held = false
  action = Action.PREPARE
  action_time = 0
  charged_for = 0
  power = receive_power(0) if is_receive(kind) else 0.82
+ if kind == BLOCK:
+  block_held = true
+  action = Action.STRIKE
+  strike_duration = mechanic(BLOCK).duration
+  power = 0
+  strike_power = 0
+  hit_used = false
+  block_contact_cooldown = 0
+  strike_count += 1
+  last_result = ""
  return true
 
 func prepare() -> void:
  begin_action(technique)
 
 func release() -> void:
+ if block_held:
+  end_block()
+  return
  if action != Action.PREPARE or holding_ball:
   return
  strike_technique = technique
+ if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE]:
+  strike_technique = delivery_kind(strike_technique == Technique.JUMP_SERVE)
+  technique = strike_technique
  if is_receive(strike_technique):
   power = receive_power(charged_for)
  strike_power = power
@@ -228,7 +263,11 @@ func release() -> void:
  last_result = NAMES[strike_technique]
 
 func cancel_input() -> void:
+ var was_blocking := block_held
+ end_block()
  super.cancel_input()
+ if was_blocking:
+  action = Action.IDLE
  tilt = Vector2.ZERO
  charged_for = 0
  approach_armed = false
@@ -327,6 +366,8 @@ func contact_active() -> bool:
  if action != Action.STRIKE:
   return false
  var p := mechanic(strike_technique)
+ if strike_technique == BLOCK:
+  return block_held and airborne() and action_time >= float(p.windup)
  if strike_technique == DIVE:
   return dive_time >= p.contact_from and dive_time <= p.contact_to
  var phase := action_time / strike_duration
@@ -340,6 +381,7 @@ func phase_name() -> String:
  return "Восстановление" if action == Action.RECOVER else "Готов"
 
 func _physics_process(dt: float) -> void:
+ block_contact_cooldown = maxf(0, block_contact_cooldown - dt)
  release_time = maxf(0, release_time - dt)
  contact_flash = maxf(0, contact_flash - dt)
  previous_wrists = wrists.duplicate()
@@ -426,11 +468,13 @@ func _physics_process(dt: float) -> void:
  position.z = clampf(position.z, -12, 12)
  energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -float(movement.drain)), 0, 1)
  action_time += dt
+ if block_held and not airborne():
+  end_block()
  if action == Action.PREPARE and not attack_ready:
   charged_for += dt
   # Predictable, monotonic power control, clamped at the minimum. No cycling.
   power = receive_power(charged_for) if is_receive(technique) else maxf(0.16, 0.82 - maxf(0, charged_for - 0.12) * 0.65)
- if action == Action.STRIKE and action_time >= strike_duration:
+ if action == Action.STRIKE and not block_held and action_time >= strike_duration:
   action = Action.RECOVER
   action_time = 0
   if not hit_used:
@@ -464,7 +508,7 @@ func _update_pose(dt: float) -> void:
  if action == Action.PREPARE:
   blend = smoothstep(0, 0.10, action_time)
  elif action == Action.STRIKE:
-  blend = smoothstep(0, 0.18, action_time / strike_duration)
+  blend = smoothstep(0, float(mechanic(BLOCK).windup), action_time) if mode == BLOCK else smoothstep(0, 0.18, action_time / strike_duration)
  elif action == Action.RECOVER:
   blend = 1.0 - clampf(action_time / 0.2, 0, 1)
  for i in range(2):
@@ -559,6 +603,12 @@ func try_contact(center: Vector3, incoming: Vector3, attack: Dictionary = {}) ->
  return try_swept_contact(center, center, incoming, attack)
 
 func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack: Dictionary = {}) -> Vector3:
+ if block_held and hit_used:
+  # The same overlapping ball cannot reroll a duel on successive frames.
+  # A held block can meet a genuinely returning ball after it leaves the hands.
+  if block_contact_cooldown <= 0 and not overlap_at(center, 1.0) and not overlap_at(from, 0.0):
+   hit_used = false
+  return Vector3.ZERO
  if hit_used or not contact_active():
   return Vector3.ZERO
  var distance := from.distance_to(center)
@@ -581,6 +631,8 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  var p := mechanic(strike_technique)
  var phase := action_time / strike_duration
  var timing := clampf(1.0 - absf(phase - 0.47) / 0.47, 0, 1)
+ if strike_technique == BLOCK:
+  timing = smoothstep(float(p.windup), float(p.windup) + 0.10, action_time)
  var approach := clampf(1.0 - incoming.length() / float(p.pressure), 0.3, 1)
  quality = clampf((0.45 + timing * 0.55) * lerpf(approach, 1, float(p.control)) * lerpf(0.75, 1, float(p.weight)), 0.15, 1)
  var nearest := 1.0
@@ -591,12 +643,16 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  quality *= lerpf(1.0, float(p.edge), clampf(nearest, 0, 1))
  var outgoing: Vector3
  if strike_technique == BLOCK:
-  var normal := (-visual.global_basis.z + Vector3.UP * (0.18 + tilt.y * float(p.steer)) + visual.global_basis.x * tilt.x * float(p.steer)).normalized()
-  normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-float(p.accuracy), float(p.accuracy)) * (1.0 - quality)))
-  outgoing = incoming.bounce(normal) * float(p.reflect) * lerpf(0.8, 1, quality) + hand_velocity.limit_length(6) * 0.12
-  outgoing *= rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
+  block_contact_cooldown = 0.16
+  var input := body_tilt()
+  var forward := -Basis(Vector3.UP, visual.global_rotation.y).z
+  var right := Basis(Vector3.UP, visual.global_rotation.y).x
+  var normal := VolleyBlockDuel.hand_normal(forward, right, input, style_stats.n("block"))
+  var edge_error := float(p.accuracy) * (1.0 - quality)
+  normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-edge_error, edge_error)))
+  outgoing = VolleyBlockDuel.reflection(incoming, normal, quality)
   if not attack.is_empty():
-   duel_result = VolleyBlockDuel.resolve(attack, style_stats.n("block"), quality, incoming, normal, rng)
+   duel_result = VolleyBlockDuel.resolve(attack, style_stats.n("block"), quality, incoming, normal, rng, input.y)
    if duel_result.pierced:
     outgoing = duel_result.velocity
  else:
@@ -648,9 +704,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
    var apex := serve_apex()
    var launch: Vector3 = serve_solver.call(last_contact_point, aim, apex)
    outgoing = launch.rotated(Vector3.UP, deg_to_rad(deviation)) * rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
- last_result = "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]
- if not duel_result.is_empty():
-  last_result = ("Блок пробит" if duel_result.pierced else "Блок удержан") + " • шанс блока %d%%" % roundi(float(duel_result.block_chance) * 100)
+ last_result = "" if strike_technique == BLOCK else "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]
  touched.emit(strike_technique, last_contact_point, outgoing)
  return outgoing - incoming
 

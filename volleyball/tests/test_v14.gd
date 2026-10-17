@@ -29,7 +29,8 @@ func pose(actor: ContextAthlete, kind: int, at: Vector3, yaw: float) -> void:
  actor.camera_pitch = 0.4
  actor.begin_action(kind)
  actor.charged_for = 0.2
- actor.release()
+ if kind != ContextAthlete.BLOCK:
+  actor.release()
  actor.action_time = actor.strike_duration * 0.47
  actor._update_pose(0)
  actor.previous_wrists = actor.wrists.duplicate()
@@ -60,7 +61,7 @@ func sample_contacts(spike: float, block: float) -> Dictionary:
   chance += float(result.pierce_chance) / 1000
   valid = valid and outgoing.is_finite() and (outgoing.z < 0 if result.pierced else outgoing.z > 0)
   if result.pierced:
-   valid = valid and outgoing.length() < incoming.length() * 0.83 and outgoing.normalized().dot(incoming.normalized()) > 0.97
+   valid = valid and outgoing.length() >= incoming.length() * 0.93 and outgoing.length() <= incoming.length() and outgoing.normalized().dot(incoming.normalized()) > 0.97
  return {"rate": count / 1000.0, "chance": chance, "directions": valid}
 
 func trial(want_pierce: bool) -> Dictionary:

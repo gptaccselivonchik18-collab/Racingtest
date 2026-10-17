@@ -25,10 +25,12 @@ func sample(kind: int, value: float, incoming := Vector3(16, -24, 30)) -> Dictio
  a.dive_time = -1
  a.holding_ball = false
  a.velocity = Vector3(0, 2, 0) if kind == ContextAthlete.BLOCK else Vector3.ZERO
+ a.position.z = 9.6 if kind == 3 else 5.0
  a.begin_action(kind)
  a.charged_for = 0.2
  a.power = 0.82
- a.release()
+ if kind != ContextAthlete.BLOCK:
+  a.release()
  a.action_time = a.strike_duration * 0.47
  if kind == ContextAthlete.DIVE:
   a.dive_time = 0.3
@@ -96,7 +98,7 @@ func run() -> void:
    a.stats.set_stat("spike", 250)
    check(a.outgoing_spin(Vector3.ZERO, Vector3.ZERO).length() > weak_spin * 2, "High Spike creates stronger downward topspin")
   if kind == ContextAthlete.BLOCK:
-   check(high.velocity.length() > low.velocity.length() * 1.3, "High Block preserves a stronger controlled rebound")
+   check(high.velocity.length() >= low.velocity.length() * 0.99 and high.velocity.length() <= Vector3(16, -24, 30).length() * 1.001, "Block controls the rebound without creating extra momentum")
  a.dive_time = -1
  var variances := []
  for value in [-150.0, 250.0]:
