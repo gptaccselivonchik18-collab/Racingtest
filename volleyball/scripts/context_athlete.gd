@@ -25,12 +25,21 @@ var replica := false
 var network_position := Vector3.ZERO
 var network_age := -1.0
 var network_pose_time := 0.0
+var network_motion := VolleyReplicaMotion.new()
+var network_rotation := Vector3.ZERO
 
-func accept_network_position(at: Vector3) -> void:
- if network_age < 0 or position.distance_to(at) > 2.0:
-  position = at
+func accept_network_position(at: Vector3, stamp := -1.0) -> bool:
+ if stamp >= 0:
+  if not network_motion.push(at, velocity, stamp):
+   return false
+  position = network_motion.position
+ else:
+  network_motion.reset()
+  if network_age < 0 or position.distance_to(at) > 2.0:
+   position = at
  network_position = at
  network_age = 0
+ return true
 
 var lower_serve_active := false
 var float_serve_active := false
@@ -194,7 +203,11 @@ func _ready() -> void:
 func _process(dt: float) -> void:
  if not replica or not pose_ready:
   return
- if network_age >= 0:
+ if network_motion.active:
+  position = network_motion.advance(dt)
+  for axis in range(3):
+   visual.rotation[axis] = lerp_angle(visual.rotation[axis], network_rotation[axis], 1.0 - exp(-18.0 * dt))
+ elif network_age >= 0:
   network_age += dt
   # Integrate between packets, then correct error. Chasing a stationary
   # 30 Hz target alone repeatedly slows and accelerates a 120 Hz camera.

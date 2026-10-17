@@ -98,6 +98,10 @@ func _process(dt: float) -> bool:
     game.hud.settings.nickname = "Guest.Renamed"
     game.lan.rename_local(game.hud.settings.nickname)
    if age > 3.0:
+    if not game.athlete.network_motion.active or not game.lan.ball_motion.active:
+     push_error("Timestamped player/ball motion did not survive the real loss/jitter connection")
+     quit(1)
+     return false
     if game.athlete.get_node("TeamTag").visible or not game.lan.players[1].actor.get_node("TeamTag").visible or not game.lan.players[1].actor.get_node("TeamTag").text.contains("Host.🏐"):
      push_error("Personal name visibility did not replicate through the room")
      quit(1)

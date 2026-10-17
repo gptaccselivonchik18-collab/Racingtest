@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 24
+const PROTOCOL := 25
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -19,6 +19,7 @@ var state_tick := 0.0
 var ball_target := Vector3.ZERO
 var ball_speed := Vector3.ZERO
 var ball_age := -1.0
+var ball_motion := VolleyReplicaMotion.new()
 var selection_zone: Node3D
 var connected := false
 var status := ""
@@ -57,6 +58,9 @@ func _ready() -> void:
  # All gameplay messages go through the host; no client relay mesh is needed.
  multiplayer.server_relay = false
  name = "LAN"
+ process_priority = -10
+ ball_motion.correction = 12.0
+ ball_motion.teleport_distance = 4.0
  process_mode = Node.PROCESS_MODE_ALWAYS
  multiplayer.peer_connected.connect(_peer_joined)
  multiplayer.peer_disconnected.connect(_peer_left)
@@ -144,6 +148,7 @@ func leave() -> void:
  ready_seconds = 0
  ready_signature = ""
  ball_age = -1
+ ball_motion.reset()
  if is_instance_valid(selection_zone):
   selection_zone.hide()
  hosting = false
@@ -170,6 +175,7 @@ func leave() -> void:
  game.athlete.lower_serve_active = false
  game.athlete.replica = false
  game.athlete.network_age = -1
+ game.athlete.network_motion.reset()
  game.athlete.court_team = -1
  game.athlete.set_physics_process(true)
  if game.athlete.has_node("TeamTag"):
@@ -240,7 +246,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок") -> void:
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.24." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.25." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -575,7 +581,9 @@ func _process(dt: float) -> void:
   if connecting_for > CONNECT_TIMEOUT:
    _failed()
   return
- if not hosting and ball_age >= 0:
+ if not hosting and ball_motion.active:
+  game.ball.position = ball_motion.advance(dt)
+ elif not hosting and ball_age >= 0:
   ball_age += dt
   if ball_age <= 0.12:
    game.ball.position += ball_speed * dt
@@ -609,6 +617,8 @@ func _process(dt: float) -> void:
  tick = fmod(tick, 1.0 / 30.0)
  if hosting:
   var poses := []
+  # Positions come from fixed physics steps, not the arbitrary render/send phase.
+  var stamp := float(Engine.get_physics_frames()) / float(Engine.physics_ticks_per_second)
   var held_by := 0
   for id in players:
    var a: ContextAthlete = players[id].actor
@@ -618,7 +628,7 @@ func _process(dt: float) -> void:
   if is_instance_valid(game.practice.bot) and game.practice.enabled:
    for peer_id in players:
     if peer_id != 1 and _peer_ready(peer_id):
-     bot_snapshot.rpc_id(peer_id, pack_actor(game.practice.bot))
+     bot_snapshot.rpc_id(peer_id, pack_actor(game.practice.bot), stamp)
   var bot_poses := []
   var bot_holder := 0
   for bot in game.game_bots.bots.values():
@@ -628,18 +638,18 @@ func _process(dt: float) -> void:
   for first in range(0, bot_poses.size(), 2):
    for peer_id in players:
     if peer_id != 1 and _peer_ready(peer_id):
-     game_bot_snapshot.rpc_id(peer_id, bot_poses.slice(first, first + 2), bot_holder)
+     game_bot_snapshot.rpc_id(peer_id, bot_poses.slice(first, first + 2), bot_holder, stamp)
   # Stay below the ENet MTU at 12 players; one large unreliable packet
   # would fragment and magnify loss on mobile Wi-Fi.
   for first in range(0, poses.size(), 2):
    for peer_id in players:
     if peer_id != 1 and _peer_ready(peer_id):
-     snapshot.rpc_id(peer_id, poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message, game.ball.angular_velocity)
+     snapshot.rpc_id(peer_id, poses.slice(first, first + 2), game.ball.position, game.ball.linear_velocity, game.ball.rotation, held_by, game.ball.held_mode, scores, game.rules.message, game.ball.angular_velocity, stamp)
  elif _peer_ready(1):
   input_state.rpc_id(1, game.athlete.move_axis, game.athlete.tilt, game.rig.yaw, game.rig.pitch)
 
 @rpc("authority", "call_remote", "unreliable_ordered", 2)
-func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, held_by: int, mode: int, score: Array, message: String, ball_spin := Vector3.ZERO) -> void:
+func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, held_by: int, mode: int, score: Array, message: String, ball_spin := Vector3.ZERO, stamp := -1.0) -> void:
  if hosting or not connected:
   return
  snapshot_count += 1
@@ -647,8 +657,13 @@ func snapshot(poses: Array, at: Vector3, speed: Vector3, spin_pose: Vector3, hel
   if not players.has(pose[0]):
    continue
   var a: ContextAthlete = players[pose[0]].actor
-  apply_actor_pose(a, pose, held_by)
- if ball_age < 0 or game.ball.position.distance_to(at) > 4.0:
+  apply_actor_pose(a, pose, held_by, stamp)
+ # All player chunks carry the same ball frame. Apply it only once.
+ if stamp >= 0:
+  if not ball_motion.push(at, speed if held_by == 0 else Vector3.ZERO, stamp):
+   return
+  game.ball.position = ball_motion.position
+ elif ball_age < 0 or game.ball.position.distance_to(at) > 4.0:
   game.ball.position = at
  ball_target = at
  ball_speed = speed if held_by == 0 else Vector3.ZERO
@@ -693,10 +708,15 @@ func reject_join(reason: String) -> void:
 func pack_actor(a: ContextAthlete, id := 0) -> Array:
  return [id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active, a.approach_jump]
 
-func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0) -> void:
+func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0, stamp := -1.0) -> void:
+ if stamp >= 0 and a.network_motion.active and stamp <= a.network_motion.stamp:
+  return
+ var first_pose := a.network_age < 0
  a.velocity = pose[2]
- a.accept_network_position(pose[1])
- a.visual.rotation = pose[3]
+ a.accept_network_position(pose[1], stamp)
+ a.network_rotation = pose[3]
+ if stamp < 0 or first_pose:
+  a.visual.rotation = pose[3]
  a.action = pose[4]
  a.technique = pose[5]
  a.strike_technique = pose[6]
@@ -907,9 +927,9 @@ func orient_player(yaw: float) -> void:
   game.athlete.camera_yaw = yaw
 
 @rpc("authority", "call_remote", "unreliable_ordered", 3)
-func bot_snapshot(pose: Array) -> void:
+func bot_snapshot(pose: Array, stamp := -1.0) -> void:
  if not hosting and game.practice.enabled and is_instance_valid(game.practice.bot) and pose.size() == 32:
-  apply_actor_pose(game.practice.bot, pose, -1)
+  apply_actor_pose(game.practice.bot, pose, -1, stamp)
 
 @rpc("authority", "call_remote", "reliable")
 func contact_feedback(text: String, failed: bool) -> void:
@@ -930,9 +950,9 @@ func game_bots_state(state: Dictionary) -> void:
   game.game_bots.configure(state, false)
 
 @rpc("authority", "call_remote", "unreliable_ordered", 4)
-func game_bot_snapshot(poses: Array, holder: int) -> void:
+func game_bot_snapshot(poses: Array, holder: int, stamp := -1.0) -> void:
  if hosting or not connected:
   return
  for pose in poses:
   if pose.size() == 32 and game.game_bots.bots.has(pose[0]):
-   apply_actor_pose(game.game_bots.bots[pose[0]], pose, holder)
+   apply_actor_pose(game.game_bots.bots[pose[0]], pose, holder, stamp)
