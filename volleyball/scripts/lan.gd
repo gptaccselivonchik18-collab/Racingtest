@@ -503,7 +503,7 @@ func award_floor(at: Vector3) -> void:
  if not hosting or not match_active or round_wait >= 0:
   return
  var winner: int
- if absf(at.x) <= 4.5 and absf(at.z) <= 9:
+ if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9 + VolleyBall.RADIUS:
   winner = 1 if at.z >= 0 else 0
  else:
   winner = 1 - last_touch_team

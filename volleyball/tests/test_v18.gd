@@ -119,6 +119,9 @@ func run() -> void:
  game.lan._update_readiness(3.1)
  check(game.lan.match_active and game.lan.players[1].team == 0 and game.lan.players[999].team == 1, "All selected humans are assigned by the half they chose")
  check(game.rules.strict and not game.lan.selection_zone.visible, "Only an agreed match enables rules and hides selection zones")
+ game.lan.last_touch_team = 1
+ game.lan.award_floor(Vector3(4.5 + VolleyBall.RADIUS * 0.5, VolleyBall.RADIUS, 3))
+ check(game.lan.scores == [0, 1], "A larger ball touching the boundary line awards the in-court point")
  game.lan.serve_flags[1] = true
  game.lan.owners[1] = "primary"
  game.lan.start_free_play()

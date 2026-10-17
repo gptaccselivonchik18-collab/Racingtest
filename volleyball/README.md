@@ -540,7 +540,7 @@ FPS; проверить достижение 120 FPS на физических �
 Основы: [AndroidRuntime API](https://docs.godotengine.org/en/4.6/tutorials/platform/android/javaclasswrapper_and_androidruntimeplugin.html),
 [ProMotion](https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays).
 
-Проверки: 592 игровых утверждения и 8 упражнений; 12 отдельных процессов LAN,
+Проверки: 593 игровых утверждения и 8 упражнений; 12 отдельных процессов LAN,
 общий бот, приватные подсказки, реальные касания, ёмкость и отключение;
 отдельные хост и два гостя проверяют анимацию бота и старт только после выбора
 команд всеми людьми; отдельная проверка UDP-потерь/задержек и переподключения.
