@@ -39,7 +39,7 @@ func choose_receivers() -> void:
    var id: int = actor.bot_id if actor is VolleyGameBot else manager.game.lan.player_id(actor) if manager.game.lan.active else 1
    for sample in manager.samples:
     var point: Vector3 = sample.at
-    if point.z * side < 0.48 or point.y < 0.4 or point.y > 3.6 or sample.v.y > 2:
+    if point.z * side < 0.48 or point.y < 0.18 or point.y > 3.6 or sample.v.y > 2:
      continue
     var target := point + Vector3(0, 0, side * 0.34)
     target.y = 0.02
@@ -47,16 +47,33 @@ func choose_receivers() -> void:
     var reaction: float = float(difficulty.reaction) if actor is VolleyGameBot else 0.12
     var speed: float = float(actor.style_stats.movement().speed)
     var movement := float(difficulty.anticipation) if actor is VolleyGameBot else 0.8 if actor.move_axis.length() > 0.15 else 0.0
-    var reachable := maxf(0, float(sample.time) - reaction) * speed * movement + (0.75 if actor is VolleyGameBot else 1.45)
+    var available := maxf(0, float(sample.time) - reaction)
+    var initial := maxf(0, Vector2(actor.velocity.x, actor.velocity.z).dot(Vector2(target.x - actor.position.x, target.z - actor.position.z).normalized()))
+    var acceleration: float = float(actor.style_stats.movement().acceleration)
+    var accelerating := minf(available, maxf(0, speed - initial) / acceleration)
+    var running := initial * accelerating + 0.5 * acceleration * accelerating * accelerating + speed * maxf(0, available - accelerating)
+    var reachable := running * movement + (0.75 if actor is VolleyGameBot else 1.45)
+    var diving := false
     if distance > reachable:
-     continue
+     if not actor is VolleyGameBot or actor.dive_cooldown > 0 or actor.position.y > 0.12 or actor.velocity.y > 0.2 or point.y > 1.45:
+      continue
+     var dive := actor.mechanic(ContextAthlete.DIVE)
+     var time := minf(float(sample.time) - reaction, float(dive.contact_to))
+     if time < float(dive.contact_from) or time <= 0:
+      continue
+     var run_time := maxf(0, float(sample.time) - reaction - float(dive.contact_to))
+     var slide := float(dive.speed) * time * (1.0 - 0.5 * time / float(dive.travel))
+     if distance > run_time * speed * movement + slide + 0.75:
+      continue
+     diving = true
     var high := manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5
     var preferred := 2.95 if high else 2.05 if manager.last_team == team else 1.35
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
+    cost += 0.55 if diving else 0.0
     if not actor is VolleyGameBot:
      cost -= 0.85 # A human already in reach gets room to play.
     if not candidates.has(id) or cost < float(candidates[id].cost):
-     candidates[id] = {"cost": cost, "target": target, "arrival": manager.clock + float(sample.time), "actor": actor}
+     candidates[id] = {"cost": cost, "target": target, "arrival": manager.clock + float(sample.time), "actor": actor, "dive": diving}
   var selected := 0
   var cost := INF
   for id in candidates:
@@ -75,11 +92,87 @@ func choose_receivers() -> void:
    manager.receivers[team] = selected
    manager.intercepts[team] = candidates[selected].target
    manager.arrival[team] = candidates[selected].arrival
+   manager.receive_dives[team] = candidates[selected].dive
    var receiver: ContextAthlete = candidates[selected].actor
    if receiver is VolleyGameBot:
     var kind := VolleyAthlete.Technique.OVERHEAD if manager.last_team == team and manager.touches > 0 else VolleyAthlete.Technique.UNDERHAND
     if manager.last_team != team or manager.touches < 2:
      pass_plan(receiver, kind)
+
+func serve_target(actor: VolleyGameBot) -> Vector3:
+ if actor.serve_aim.is_finite():
+  return actor.serve_aim
+ var side := -1.0 if actor.court_team == 0 else 1.0
+ var people: Array = manager.members(1 - actor.court_team).filter(func(p): return not p is VolleyGameBot)
+ # Three serves in four offer a human reception. The fourth explores space.
+ # Rotate real recipients in LAN, and keep one aim through toss and contact.
+ if not people.is_empty() and actor.serves % 4 != 3:
+  var recipient: ContextAthlete = people[(actor.serves / 4 + actor.slot) % people.size()]
+  var point := recipient.position + Vector3(recipient.velocity.x, 0, recipient.velocity.z).limit_length(1.2) * 0.35
+  point.x = clampf(point.x + actor.rng.randf_range(-0.40, 0.40), -3.8, 3.8)
+  point.z = side * clampf(point.z * side + 1.0 + actor.rng.randf_range(-0.35, 0.35), 2.8, 8.4)
+  point.y = VolleyBall.RADIUS
+  actor.serve_aim = point
+ else:
+  actor.serve_aim = Vector3(actor.rng.randf_range(-3.1, 3.1), VolleyBall.RADIUS, side * actor.rng.randf_range(3.8, 7.8))
+ return actor.serve_aim
+
+func block_plan(actor: VolleyGameBot) -> Dictionary:
+ var ball: VolleyBall = manager.game.ball
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ if ball.held or ball.position.z * side > 0.5 or absf(ball.position.x) > 5.2:
+  return {}
+ if manager.last_team == 1 - actor.court_team and manager.last_kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+  return {}
+ var target := Vector3(ball.position.x, 0.02, side * 0.65)
+ var time := INF
+ var commit := false
+ var attack := manager.last_team == 1 - actor.court_team and manager.last_kind in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]
+ if attack and ball.linear_velocity.z * side > 0:
+  # A new strike may precede the next shared 10 Hz prediction. Read its
+  # current velocity immediately rather than the previous shot's samples.
+  time = (side * 0.15 - ball.position.z) / ball.linear_velocity.z
+  var point := ball.position + ball.linear_velocity * time + Vector3.DOWN * 4.905 * time * time
+  if time < 0 or time > 1.1 or point.y < 2.2 or point.y > 2.4 + float(actor.style_stats.movement().jump_height):
+   return {}
+  target.x = point.x
+  commit = true
+ if not is_finite(time):
+  if ball.position.z * side >= 0 or absf(ball.position.z) > 4.8 or ball.position.y < 2.1:
+   return {}
+  for opponent: ContextAthlete in manager.members(1 - actor.court_team):
+   var kind := opponent.planned_technique() if opponent.action == VolleyAthlete.Action.PREPARE else opponent.strike_technique
+   if kind not in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP] or opponent.action not in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] or flat(opponent.position, ball.position) > 2.1:
+    continue
+   target.x = opponent.position.x + opponent.velocity.x * 0.15
+   time = clampf(0.18 + flat(opponent.position, ball.position) / maxf(3, ball.linear_velocity.length()), 0.18, 0.8)
+   commit = opponent.airborne() or opponent.action == VolleyAthlete.Action.STRIKE
+   break
+  if not is_finite(time):
+   if manager.last_team != 1 - actor.court_team or manager.touches < 1 or ball.linear_velocity.y > 4:
+    return {}
+   # Move a front defender into the lane while the opponent builds the attack.
+   time = 0.8
+ target.x = clampf(target.x, -4, 4)
+ var chosen: ContextAthlete
+ var best := INF
+ for teammate: ContextAthlete in manager.members(actor.court_team):
+  if not teammate is VolleyGameBot:
+   if teammate.block_held and flat(teammate.position, target) < 1.1:
+    return {}
+   continue
+  if teammate.cooldown > 0 or teammate.action != VolleyAthlete.Action.IDLE or teammate.dive_time >= 0:
+   continue
+  var distance := flat(teammate.position, target)
+  var arrival := distance / maxf(1, float(teammate.style_stats.movement().speed))
+  if arrival > time + 0.38:
+   continue
+  if arrival < best:
+   best = arrival
+   chosen = teammate
+ if chosen != actor:
+  return {}
+ return {"target": target, "time": time, "commit": commit}
 
 func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bool) -> Vector3:
  var team: int = setter.court_team

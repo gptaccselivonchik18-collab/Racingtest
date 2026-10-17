@@ -26,6 +26,7 @@ var float_flight := VolleyFloatFlight.new()
 var attack_owner: WeakRef
 var attack_team := -1
 var attack_skill := 0.5
+var attack_factor := 1.0
 var attack_quality := 0.0
 var attack_kind := -1
 var last_duel: Dictionary = {}
@@ -142,6 +143,7 @@ func solve_pass(start: Vector3, contact: Vector3, apex: float, launch_spin: Vect
 func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dictionary:
  var at := start
  var net_height := INF
+ var net_clearance := INF
  for tick in range(600):
   velocity += (Vector3.DOWN * 9.81 + aero_force(velocity, spin) / mass) / 120.0
   spin *= 1.0 - angular_damp / 120.0
@@ -149,9 +151,14 @@ func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dic
   at += velocity / 120.0
   if previous.z * at.z < 0:
    net_height = previous.lerp(at, previous.z / (previous.z - at.z)).y
+  # A steep short shot must clear both edges of the ball-sized net corridor.
+  # Checking the centre plane alone can miss a descending tape contact.
+  for plane in [-RADIUS - 0.04, RADIUS + 0.04]:
+   if (previous.z - plane) * (at.z - plane) < 0:
+    net_clearance = minf(net_clearance, previous.lerp(at, (previous.z - plane) / (previous.z - at.z)).y)
   if at.y <= VolleyBall.RADIUS:
    break
- return {"landing": at, "net_height": net_height}
+ return {"landing": at, "net_height": net_height, "net_clearance": net_clearance}
 
 func solve_lifted_hit(start: Vector3, destination: Vector3, apex: float, spin: Vector3) -> Vector3:
  # Low standing contact needs lift, not a downward spike vector. Solve the
@@ -160,7 +167,8 @@ func solve_lifted_hit(start: Vector3, destination: Vector3, apex: float, spin: V
  if start.z * destination.z >= 0:
   return launch
  for attempt in range(9):
-  if power_serve_flight(start, launch, spin).net_height >= 2.76:
+  var flight := power_serve_flight(start, launch, spin)
+  if flight.net_height >= 2.76 and flight.net_clearance >= 2.66:
    break
   apex = minf(apex * 1.45 + 0.20, 8.0)
   launch = solve_launch(start, destination, apex, spin)
@@ -348,7 +356,7 @@ func attack_for(blocker: ContextAthlete) -> Dictionary:
   return {}
  if source == blocker or team_of(blocker) == attack_team:
   return {}
- return {"skill": attack_skill, "quality": attack_quality, "kind": attack_kind}
+ return {"skill": attack_skill, "quality": attack_quality, "kind": attack_kind, "factor": attack_factor}
 
 func remember_contact(actor: ContextAthlete) -> void:
  if replica:
@@ -358,6 +366,7 @@ func remember_contact(actor: ContextAthlete) -> void:
   attack_owner = weakref(actor)
   attack_team = team_of(actor)
   attack_skill = actor.style_stats.n("spike")
+  attack_factor = actor.style_stats.factor("spike")
   attack_quality = actor.quality
   attack_kind = actor.strike_technique
  elif actor.strike_technique == ContextAthlete.BLOCK and not actor.duel_result.is_empty():

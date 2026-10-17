@@ -28,6 +28,7 @@ var edit_selected := "primary"
 var editor_bar: PanelContainer
 var editor_scale: HSlider
 var stat_sliders := {}
+var stat_effects := {}
 var control_sliders := {}
 var category_picker: OptionButton
 var stat_grid: GridContainer
@@ -218,7 +219,7 @@ func _menu() -> void:
  _native_button(bindings, "Атака: вернуть ЛКМ", func(): settings.keys.primary = -MOUSE_BUTTON_LEFT; settings.install_keys(); _refresh_keys(); _save())
  var testing := _tab("Спортсмен")
  var explanation := Label.new()
- explanation.text = "65 — стандарт. Меняйте число или используйте − / +. Ограничений нет."
+ explanation.text = "65 — стандарт. Скрытого потолка нет: 999 и 9999 продолжают усиливать действие. Множитель показан ниже."
  explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  testing.add_child(explanation)
  stat_grid = GridContainer.new()
@@ -261,6 +262,11 @@ func _menu() -> void:
   row.add_child(value)
   _native_button(row, "+", func(): value.value += 10).custom_minimum_size = Vector2(44, 44)
   stat_sliders[key] = value
+  var effect := Label.new()
+  effect.add_theme_color_override("font_color", Color("b9e995"))
+  effect.text = "Масштаб механики ×%.2f" % game.athlete.style_stats.factor(key)
+  body.add_child(effect)
+  stat_effects[key] = effect
   var detail := Label.new()
   detail.text = VolleyStyleStats.DETAILS[key]
   detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -433,6 +439,8 @@ func _orientation(value: int) -> void:
 
 func _change_stat(key: String, value: float) -> void:
  game.athlete.stats.set_stat(key, value)
+ if stat_effects.has(key):
+  stat_effects[key].text = "Масштаб механики ×%.2f" % game.athlete.style_stats.factor(key)
  _save()
  if is_instance_valid(game.lan) and game.lan.active:
   game.lan.local_action("stats", "press", {"skill": key, "value": value})

@@ -151,10 +151,10 @@ func close() -> void:
  game.hud._cancel()
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.get_name() in ["iOS", "Android"] else Input.MOUSE_MODE_CAPTURED
 
-func sample_error(aim: Vector3, accuracy: float) -> Dictionary:
- var scatter := lerpf(1.15, 0.15, accuracy)
+func sample_error(aim: Vector3, accuracy: float, gain := 1.0) -> Dictionary:
+ var scatter := lerpf(1.15, 0.15, accuracy) / gain
  var aim_error := Vector3(rng.randfn(0, scatter), 0, rng.randfn(0, scatter * 1.2))
- var slip := rng.randf() < lerpf(0.15, 0.015, accuracy)
+ var slip := rng.randf() < lerpf(0.15, 0.015, accuracy) / gain
  return {"target": aim + aim_error, "slip": slip, "angle": rng.randf_range(-0.85, 0.85), "scale": rng.randf_range(0.45, 0.75) if slip else rng.randf_range(1.0 - lerpf(0.04, 0.004, accuracy), 1.0 + lerpf(0.04, 0.004, accuracy))}
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
@@ -162,7 +162,8 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
- var error := sample_error(aim, actor.style_stats.n("serve" if VolleyRules.in_service_zone(actor.service_origin()) else "bump"))
+ var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "bump"
+ var error := sample_error(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill))
  target = error.target
  slipped = error.slip
  slip_angle = error.angle

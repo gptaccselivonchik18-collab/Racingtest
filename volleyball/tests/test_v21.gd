@@ -119,6 +119,9 @@ func run() -> void:
  var stopped := preview.sample_path(Vector3(0, 2.0, 2), Vector3(0, 0, -15), Vector3.ZERO)
  check(not stopped.landed and absf(stopped.landing.z) < 0.3, "A predicted net collision stops at the ball's surface without a false landing marker")
  # Compare the displayed landing with the real rigid body and net collision.
+ # Ordinary court landings use ordinary skills; 900 Spike now sends the
+ # ball into the enclosure rather than saturating to the old preset.
+ a.style_stats.reset_all()
  for held in [0.0, 1.2]:
   pose(2, Vector3(0, 0.02, 1.5), 1, false, held)
   var point := a.wrists[1]
@@ -128,7 +131,9 @@ func run() -> void:
   var out := a.try_contact(point, Vector3.ZERO)
   var spin := a.outgoing_spin(Vector3.ZERO, out)
   landed = false
-  game.ball.feed(point, out, spin)
+  # Isolate integration/collision from intentional random contact error.
+  # The actual contact model is compared with prediction above.
+  game.ball.feed(point, predicted.velocity, predicted.spin)
   while game.ball.pending_feed:
    await physics_frame
   for i in range(550):

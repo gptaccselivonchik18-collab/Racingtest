@@ -16,13 +16,13 @@ func network_role() -> String:
 func height_hint() -> String:
  return "Малое вращение, непредсказуемый уход мяча. Serve улучшает точность. Низкая дуга может попасть в сетку."
 
-func sample_delivery(aim: Vector3, skill: float) -> Dictionary:
- var spread := lerpf(2.7, 0.85, skill)
- var mishit := rng.randf() < lerpf(0.20, 0.025, skill)
+func sample_delivery(aim: Vector3, skill: float, gain := 1.0) -> Dictionary:
+ var spread := lerpf(2.7, 0.85, skill) / gain
+ var mishit := rng.randf() < lerpf(0.20, 0.025, skill) / gain
  var error := Vector3(rng.randfn(0, spread), 0, rng.randfn(0, spread * 1.18))
  if mishit:
   error += Vector3(rng.randf_range(-3, 3), 0, rng.randf_range(-3, 3))
- var spin := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized() * lerpf(0.95, 0.18, skill)
+ var spin := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized() * lerpf(0.95, 0.18, skill) / gain
  return {"target": aim + error, "mishit": mishit, "scale": rng.randf_range(1.0 - lerpf(0.07, 0.012, skill), 1.0 + lerpf(0.07, 0.012, skill)), "spin": spin, "seed": rng.randi(), "skill": skill}
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
@@ -30,7 +30,8 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or actor.airborne() or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
- delivery = sample_delivery(aim, actor.style_stats.n("serve" if VolleyRules.in_service_zone(actor.service_origin()) else "spike"))
+ var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "spike"
+ delivery = sample_delivery(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill))
  busy_actor = actor
  actor.cancel_input()
  actor.move_axis = Vector2.ZERO

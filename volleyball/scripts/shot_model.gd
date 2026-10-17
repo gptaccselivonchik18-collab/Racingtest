@@ -7,11 +7,11 @@ static func spin_for(a: ContextAthlete, kind: int, incoming: Vector3, delta: Vec
  var p := a.mechanic(kind)
  var horizontal := Vector3(direction.x, 0, direction.z).normalized()
  if kind == VolleyAthlete.Technique.JUMP_SERVE:
-  return (-horizontal.cross(Vector3.UP) * float(p.topspin) * lerpf(0.65, 1.0, amount)).limit_length(45)
+  return (-horizontal.cross(Vector3.UP) * float(p.topspin) * lerpf(0.65, 1.0, amount)).limit_length(45 * a.style_stats.factor("serve"))
  if kind in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]:
   var powerful_jump := a.air_attack if a.action != VolleyAthlete.Action.PREPARE else a.airborne() and a.approach_jump
   var factor := 0.25 if kind == ContextAthlete.TIP else 1.15 if powerful_jump else 0.75
-  return (incoming * float(p.spin) - horizontal.cross(Vector3.UP) * float(p.topspin) * amount * factor).limit_length(50)
+  return (incoming * float(p.spin) - horizontal.cross(Vector3.UP) * float(p.topspin) * amount * factor).limit_length(50 * a.style_stats.factor("spike"))
  return (incoming * float(p.spin) + a.hand_velocity.cross(delta) * (0.025 * (1.0 - float(p.control)))).limit_length(50)
 
 static func standing_target(a: ContextAthlete, at: Vector3, amount: float, quality: float) -> Vector3:
@@ -21,7 +21,9 @@ static func standing_target(a: ContextAthlete, at: Vector3, amount: float, quali
  var side := 1.0 if a.global_position.z >= 0 else -1.0
  var depth := lerpf(0.7, 8.0, force) * lerpf(0.83, 1.12, a.style_stats.n("spike")) * lerpf(0.84, 1.0, quality)
  depth += a.body_tilt().y * 2.5
+ depth *= a.style_stats.factor("spike")
  var distance := lerpf(2, 13, force)
+ distance *= a.style_stats.factor("spike")
  if horizontal.z * side < -0.20:
   distance = absf(at.z + side * maxf(0.35, depth)) / maxf(0.20, absf(horizontal.z))
  return Vector3(at.x + horizontal.x * distance, VolleyBall.RADIUS, at.z + horizontal.z * distance)
@@ -68,4 +70,7 @@ static func solve(a: ContextAthlete, kind: int, at: Vector3, incoming: Vector3, 
   if nominal_direction.z * side < -0.25:
    outgoing = a.serve_solver.call(at, a.serve_target(at), a.serve_apex())
    outgoing = outgoing.rotated(Vector3.UP, deg_to_rad(angular_error.x)) * pace_scale
+ # Solvers may replace the initial velocity. The displayed spin must use
+ # that final impulse, exactly like the ball's real outgoing_spin callback.
+ spin = spin_for(a, kind, incoming_spin, outgoing - incoming, nominal_direction, amount)
  return {"velocity": outgoing, "spin": spin, "direction": nominal_direction}

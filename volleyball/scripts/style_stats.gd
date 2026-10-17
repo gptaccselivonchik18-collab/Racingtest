@@ -26,9 +26,13 @@ func set_stat(key: String, value: float) -> void:
   cache.clear()
 
 func n(key: String) -> float:
- # Values are unrestricted. Smooth diminishing returns keep extreme experiments
- # finite without silently clamping the stored number to a progression range.
- return 0.5 + 0.5 * tanh((float(values.get(key, 65)) - 65.0) / 100.0)
+ # Only proportions such as accuracy/control belong in [0,1]. Physical
+ # magnitudes use factor() independently and have no rating ceiling.
+ return 1.0 / (1.0 + pow(factor(key), -3))
+
+func factor(key: String) -> float:
+ var difference := (float(values.get(key, 65)) - 65.0) / 100.0
+ return 1.0 + difference if difference >= 0 else 1.0 / (1.0 - difference)
 
 func reset_all() -> void:
  for key in KEYS:
@@ -92,10 +96,42 @@ func profile(kind: int) -> Dictionary:
    p.strength = lerpf(0.68, 1.32, w)
    p.angle = lerpf(42, 58, w)
    p.topspin = lerpf(5, 25, w)
+ var gain := factor(key)
+ var reach := sqrt(gain)
+ p.strength *= gain
+ p.radius *= reach
+ p.pressure *= gain
+ p.accuracy /= gain
+ p.stability /= gain
+ p.carry /= gain
+ p.spin /= gain
+ p.windup /= reach
+ p.recovery /= reach
+ if key == "block":
+  p.width *= reach
+  p.windup = minf(p.windup, p.duration * 0.40)
+ elif key == "dive":
+  p.speed *= gain
+  p.travel *= reach
+  p.recover_time = p.travel + 0.45 / reach
+  p.cooldown /= reach
+  p.contact_from /= reach
+  p.contact_to *= reach
+  p.duration = p.contact_to
+ elif key == "serve":
+  p.depth *= gain
+  p.power_speed *= gain
+  p.topspin *= gain
+  p.scatter /= gain
+  p.slip /= gain
+ elif key == "spike":
+  p.topspin *= gain
  cache[key] = p
  return p
 
 func movement() -> Dictionary:
  var w := n("speed")
  var j := n("jump")
- return {"speed": lerpf(2.8, 7.2, w), "acceleration": lerpf(7, 19, w), "braking": lerpf(14, 28, w), "turn": lerpf(2.5, 6.5, w), "drain": lerpf(0.030, 0.010, w), "jump_height": lerpf(0.60, 2.0, j), "plant": lerpf(0.16, 0.04, j), "jump_cost": lerpf(0.11, 0.045, j), "air": lerpf(0.40, 0.90, j), "landing": lerpf(1.35, 0.65, j), "landing_recovery": lerpf(0.28, 0.10, j)}
+ var speed_gain := factor("speed")
+ var jump_gain := factor("jump")
+ return {"speed": lerpf(2.8, 7.2, w) * speed_gain, "acceleration": lerpf(7, 19, w) * speed_gain, "braking": lerpf(14, 28, w) * speed_gain, "turn": lerpf(2.5, 6.5, w) * sqrt(speed_gain), "drain": lerpf(0.030, 0.010, w) / speed_gain, "jump_height": lerpf(0.60, 2.0, j) * jump_gain, "plant": lerpf(0.16, 0.04, j) / sqrt(jump_gain), "jump_cost": lerpf(0.11, 0.045, j) / jump_gain, "air": lerpf(0.40, 0.90, j) * sqrt(jump_gain), "landing": lerpf(1.35, 0.65, j), "landing_recovery": lerpf(0.28, 0.10, j) / sqrt(jump_gain)}

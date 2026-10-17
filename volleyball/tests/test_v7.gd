@@ -36,7 +36,7 @@ func sample(kind: int, value: float, incoming := Vector3(16, -24, 30)) -> Dictio
   a.release()
  a.action_time = a.strike_duration * 0.47
  if kind == ContextAthlete.DIVE:
-  a.dive_time = 0.3
+  a.dive_time = lerpf(a.mechanic(kind).contact_from, a.mechanic(kind).contact_to, 0.5)
  a._update_pose(0)
  a.previous_wrists = a.wrists.duplicate()
  a.previous_elbows = a.elbows.duplicate()

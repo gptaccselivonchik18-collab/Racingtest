@@ -39,6 +39,7 @@ func run() -> void:
  root.add_child(game)
  game.frontend.start_solo()
  a = game.athlete
+ a.style_stats.reset_all()
  b = game.ball
  game.hud.set_process(false)
  await frames(20)

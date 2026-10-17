@@ -2,7 +2,7 @@ class_name VolleyBlockDuel
 extends RefCounted
 
 # These are balance probabilities, not a claim about professional match rates.
-# StyleStats.n supplies smooth, bounded ratings for unrestricted raw stats.
+# Base quality uses bounded proportions; resolve adds the uncapped stat ratio.
 static func pierce_probability(spike: float, block: float, attack_quality: float, block_quality: float, speed: float, head_on := 1.0, tip := false) -> float:
  var attack_rating := lerpf(0.45, 1.55, clampf(spike, 0, 1))
  var defense_rating := lerpf(0.45, 1.55, clampf(block, 0, 1))
@@ -24,9 +24,12 @@ static func reflection(incoming: Vector3, normal: Vector3, quality: float) -> Ve
  # or a speed boost from rapidly animated wrists.
  return incoming.bounce(normal.normalized()) * lerpf(0.97, 1.0, clampf(quality, 0, 1))
 
-static func resolve(attack: Dictionary, block: float, block_quality: float, incoming: Vector3, normal: Vector3, rng: RandomNumberGenerator, backward_lean := 0.0) -> Dictionary:
+static func resolve(attack: Dictionary, block: float, block_quality: float, incoming: Vector3, normal: Vector3, rng: RandomNumberGenerator, backward_lean := 0.0, block_factor := 1.0) -> Dictionary:
  var head_on := maxf(0, -incoming.normalized().dot(normal.normalized()))
  var chance := pierce_probability(attack.skill, block, attack.quality, block_quality, incoming.length(), head_on, int(attack.kind) == ContextAthlete.TIP)
+ # Ratios keep growing beyond ordinary ratings; 999 Block is not 150 Block.
+ var log_odds := log(chance / (1.0 - chance)) + 0.7 * (log(float(attack.get("factor", 1.0))) - log(block_factor))
+ chance = 1.0 / (1.0 + exp(-log_odds))
  # Exactly one outcome draw per real contact, after geometry/timing checks.
  var pierced := rng.randf() < chance
  var result := {"pierced": pierced, "pierce_chance": chance, "block_chance": 1.0 - chance}

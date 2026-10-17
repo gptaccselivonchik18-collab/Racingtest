@@ -19,6 +19,7 @@ var jump_serving := false
 var toss_time := 0.0
 var noticed_touch := -INF
 var reaction_until := 0.0
+var serve_aim := Vector3.INF
 
 func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77
@@ -42,6 +43,7 @@ func _ready() -> void:
  last_result = "Страховка"
 
 func reset_plan() -> void:
+ serve_aim = Vector3.INF
  cancel_input()
  action = Action.IDLE
  holding_ball = false
@@ -201,6 +203,8 @@ func decide(_dt: float) -> void:
   var remaining: float = manager.arrival[court_team] - manager.clock
   var offset := ball.position - position
   var horizontal := Vector2(offset.x, offset.z).length()
+  if attempt_dive(at, remaining, manager.receive_dives[court_team]):
+   return
   if action == Action.IDLE and remaining < 0.65 and horizontal < 2.5 and cooldown <= 0:
    var kind := Technique.UNDERHAND
    if manager.last_team == court_team and manager.touches > 0:
@@ -242,25 +246,42 @@ func decide(_dt: float) -> void:
   steer(support)
   camera_yaw = 0 if side > 0 else PI
 
+func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
+ if action not in [Action.IDLE, Action.PREPARE] or cooldown > 0 or dive_cooldown > 0 or airborne():
+  return false
+ var p := mechanic(DIVE)
+ var distance := VolleyBotTactics.flat(at, position)
+ var low: bool = manager.game.ball.position.y < 1.6
+ if not planned and not (low and distance > 1.3):
+  return false
+ if remaining > float(p.contact_to) * 0.85 or remaining < -0.12 or distance < 0.9:
+  return false
+ move_axis = Vector2(at.x - position.x, at.z - position.z).normalized()
+ camera_yaw = atan2(-move_axis.x, -move_axis.y)
+ if action == Action.PREPARE:
+  cancel_input()
+ if not dive():
+  return false
+ var time := clampf(remaining, float(p.contact_from) + 0.04, float(p.contact_to))
+ var needed := maxf(0.8, distance - 0.45) / (time * (1.0 - 0.5 * time / float(p.travel)))
+ dive_speed = minf(dive_speed, maxf(2, needed))
+ dives += 1
+ planned_kind = DIVE
+ state = "dive"
+ return true
+
 func attempt_block(side: float) -> bool:
- var ball: VolleyBall = manager.game.ball
- if absf(position.z) > 2.5 or ball.position.z * side >= 0 or absf(ball.position.z) > 4.0 or ball.position.y < 2.5:
+ if cooldown > 0 or action != Action.IDLE or dive_time >= 0:
   return false
- if manager.last_team != 1 - court_team or manager.last_kind not in [Technique.SPIKE, Technique.JUMP_SERVE] or cooldown > 0 or action != Action.IDLE:
-  return false
- var blocker: ContextAthlete = null
- var best := INF
- for teammate in manager.members(court_team):
-  var distance: float = teammate.position.distance_squared_to(Vector3(ball.position.x, 0, side * 0.7))
-  if distance < best:
-   best = distance
-   blocker = teammate
- if blocker != self:
+ var plan := manager.tactics.block_plan(self)
+ if plan.is_empty():
   return false
  state = "block"
- steer(Vector3(clampf(ball.position.x, -4, 4), 0.02, side * 0.7))
+ steer(plan.target, 0.08)
  camera_yaw = 0 if side > 0 else PI
- if absf(position.z) < 1.25:
+ # Jump from the predicted contact time, not only after the ball is struck.
+ var rise := sqrt(2.0 * float(style_stats.movement().jump_height) / 9.81)
+ if bool(plan.commit) and float(plan.time) <= rise + 0.10 and absf(position.z) < 1.35 and absf(position.x - Vector3(plan.target).x) < 0.85:
   jump()
   if velocity.y > 0.1 and begin_action(BLOCK):
    jumps += 1

@@ -157,7 +157,7 @@ func receive_speed(kind: int, elevation_degrees: float, strength_input: float) -
 func serve_target(point: Vector3) -> Vector3:
  var side := 1.0 if global_position.z >= 0 else -1.0
  var input := body_tilt()
- var depth := clampf(lerpf(2.0, float(mechanic(Technique.SERVE).depth), power if action == Action.PREPARE else strike_power) + input.y * 2.8, 1.4, 8.5)
+ var depth := maxf(1.4, lerpf(2.0, float(mechanic(Technique.SERVE).depth), power if action == Action.PREPARE else strike_power) + input.y * 2.8)
  var forward := -visual.global_basis.z
  var z := -side * depth
  var x := point.x + forward.x / maxf(0.25, absf(forward.z)) * absf(z - point.z) + visual.global_basis.x.x * input.x * 3.7
@@ -173,7 +173,7 @@ func power_serve_target(point: Vector3) -> Vector3:
  var side := 1.0 if global_position.z >= 0 else -1.0
  # A hard baseline serve needs the longer diagonal/deep court to clear the net.
  var amount := power if action == Action.PREPARE else strike_power
- aim.z = -side * clampf(6.6 + amount * 1.5 + body_tilt().y * 1.8, 4.4, 8.8)
+ aim.z = -side * clampf(6.6 + amount * 1.5 + body_tilt().y * 1.8, 4.4, 8.8) * style_stats.factor("serve")
  var forward := -visual.global_basis.z
  aim.x = point.x + forward.x / maxf(0.25, absf(forward.z)) * absf(aim.z - point.z) + visual.global_basis.x.x * body_tilt().x * 3.7
  return aim
@@ -665,7 +665,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-edge_error, edge_error)))
   outgoing = VolleyBlockDuel.reflection(incoming, normal, quality)
   if not attack.is_empty():
-   duel_result = VolleyBlockDuel.resolve(attack, style_stats.n("block"), quality, incoming, normal, rng, input.y)
+   duel_result = VolleyBlockDuel.resolve(attack, style_stats.n("block"), quality, incoming, normal, rng, input.y, style_stats.factor("block"))
    if duel_result.pierced:
     outgoing = duel_result.velocity
  else:

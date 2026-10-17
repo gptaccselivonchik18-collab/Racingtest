@@ -27,6 +27,7 @@ var clock := 0.0
 var think_left := 0.0
 var samples: Array = []
 var receivers := [0, 0]
+var receive_dives := [false, false]
 var intercepts := [Vector3.ZERO, Vector3.ZERO]
 var arrival := [0.0, 0.0]
 var ui_controls: Array[Control] = []
@@ -166,6 +167,7 @@ func reset_rally() -> void:
  last_kind = -1
  last_touch_time = -10
  receivers = [0, 0]
+ receive_dives = [false, false]
  samples.clear()
  think_left = 0
  for bot in bots.values():
@@ -190,6 +192,7 @@ func _physics_process(dt: float) -> void:
 func predict() -> void:
  samples.clear()
  receivers = [0, 0]
+ receive_dives = [false, false]
  if game.ball.held or game.automatic_serve_busy():
   return
  for bot in bots.values():
@@ -218,6 +221,8 @@ func predict() -> void:
  tactics.choose_receivers()
 
 func target_for(actor: VolleyGameBot, kind: int) -> Vector3:
+ if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+  return tactics.serve_target(actor)
  var side := 1.0 if actor.court_team == 0 else -1.0
  var own_touches := touches if last_team == actor.court_team else 0
  if kind in [VolleyAthlete.Technique.UNDERHAND, VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET, ContextAthlete.DIVE] and own_touches < 2:

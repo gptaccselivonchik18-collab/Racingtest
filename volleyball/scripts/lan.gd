@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 22
+const PROTOCOL := 23
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
