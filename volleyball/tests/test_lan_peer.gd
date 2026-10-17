@@ -35,6 +35,7 @@ var port := 24702
 var endpoint := "127.0.0.1"
 var gate: Node
 var ack_sent := false
+var bot_seen := false
 
 func _initialize() -> void:
  var args := OS.get_cmdline_user_args()
@@ -58,6 +59,7 @@ func run() -> void:
  if role == "host":
   if game.lan.host_room(port) != OK:
    quit(1)
+  game.practice.configure({"enabled": true, "modes": [], "anchor": Vector3(2, 0.02, -5)})
   print("LAN_HOST_READY")
  else:
   game.athlete.stats.set_stat("set", 135 + index)
@@ -75,6 +77,10 @@ func _process(dt: float) -> bool:
  if not is_instance_valid(game):
   return false
  elapsed += dt
+ bot_seen = bot_seen or (game.practice.enabled and is_instance_valid(game.practice.bot) and game.practice.bot.visible and absf(game.practice.anchor.x - 2) < 0.01)
+ if game.lan.match_active:
+  push_error("A free-play room started a match without everyone's selection")
+  quit(1)
  var toss: VolleyTossPreview = game.get_node("TossPreview")
  toss._physics_process(0)
  if game.holding_ball() and game.athlete.holding_ball:
@@ -128,6 +134,8 @@ func _process(dt: float) -> bool:
     float_contact = true
    if game.ball.held and game.ball.athlete == a:
     held_seen = true
+   if held_seen and a.contact_count > 0:
+    served = true
   if saw_full and not fed and elapsed - full_at > 1.8:
    fed = true
    # First admitted client is the driver (orchestrator waits for its admission).
@@ -136,8 +144,6 @@ func _process(dt: float) -> bool:
    game.ball.athlete = actor
    game.ball.feed(actor.position + Vector3(0, 0.3, 0.5), Vector3.ZERO)
    print("LAN_BALL_OFFERED")
-  if held_seen and game.lan.round_live:
-   served = true
   if served and not second_fed and not game.automatic_serve_busy() and elapsed - full_at > 3.0:
    second_fed = true
    var actor: ContextAthlete = game.lan.players[game.lan.players.keys()[1]].actor
@@ -147,10 +153,10 @@ func _process(dt: float) -> bool:
    game.ball.athlete = actor
    game.ball.feed(actor.position + Vector3(0, 0.3, 0.5), Vector3.ZERO)
    print("LAN_FLOAT_BALL_OFFERED")
-  if saw_full and game.lan.players.size() == 11:
+  if saw_full and game.lan.players.size() < 12:
    disconnected = true
   if elapsed > 18:
-   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen and view_seen and hold_seen and float_seen and float_contact and private_remote_seen
+   var ok := saw_full and moved and jumped and held_seen and served and disconnected and stats_seen and view_seen and hold_seen and float_seen and float_contact and private_remote_seen and bot_seen
    print("LAN_PRIVATE_HELPERS host_remote_hidden=%s" % private_remote_seen)
    print("LAN_FLOAT_HOST_RESULT pose=%s contact=%s" % [float_seen, float_contact])
    print("LAN_HOST_RESULT full=%s moved=%s jumped=%s pickup=%s serve=%s disconnect=%s stats=%s view=%s hold=%s" % [saw_full, moved, jumped, held_seen, served, disconnected, stats_seen, view_seen, hold_seen])
@@ -219,6 +225,7 @@ func _process(dt: float) -> bool:
     reported = true
     client_passed = saw_full and game.lan.players.size() >= 11 and game.lan.snapshot_count > 100 and game.ball.replica and game.athlete.stats.values.set == 135 + index
     client_passed = client_passed and stats_seen and view_seen and float_seen
+    client_passed = client_passed and bot_seen and game.practice.bot.replica
     client_passed = client_passed and (private_local_seen if index == 1 else private_remote_seen)
     print("LAN_PRIVATE_HELPERS client=%d own=%s foreign_hidden=%s" % [index, private_local_seen, private_remote_seen])
     if index == 1:

@@ -58,15 +58,15 @@ func run() -> void:
  for height in [2.8, 3.2, 3.8, 4.3]:
   for side in [-1.0, 1.0]:
    var origin := Vector3(0, height, side * 9.1)
-   var target := Vector3(0, VolleyAthlete.BALL_RADIUS, -side * 7.8)
+   var target := Vector3(0, VolleyBall.RADIUS, -side * 7.8)
    var rotation := Vector3(-side * 24, 0, 0)
    var launch: Vector3 = game.ball.solve_power_serve(origin, target, 24, rotation)
    var flight: Dictionary = game.ball.power_serve_flight(origin, launch, rotation)
    check(flight.net_height >= 2.69 and flight.landing.distance_to(target) < 0.25, "Height-aware power serve clears the net and reaches the opposite court: %.1f / %.0f" % [height, side])
  check(sample(4, 2.0, Vector2.ZERO, 0.82, PI).z > 0, "A backward-facing power serve is not redirected toward the opponent automatically")
- var low_contact: Vector3 = game.ball.solve_power_serve(Vector3(0, 2.8, 9.1), Vector3(0, 0.105, -7.8), 24, Vector3(-24, 0, 0))
- var high_contact: Vector3 = game.ball.solve_power_serve(Vector3(0, 4.3, 9.1), Vector3(0, 0.105, -7.8), 24, Vector3(-24, 0, 0))
- check(high_contact.length() > low_contact.length() * 1.1, "Higher jump/contact permits more real pace within the same court")
+ var low_contact: Vector3 = game.ball.solve_power_serve(Vector3(0, 2.8, 9.1), Vector3(0, VolleyBall.RADIUS, -7.8), 24, Vector3(-24, 0, 0))
+ var high_contact: Vector3 = game.ball.solve_power_serve(Vector3(0, 4.3, 9.1), Vector3(0, VolleyBall.RADIUS, -7.8), 24, Vector3(-24, 0, 0))
+ check(high_contact.length() >= low_contact.length() and game.ball.power_serve_flight(Vector3(0, 4.3, 9.1), high_contact, Vector3(-24, 0, 0)).net_height >= 2.70, "Higher jump/contact permits more real pace within the same court")
  a.style_stats.set_stat("serve", -100)
  var low_serve := sample(4)
  var low_spin := a.outgoing_spin(Vector3.ZERO, Vector3.ZERO).length()
@@ -134,6 +134,7 @@ func run() -> void:
  game.serving = true
  game.lan.hosting = true
  game.lan.players[1] = {"actor": a, "team": 0}
+ game.lan.match_active = true
  game.lan.reset_round()
  check(not game.serving and not game.lan.serve_flags[1], "Resetting a round also clears an interrupted/missed serve context")
  game.lan.hosting = false

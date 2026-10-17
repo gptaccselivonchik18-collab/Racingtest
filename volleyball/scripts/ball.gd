@@ -1,6 +1,8 @@
 class_name VolleyBall
 extends RigidBody3D
 
+const RADIUS := 0.155
+
 signal surface_contact(surface: String)
 @export var air_density := 1.2
 @export var drag_coefficient := 0.20
@@ -60,11 +62,11 @@ func aim_throw_at(camera: Camera3D, screen: Vector2) -> bool:
  if ray.y >= -0.025:
   return false
  var origin := camera.project_ray_origin(screen)
- var target := origin + ray * ((VolleyAthlete.BALL_RADIUS - origin.y) / ray.y)
+ var target := origin + ray * ((VolleyBall.RADIUS - origin.y) / ray.y)
  var offset := target - athlete.hold_position()
  offset.y = 0
  throw_target = athlete.hold_position() + offset.limit_length(14)
- throw_target.y = VolleyAthlete.BALL_RADIUS
+ throw_target.y = VolleyBall.RADIUS
  return true
 
 func aim_toss(relative: Vector2) -> void:
@@ -72,7 +74,7 @@ func aim_toss(relative: Vector2) -> void:
 
 func upward_for_height(height: float) -> float:
  # Integrate quadratic vertical drag analytically to reach the chosen apex.
- var drag := 0.5 * air_density * drag_coefficient * PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS / mass
+ var drag := 0.5 * air_density * drag_coefficient * PI * VolleyBall.RADIUS * VolleyBall.RADIUS / mass
  if drag < 0.00001:
   return sqrt(2.0 * 9.81 * height)
  return sqrt(9.81 / drag * (exp(2.0 * drag * height) - 1.0))
@@ -92,7 +94,7 @@ func throw_velocity() -> Vector3:
 
 func solve_launch(start: Vector3, destination: Vector3, apex: float, launch_spin := FEED_SPIN) -> Vector3:
  var upward := upward_for_height(apex)
- var flight_time := (upward + sqrt(upward * upward + 2 * 9.81 * maxf(0, start.y - VolleyAthlete.BALL_RADIUS))) / 9.81
+ var flight_time := (upward + sqrt(upward * upward + 2 * 9.81 * maxf(0, start.y - VolleyBall.RADIUS))) / 9.81
  var offset := destination - start
  offset.y = 0
  var speed := offset / flight_time + Vector3.UP * upward
@@ -106,7 +108,7 @@ func solve_launch(start: Vector3, destination: Vector3, apex: float, launch_spin
    v += (Vector3.DOWN * 9.81 + aero_force(v, launch_spin) / mass) * step
    at += v * step
    time += step
-   if at.y <= VolleyAthlete.BALL_RADIUS:
+   if at.y <= VolleyBall.RADIUS:
     break
   var correction := (destination - at) / maxf(time, 0.1)
   correction.y = 0
@@ -123,7 +125,7 @@ func power_serve_flight(start: Vector3, velocity: Vector3, spin: Vector3) -> Dic
   at += velocity / 120.0
   if previous.z * at.z < 0:
    net_height = previous.lerp(at, previous.z / (previous.z - at.z)).y
-  if at.y <= VolleyAthlete.BALL_RADIUS:
+  if at.y <= VolleyBall.RADIUS:
    break
  return {"landing": at, "net_height": net_height}
 
@@ -159,7 +161,7 @@ func solve_power_serve(start: Vector3, destination: Vector3, speed: float, spin:
  return launch
 
 func aero_force(speed: Vector3, spin: Vector3) -> Vector3:
- var area := PI * VolleyAthlete.BALL_RADIUS * VolleyAthlete.BALL_RADIUS
+ var area := PI * VolleyBall.RADIUS * VolleyBall.RADIUS
  return (spin.cross(speed) * magnus_coefficient).limit_length(magnus_force_limit) - speed * speed.length() * 0.5 * air_density * drag_coefficient * area
 
 func preview_points() -> PackedVector3Array:
@@ -174,7 +176,7 @@ func preview_points() -> PackedVector3Array:
   spin *= 1.0 - angular_damp * step
   var next := at + speed * step
   var ray := PhysicsRayQueryParameters3D.create(at, next, 1)
-  if next.y <= VolleyAthlete.BALL_RADIUS or not get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+  if next.y <= VolleyBall.RADIUS or not get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
    break
   at = next
   if tick % 5 == 4:
@@ -188,14 +190,14 @@ func can_pick_up_for(candidate: VolleyAthlete) -> bool:
  if held or pending_feed or (last_velocity if replica else linear_velocity).length() > 3.0:
   return false
  var offset := global_position - candidate.global_position
- if Vector2(offset.x, offset.z).length() > 1.15 or offset.y > 1.8 or offset.y < -0.2:
+ if Vector2(offset.x, offset.z).length() > 1.6 or offset.y > 2.0 or offset.y < -0.2:
   return false
  var ray := PhysicsRayQueryParameters3D.create(candidate.global_position + Vector3(0, 1.0, 0), global_position, 1)
  return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 
 func pick_up() -> bool:
  if not can_pick_up():
-  athlete.last_result = "Подойдите к медленному мячу (до 1.15 м)"
+  athlete.last_result = "Подойдите к медленному мячу (до 1.6 м)"
   return false
  clear_float()
  clear_attack()
@@ -204,7 +206,7 @@ func pick_up() -> bool:
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
  throw_target = athlete.hold_position() + forward.normalized() * 6.0
- throw_target.y = VolleyAthlete.BALL_RADIUS
+ throw_target.y = VolleyBall.RADIUS
  toss_yaw = 0
  athlete.holding_ball = true
  athlete.cancel_input()
@@ -265,10 +267,10 @@ func _ready() -> void:
  physics_material_override = mat
  var cs := CollisionShape3D.new()
  var shape := SphereShape3D.new()
- shape.radius = VolleyAthlete.BALL_RADIUS
+ shape.radius = VolleyBall.RADIUS
  cs.shape = shape
  add_child(cs)
- var ball_mesh := VolleyGeometry.sphere(self, Vector3.ZERO, VolleyAthlete.BALL_RADIUS, Color("ffdf79"))
+ var ball_mesh := VolleyGeometry.sphere(self, Vector3.ZERO, VolleyBall.RADIUS, Color("ffdf79"))
  var shader := Shader.new()
  shader.code = "shader_type spatial; void fragment(){float p=sin(UV.x*18.8496+sin(UV.y*12.566)*0.6); ALBEDO=p>0.25?vec3(0.97,0.96,0.88):(p< -0.25?vec3(0.08,0.27,0.44):vec3(0.98,0.72,0.17)); ROUGHNESS=0.7;}"
  var material := ShaderMaterial.new()

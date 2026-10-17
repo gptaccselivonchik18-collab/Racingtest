@@ -191,7 +191,7 @@ func run() -> void:
  check(ui.move_id == 33, "Held-mode toggle preserves the movement finger")
  ui._touch_up(33)
  game.rig._process(1)
- var target := Vector3(1.6, VolleyAthlete.BALL_RADIUS, 1.8)
+ var target := Vector3(1.6, VolleyBall.RADIUS, 1.8)
  var screen: Vector2 = game.camera.unproject_position(target)
  ui._touch_down(22, screen)
  ui._touch_up(22)

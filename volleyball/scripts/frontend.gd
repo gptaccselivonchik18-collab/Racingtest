@@ -47,7 +47,7 @@ func _ready() -> void:
  author.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(author)
  var version := Label.new()
- version.text = "0.17"
+ version.text = "0.18"
  version.add_theme_font_size_override("font_size", 15)
  version.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(version)
@@ -249,6 +249,7 @@ func show_room() -> void:
  _open_page("room")
  _label("СЕТЕВАЯ ИГРА", 15)
  _heading("КОМНАТА")
+ _label("Свободная игра. Для матча всем нужно встать в цветные зоны справа от площадки.", 17)
  info = _label("", 18)
  if game.lan.hosting:
   _button("Скопировать IP", func(): DisplayServer.clipboard_set(game.lan.addresses().get_slice(",", 0).strip_edges()))
@@ -281,7 +282,7 @@ func _refresh() -> void:
   for id in game.lan.players:
    var entry: Dictionary = game.lan.players[id]
    teams[entry.team].append("№%d%s" % [entry.slot + 1, " (вы)" if id == multiplayer.get_unique_id() else ""])
-  roster_label.text = "Сторона A   " + ", ".join(teams[0]) + "\nСторона Б   " + ", ".join(teams[1])
+  roster_label.text = "Сторона A   " + ", ".join(teams[0]) + "\nСторона Б   " + ", ".join(teams[1]) if game.lan.match_active else "Свободная разминка • %d игроков" % game.lan.players.size()
 
 func enter_court() -> void:
  in_home = false

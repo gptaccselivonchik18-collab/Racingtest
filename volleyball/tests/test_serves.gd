@@ -44,10 +44,10 @@ func trial(jumping: bool, timing: int, side: float) -> Dictionary:
    game.finish_action("primary")
   await physics_frame
   hit = a.contact_count > contacts
-  if hit and game.ball.position.y <= 0.14:
+  if hit and game.ball.position.y <= VolleyBall.RADIUS + 0.035:
    var at: Vector3 = game.ball.position
    print("Serve jump=%s timing=%d side=%d landed=%s" % [jumping, timing, int(side), at])
-   return {"hit": true, "in": at.z * side < -0.15 and absf(at.x) <= 4.605 and absf(at.z) <= 9.105 and game.rules.serve_crossed}
+   return {"hit": true, "in": at.z * side < -0.15 and absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9 + VolleyBall.RADIUS and game.rules.serve_crossed}
   if not hit and frame > 155:
    return {"hit": false, "in": false}
  return {"hit": hit, "in": false}

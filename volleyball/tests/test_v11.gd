@@ -20,7 +20,7 @@ func check(ok: bool, note: String) -> void:
 
 func distribution(skill: float) -> Dictionary:
  var result := {"error": 0.0, "slips": 0, "out": 0, "close": 0, "spin": 0.0}
- var aim := Vector3(0, 0.105, -5)
+ var aim := Vector3(0, VolleyBall.RADIUS, -5)
  game.float_serve.rng.seed = 11011
  for i in range(2000):
   var sample: Dictionary = game.float_serve.sample_delivery(aim, skill)
@@ -55,7 +55,7 @@ func trial(side: float, seed_value: int) -> Dictionary:
   return {"hit": false}
  game.float_serve.rng.seed = seed_value
  var before: int = a.contact_count
- if not game.float_serve.launch(a, Vector3(0, 0.105, -side * 5), 1.8):
+ if not game.float_serve.launch(a, Vector3(0, VolleyBall.RADIUS, -side * 5), 1.8):
   return {"hit": false}
  var active := false
  var spin := 99.0
@@ -102,7 +102,7 @@ func run() -> void:
   game.athlete.position.z = side * 9.6
   game.float_serve.open()
   game.float_serve.choose_target()
-  var point := Vector3(1.2, 0.105, -side * 5.5)
+  var point := Vector3(1.2, VolleyBall.RADIUS, -side * 5.5)
   var selected: Variant = game.float_serve.target_from_screen(game.float_serve.top_camera.unproject_position(point))
   check(selected is Vector3 and selected.distance_to(point) < 0.01 and game.float_serve.top_camera.position.z * side < 0, "Top view selects the opposite court on side %.0f" % side)
   check(not game.float_serve.opposite_target(Vector3(0, 0, side * 5), side), "Float targeting rejects the player's own half on side %.0f" % side)
@@ -118,7 +118,7 @@ func run() -> void:
  var lower_error := 0.0
  game.lower_serve.rng.seed = 11011
  for i in range(2000):
-  lower_error += game.lower_serve.sample_error(Vector3(0, 0.105, -5), 0.5).target.distance_to(Vector3(0, 0.105, -5))
+  lower_error += game.lower_serve.sample_error(Vector3(0, VolleyBall.RADIUS, -5), 0.5).target.distance_to(Vector3(0, VolleyBall.RADIUS, -5))
  check(normal.error > lower_error / 2000 * 2.3, "Float target spread is several times harder than lower serve")
  var flight := VolleyFloatFlight.new()
  flight.configure(0.5, 1135)

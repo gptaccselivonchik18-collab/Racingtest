@@ -20,6 +20,7 @@ for plist in Path('build/ios').rglob('*.plist'):
             data = plistlib.loads(plist.read_bytes())
         except Exception:
             continue
+        data['CADisableMinimumFrameDurationOnPhone'] = True
         data['NSLocalNetworkUsageDescription'] = 'Connect to a volleyball room on your Wi-Fi network or personal hotspot.'
         plist.write_bytes(plistlib.dumps(data))
 PYPLIST

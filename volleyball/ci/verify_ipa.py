@@ -16,9 +16,10 @@ with zipfile.ZipFile(path) as archive:
     assert struct.unpack_from("<I", data, 4)[0] == 0x0100000C, "Expected arm64"
     assert info["CFBundleIdentifier"] == "org.volleylab.simulator"
     assert "iPhoneOS" in info["CFBundleSupportedPlatforms"], "Simulator build rejected"
+    assert info.get("CADisableMinimumFrameDurationOnPhone") is True, "Missing ProMotion support"
     assert info.get("NSLocalNetworkUsageDescription"), "Missing iOS LAN permission description"
-    assert info["CFBundleShortVersionString"] == "0.17.0"
-    assert info["CFBundleVersion"] == "17"
+    assert info["CFBundleShortVersionString"] == "0.18.0"
+    assert info["CFBundleVersion"] == "18"
     assert "UISupportedInterfaceOrientations" in info, "Missing orientation declarations"
     for key in ("UISupportedInterfaceOrientations", "UISupportedInterfaceOrientations~ipad"):
         if key in info:

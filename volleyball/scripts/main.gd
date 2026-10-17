@@ -16,10 +16,17 @@ var lan: VolleyLAN
 var frontend: VolleyFrontend
 var lower_serve: VolleyLowerServe
 var float_serve: VolleyFloatServe
+var practice: VolleyPractice
+var frame_rate: VolleyFrameRate
+var feedback_text := ""
+var feedback_color := Color.WHITE
+var feedback_left := 0.0
 
 func _ready() -> void:
  if OS.get_name() in ["iOS", "Android"]:
   DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
+ frame_rate = VolleyFrameRate.new()
+ add_child(frame_rate)
  _court()
  athlete = ContextAthlete.new()
  athlete.name = "Athlete"
@@ -43,6 +50,7 @@ func _ready() -> void:
  strike_preview.viewer = athlete
  add_child(strike_preview)
  athlete.touched.connect(_on_touch)
+ athlete.block_missed.connect(func(): _on_block_missed(athlete, lan.player_id(athlete)))
  ball.surface_contact.connect(_on_surface)
  ball_shadow = VolleyGeometry.sphere(self, Vector3.ZERO, 0.16, Color("143c42"))
  ball_shadow.scale.y = 0.02
@@ -65,6 +73,10 @@ func _ready() -> void:
  float_serve = VolleyFloatServe.new()
  float_serve.game = self
  layer.add_child(float_serve)
+ practice = VolleyPractice.new()
+ practice.game = self
+ add_child(practice)
+ hud.add_bot_settings()
  frontend = VolleyFrontend.new()
  frontend.game = self
  layer.add_child(frontend)
@@ -126,6 +138,7 @@ func _court() -> void:
  add_child(sign_text)
 
 func _process(_dt: float) -> void:
+ feedback_left = maxf(0, feedback_left - _dt)
  for entry in ([athlete] if not lan.active else lan.players.values().map(func(p: Dictionary): return p.actor)):
   entry.look_target = ball.global_position
   entry.look_target_valid = true
@@ -135,6 +148,8 @@ func _process(_dt: float) -> void:
 
 func _physics_process(_dt: float) -> void:
  if lan.active and not lan.hosting:
+  return
+ if lan.active and not lan.match_active:
   return
  if not ball.held and not ball.pending_feed:
   if previous_ball_valid:
@@ -156,6 +171,20 @@ func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
+ if kind == ContextAthlete.BLOCK:
+  var pierced := bool(actor.duel_result.get("pierced", false))
+  var text := "БЛОК ПРОБИТ" if pierced else "БЛОК! МЯЧ ОТБИТ"
+  if not lan.active or actor == athlete:
+   show_feedback(text, pierced)
+  if lan.active and lan.hosting and id != 1 and lan.players.has(id):
+   lan.contact_feedback.rpc_id(id, text, pierced)
+ if lan.active and not lan.match_active:
+  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+   serving = false
+   if lan.serve_flags.has(id):
+    lan.serve_flags[id] = false
+  actor.last_result = "Свободная игра • " + actor.last_result
+  return
  var side: int = lan.players[id].team if lan.active and lan.players.has(id) else (0 if actor.position.z >= 0 else 1)
  rules.touch(side, id, kind, actor.strike_count)
  if lan.active:
@@ -180,6 +209,8 @@ func begin_bump() -> bool:
 
 func _on_surface(surface: String) -> void:
  if lan.active and not lan.hosting:
+  return
+ if lan.active and not lan.match_active:
   return
  if surface == "floor":
   rules.floor_contact(ball.global_position)
@@ -337,3 +368,16 @@ func serve_start() -> void:
  rules.reset(true)
  serving = true
  athlete.last_result = "Подберите мяч • основная кнопка — подброс"
+
+func show_feedback(text: String, failed: bool) -> void:
+ feedback_text = text
+ feedback_color = Color("ff987d") if failed else Color("bbf275")
+ feedback_left = 1.3
+ if OS.get_name() in ["Android", "iOS"]:
+  Input.vibrate_handheld(35 if failed else 65)
+
+func _on_block_missed(actor: ContextAthlete, id: int) -> void:
+ if not lan.active or actor == athlete:
+  show_feedback("БЛОК: НЕТ КАСАНИЯ", true)
+ elif lan.hosting and lan.players.has(id):
+  lan.contact_feedback.rpc_id(id, "БЛОК: НЕТ КАСАНИЯ", true)

@@ -60,7 +60,7 @@ func touch(side: int, player: int, kind: int, action_id: int) -> bool:
 
 func floor_contact(point: Vector3) -> void:
  # A ball touching a boundary line is in. Its radius matters.
- var inside := absf(point.x) <= 4.5 + VolleyAthlete.BALL_RADIUS and absf(point.z) <= 9 + VolleyAthlete.BALL_RADIUS
+ var inside := absf(point.x) <= 4.5 + VolleyBall.RADIUS and absf(point.z) <= 9 + VolleyBall.RADIUS
  if serving and not serve_crossed:
   fault("Ошибка подачи: мяч не пересёк сетку")
  else:
@@ -71,9 +71,9 @@ func crossing(from: Vector3, to: Vector3) -> void:
   return
  var t := from.z / (from.z - to.z)
  var crossing_point := from.lerp(to, t)
- if absf(crossing_point.x) > 4.5 - VolleyAthlete.BALL_RADIUS:
+ if absf(crossing_point.x) > 4.5 - VolleyBall.RADIUS:
   fault("Мяч вне антенн")
- elif crossing_point.y < 2.43 + VolleyAthlete.BALL_RADIUS:
+ elif crossing_point.y < 2.43 + VolleyBall.RADIUS:
   # A ball crossing underneath the net is not a valid crossing.
   fault("Под сеткой")
  else:

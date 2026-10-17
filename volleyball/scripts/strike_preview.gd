@@ -54,7 +54,7 @@ func _physics_process(dt: float) -> void:
   var ray := PhysicsRayQueryParameters3D.create(at, next, 1)
   var hit := get_world_3d().direct_space_state.intersect_ray(ray)
   at = next
-  if not hit.is_empty() or at.y <= VolleyAthlete.BALL_RADIUS:
+  if not hit.is_empty() or at.y <= VolleyBall.RADIUS:
    landed = at.y < 0.20 or (not hit.is_empty() and hit.collider.get_meta("surface", "") == "floor")
    break
   if tick % 4 == 0:

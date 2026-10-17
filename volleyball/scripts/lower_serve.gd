@@ -114,7 +114,7 @@ func opposite_target(point: Vector3, side: float) -> bool:
  return point.is_finite() and absf(point.x) <= 4.5 and point.z * side <= -0.15 and point.z * side >= -9.0
 
 func target_from_screen(at: Vector2) -> Variant:
- var plane := Plane(Vector3.UP, VolleyAthlete.BALL_RADIUS)
+ var plane := Plane(Vector3.UP, VolleyBall.RADIUS)
  var point: Variant = plane.intersects_ray(top_camera.project_ray_origin(at), top_camera.project_ray_normal(at))
  return point if point is Vector3 and opposite_target(point, source_side) else null
 

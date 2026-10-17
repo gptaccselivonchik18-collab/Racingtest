@@ -22,7 +22,7 @@ func capture() -> void:
   game.rig.pitch = 0.05
   if OS.get_environment("VOLLEY_CAPTURE_THROW") == "1":
    game.ball.toggle_held_mode()
-   game.ball.throw_target = Vector3(1.2, VolleyAthlete.BALL_RADIUS, 6.7)
+   game.ball.throw_target = Vector3(1.2, VolleyBall.RADIUS, 6.7)
  if OS.get_environment("VOLLEY_CAPTURE_COMBO") == "1":
   for i in range(20):
    await physics_frame

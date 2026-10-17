@@ -3,8 +3,9 @@ extends VolleyAthlete
 
 # The base resources stay intact; the additive rig refines limbs and poses.
 signal touched(kind: int, point: Vector3, outgoing: Vector3)
-@export var contact_ball_radius := 0.38
-@export var serve_contact_radius := 0.64
+signal block_missed
+@export var contact_ball_radius := 0.50
+@export var serve_contact_radius := 0.76
 var serve_solver: Callable
 var power_serve_solver: Callable
 var style_stats := VolleyStyleStats.new()
@@ -18,6 +19,16 @@ func mechanic(kind: int) -> Dictionary:
 
 @export var air_acceleration := 0.65
 var replica := false
+var network_position := Vector3.ZERO
+var network_age := -1.0
+var network_pose_time := 0.0
+
+func accept_network_position(at: Vector3) -> void:
+ if network_age < 0 or position.distance_to(at) > 2.0:
+  position = at
+ network_position = at
+ network_age = 0
+
 var lower_serve_active := false
 var float_serve_active := false
 var approach_armed := false
@@ -129,7 +140,7 @@ func serve_target(point: Vector3) -> Vector3:
  var forward := -visual.global_basis.z
  var z := -side * depth
  var x := point.x + forward.x / maxf(0.25, absf(forward.z)) * absf(z - point.z) + visual.global_basis.x.x * input.x * 3.7
- return Vector3(x, BALL_RADIUS, z)
+ return Vector3(x, VolleyBall.RADIUS, z)
 
 func power_serve_speed() -> float:
  # Serve owns delivery/control; Spike contributes only strike efficiency.
@@ -162,6 +173,10 @@ func _ready() -> void:
 func _process(dt: float) -> void:
  if not replica or not pose_ready:
   return
+ if network_age >= 0:
+  network_age += dt
+  var target := network_position + velocity * minf(network_age, 0.08)
+  position = position.lerp(target, 1.0 - exp(-30.0 * dt))
  # Server snapshots remain authoritative; evaluate limb curves every rendered
  # frame so a 30 Hz network update does not freeze arms between packets.
  action_time += dt
@@ -420,6 +435,8 @@ func _physics_process(dt: float) -> void:
   action_time = 0
   if not hit_used:
    last_result = "Промах • R — следующий мяч"
+   if strike_technique == BLOCK:
+    block_missed.emit()
  elif action == Action.RECOVER and action_time > mechanic(strike_technique).recovery and dive_time < 0:
   action = Action.IDLE
  advance_gait(dt)
@@ -511,6 +528,14 @@ func effective_contact_radius() -> float:
  return (serve_contact_radius if strike_technique in [Technique.SERVE, Technique.JUMP_SERVE] else contact_ball_radius) * float(mechanic(strike_technique).radius)
 
 func overlap_at(center: Vector3, fraction: float) -> bool:
+ # Bump/dive use the whole moving body: feet, legs, chest and head. The
+ # action window and world occlusion still apply; this is not an auto-hit.
+ if strike_technique in [Technique.UNDERHAND, DIVE]:
+  var local := visual.to_local(center)
+  var spine := Vector3(0, clampf(local.y, 0.20, 1.65), 0)
+  var anchor := visual.to_global(spine)
+  if center.distance_to(anchor) <= 0.32 + effective_contact_radius() and contact_clear(center, anchor):
+   return true
  for i in range(2):
   if strike_technique in [Technique.SPIKE, Technique.SERVE, Technique.JUMP_SERVE, TIP] and i == 0:
    continue

@@ -108,7 +108,7 @@ func _menu() -> void:
  content.add_theme_constant_override("separation", 12)
  menu.add_child(content)
  var title := Label.new()
- title.text = "   VOLLEY / LAB  0.17"
+ title.text = "   VOLLEY / LAB  0.18"
  title.add_theme_font_size_override("font_size", 24)
  content.add_child(title)
  tabs = TabContainer.new()
@@ -588,7 +588,7 @@ func _look_or_aim(relative: Vector2) -> void:
    var offset: Vector3 = game.ball.throw_target - start
    offset.y = 0
    game.ball.throw_target = start + offset.limit_length(14)
-   game.ball.throw_target.y = VolleyAthlete.BALL_RADIUS
+   game.ball.throw_target.y = VolleyBall.RADIUS
   else:
    game.rig.look(relative)
    game.ball.aim_toss(relative)
@@ -667,6 +667,8 @@ func _process(dt: float) -> void:
   status.text = "Разбег: нажмите и отпустите АТАКУ → прыжок с замахом"
  if game.lan.active:
   status.text = "A %d : %d Б • %d/12 • " % [game.lan.scores[0], game.lan.scores[1], game.lan.players.size()] + (game.rules.message if game.rules.ended else a.last_result)
+ if game.lan.active and not game.lan.match_active:
+  status.text = game.lan.ready_message + " • " + a.last_result
  if edit_mode:
   status.text = ""
  queue_redraw()
@@ -706,6 +708,13 @@ func _draw() -> void:
   draw_string(font, at - Vector2(0, 5), ("ДОЛЬШЕ → МЯГЧЕ  %d%%" if game.athlete.is_receive(game.athlete.technique) else "СИЛА  %d%%") % int(game.athlete.power * 100), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color("f4cf77"))
   draw_line(at + Vector2(0, 12), at + Vector2(180, 12), Color("334d5c"), 5)
   draw_line(at + Vector2(0, 12), at + Vector2(180 * game.athlete.power, 12), Color("f4cf77"), 5)
+ if game.feedback_left > 0 and not edit_mode:
+  var box := Rect2(Vector2(size.x * 0.5 - 200, size.y * 0.29), Vector2(400, 58))
+  draw_style_box(_panel(Color(0.025, 0.07, 0.11, 0.94)), box)
+  draw_string(font, box.position + Vector2(8, 37), game.feedback_text, HORIZONTAL_ALIGNMENT_CENTER, 384, 23, game.feedback_color)
+  for x in [-1, 1]:
+   draw_line(size * 0.5 + Vector2(x * 14, -10), size * 0.5 + Vector2(x * 25, -18), game.feedback_color, 4, true)
+ draw_string(font, Vector2(24, size.y - 12), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("a7bdc9"))
  draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
  if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and game.athlete.tilt_affects(game.athlete.technique) and not edit_mode:
   var at := Vector2(size.x * 0.5, size.y - 168)
@@ -724,3 +733,6 @@ func _panel(color: Color, corners := 12) -> StyleBoxFlat:
  style.content_margin_top = 8
  style.content_margin_bottom = 8
  return style
+
+func add_bot_settings() -> void:
+ game.practice.add_settings(self)

@@ -13,6 +13,8 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/handheld/orientation=6
+window/ios/allow_high_refresh_rate=true
+window/vsync/vsync_mode=1
 
 [rendering]
 renderer/rendering_method="gl_compatibility"
