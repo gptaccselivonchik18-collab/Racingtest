@@ -90,6 +90,9 @@ func run() -> void:
  game.lower_serve.cancel_sequence()
  game.float_serve.cancel_sequence()
  server.serves = 3
+ # Risky jump serves are now selected only at strong/pro tactical levels.
+ # Keep the physical skill fixture unchanged while enabling that decision.
+ manager.difficulty = 3
  server.prepare_serve()
  for tick in range(800):
   await physics_frame
