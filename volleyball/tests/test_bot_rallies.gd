@@ -68,7 +68,7 @@ func match_scenario(count: int, seconds: int) -> void:
  check(net_faults <= 2 and double_faults <= 2, "Bot rallies are not repeatedly ended by net collisions or illegal team contacts")
  if count > 1:
   check(active >= 5, "Front and rear teammates participate rather than leaving most bots idle")
-  check(int(kinds.get(0, 0)) >= 4 and int(kinds.get(2, 0)) >= 4, "Teams repeatedly construct sets followed by genuine attacks")
+  check(int(kinds.get(0, 0)) + int(kinds.get(ContextAthlete.JUMP_SET, 0)) >= 4 and int(kinds.get(2, 0)) >= 4, "Teams repeatedly construct grounded/jump sets followed by genuine attacks")
   check(jumps >= 4 and dives >= (1 if count == 6 else 2), "Blocking/attacking jumps and diving saves occur during an unassisted match")
  else:
   check(int(kinds.get(2, 0)) > 0, "A lone bot attacks legal high balls instead of only exchanging lower receives forever")

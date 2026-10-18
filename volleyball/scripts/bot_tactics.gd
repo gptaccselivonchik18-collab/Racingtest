@@ -28,6 +28,12 @@ func human_pickup_near() -> bool:
    return true
  return false
 
+func jump_set_useful(actor: VolleyGameBot) -> bool:
+ var ball: VolleyBall = manager.game.ball
+ # Take high balls early near the net or on a fast lateral pass. A calm,
+ # deep set is safer on the floor; jumping is not an automatic upgrade.
+ return manager.difficulty >= 2 and manager.last_team == actor.court_team and manager.touches == 1 and (absf(ball.position.z) < 2.0 or Vector2(ball.linear_velocity.x, ball.linear_velocity.z).length() > 2.5)
+
 func choose_receivers() -> void:
  var difficulty := manager.decision_profile()
  for team in range(2):
@@ -79,6 +85,13 @@ func choose_receivers() -> void:
      diving = true
     var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
     var preferred := 2.95 if high else 2.05 if manager.last_team == team else 1.35
+    if actor is VolleyGameBot and jump_set_useful(actor):
+     var lift := maxf(0, point.y - 2.15)
+     var time := minf(0.50, available)
+     var needed := (lift + 4.905 * time * time) / maxf(0.01, time)
+     if point.y > 2.55 and (time < 0.20 or needed > sqrt(19.62 * float(physical.jump_height))):
+      continue
+     preferred = minf(2.95, 2.15 + float(physical.jump_height) * 0.75)
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
     cost += 0.55 if diving else 0.0
     if not actor is VolleyGameBot:

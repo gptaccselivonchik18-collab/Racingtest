@@ -95,6 +95,8 @@ func decide(_dt: float) -> void:
   reaction_until = manager.clock + float(VolleyBotDifficulty.profile(manager.difficulty).reaction) * (0.82 + fposmod(absi(bot_id) * 0.173, 0.36))
  look_target = ball.position
  look_target_valid = true
+ if ball.pending_feed:
+  return
  if (manager.solo_match and manager.round_wait >= 0) or (game.lan.match_active and game.lan.round_wait >= 0):
   move_axis = Vector2.ZERO
   return
@@ -212,6 +214,8 @@ func decide(_dt: float) -> void:
    var kind := Technique.UNDERHAND
    if manager.last_team == court_team and manager.touches > 0:
     kind = Technique.OVERHEAD
+    if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55:
+     kind = JUMP_SET
    var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
    if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5) or solo_attack) and float(manager.contact_heights[court_team]) > 2.65:
     kind = Technique.SPIKE
@@ -224,10 +228,32 @@ func decide(_dt: float) -> void:
    elif begin_action(kind):
     planned_kind = kind
   if action == Action.PREPARE:
+   if planned_kind == Technique.OVERHEAD and manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55 and remaining > 0.20 and not airborne():
+    planned_kind = JUMP_SET
+    technique = JUMP_SET
+   elif planned_kind == JUMP_SET and not airborne() and remaining < 0.20 and float(manager.contact_heights[court_team]) < 2.55:
+    planned_kind = Technique.OVERHEAD
+    technique = Technique.OVERHEAD
    var aim := manager.target_for(self, planned_kind)
    var toward := aim - position
    camera_yaw = atan2(-toward.x, -toward.z)
-   camera_pitch = deg_to_rad(55 if planned_kind == Technique.OVERHEAD else 20)
+   camera_pitch = deg_to_rad(55 if planned_kind in [Technique.OVERHEAD, JUMP_SET] else 20)
+   # Hands face the intended pass, which may be sideways or behind us.
+   # Align the body behind that contact rather than always behind the net.
+   if planned_kind in [Technique.OVERHEAD, JUMP_SET]:
+    var contact := at - Vector3(0, 0, side * 0.34)
+    var forward := -visual.global_basis.z
+    forward.y = 0
+    forward = forward.normalized()
+    steer(contact - forward * 0.45, 0.05)
+   if planned_kind == JUMP_SET and not airborne() and remaining > 0.16 and remaining < 0.55:
+    var lift := maxf(0.15, float(manager.contact_heights[court_team]) - 2.15)
+    var needed := (lift + 4.905 * remaining * remaining) / remaining
+    if needed <= sqrt(19.62 * float(style_stats.movement().jump_height)) and horizontal < 0.85:
+     jump()
+     if velocity.y > 0:
+      velocity.y = minf(velocity.y, needed)
+      jumps += 1
    if planned_kind == Technique.SPIKE and not airborne() and remaining < 0.45:
     jump(true)
     if velocity.y > 0:
@@ -237,7 +263,9 @@ func decide(_dt: float) -> void:
      jumps += 1
    var local_height := ball.position.y - position.y
    var reachable := local_height < (3.0 if planned_kind == Technique.SPIKE else 2.65) and local_height > (1.85 if planned_kind == Technique.SPIKE else 0.4)
-   if horizontal < 1.0 and reachable and (remaining < 0.17 or local_height < 1.0) and charged_for >= 0.13:
+   var windup := float(mechanic(planned_kind).windup)
+   var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]
+   if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or (not receive and horizontal < 1.0 and reachable and remaining < 0.17)):
     release()
    elif charged_for > 1.05:
     cancel_input()
@@ -252,6 +280,32 @@ func decide(_dt: float) -> void:
   var support := manager.tactics.support(self)
   steer(support)
   camera_yaw = 0 if side > 0 else PI
+
+func contact_due() -> bool:
+ # Time the real animation window using this player's current skill profile.
+ # This only decides when to release; normal swept collision still decides hits.
+ var p := mechanic(planned_kind)
+ var ball: VolleyBall = manager.game.ball
+ var radius := contact_ball_radius * float(p.radius)
+ for phase in [maxf(float(p.start), 0.22), 0.47, minf(float(p.end), 0.80)]:
+  var time: float = float(p.duration) * float(phase)
+  var point := ball.position + ball.linear_velocity * time + Vector3.DOWN * 4.905 * time * time
+  var drift := Vector3(velocity.x, 0, velocity.z) * time * 0.5
+  if airborne():
+   drift = velocity * time + Vector3.DOWN * 4.905 * time * time
+  if planned_kind == Technique.UNDERHAND:
+   var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20, 1.65)
+   if point.distance_to(spine) < radius + 0.25:
+    return true
+  else:
+   var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
+   var yaw := clampf(angle_difference(visual.rotation.y, camera_yaw), -turn, turn)
+   var offset := (wrists[0] + wrists[1]) * 0.5 - position
+   offset -= visual.global_basis.z * (0.35 * float(phase))
+   var hands := position + offset.rotated(Vector3.UP, yaw) + drift + Vector3.UP * (0.35 * sin(float(phase) * PI * 0.5))
+   if point.distance_to(hands) < radius + HAND_RADIUS * 0.65:
+    return true
+ return false
 
 func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
  if action not in [Action.IDLE, Action.PREPARE] or cooldown > 0 or dive_cooldown > 0 or airborne():

@@ -228,7 +228,7 @@ func predict() -> void:
  receivers = [0, 0]
  receive_dives = [false, false]
  contact_heights = [1.35, 1.35]
- if game.ball.held or game.automatic_serve_busy():
+ if game.ball.held or game.ball.pending_feed or game.automatic_serve_busy():
   return
  for bot in bots.values():
   if bot.jump_serving:
