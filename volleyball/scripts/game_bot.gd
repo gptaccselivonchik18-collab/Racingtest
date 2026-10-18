@@ -79,7 +79,7 @@ func steer(target: Vector3, stop := 0.20) -> void:
  var offset := Vector2(target.x - position.x, target.z - position.z)
  var movement := style_stats.movement()
  var distance := maxf(0, offset.length() - stop)
- var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * 0.65)
+ var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * 0.82)
  var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
  sprint = offset.length() > 2.5
@@ -109,7 +109,7 @@ func decide(_dt: float) -> void:
    steer(Vector3(clampf(position.x, -3, 3), 0.02, side * 9.65))
    if absf(position.z) > 9.3 and velocity.length() < 0.6 and serve_wait <= 0:
     var target := manager.target_for(self, Technique.SERVE)
-    if serves % 4 == 3:
+    if manager.difficulty >= 3 and serves % 4 == 3:
      var toward := target - position
      camera_yaw = atan2(-toward.x, -toward.z)
      visual.rotation.y = camera_yaw
@@ -124,7 +124,7 @@ func decide(_dt: float) -> void:
      serves += 1
      game.rules.reset(true)
      return
-    var controller: VolleyLowerServe = game.float_serve if serves % 3 == 2 else game.lower_serve
+    var controller: VolleyLowerServe = game.float_serve if manager.difficulty >= 2 and serves % 3 == 2 else game.lower_serve
     if controller.launch(self, target, lerpf(3.8, 2.8, style_stats.n("serve"))):
      serves += 1
   else:
@@ -217,7 +217,7 @@ func decide(_dt: float) -> void:
     if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55:
      kind = JUMP_SET
    var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
-   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5) or solo_attack) and float(manager.contact_heights[court_team]) > 2.65:
+   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5) or solo_attack) and float(manager.contact_heights[court_team]) > 2.35:
     kind = Technique.SPIKE
    if kind == Technique.UNDERHAND and horizontal > 1.6 and ball.position.y < 1.15 and remaining < 0.2:
     if dive():
@@ -261,11 +261,9 @@ func decide(_dt: float) -> void:
      var lift := clampf(float(manager.contact_heights[court_team]) - 2.25, 0.25, float(style_stats.movement().jump_height))
      velocity.y = minf(velocity.y, sqrt(19.62 * lift))
      jumps += 1
-   var local_height := ball.position.y - position.y
-   var reachable := local_height < (3.0 if planned_kind == Technique.SPIKE else 2.65) and local_height > (1.85 if planned_kind == Technique.SPIKE else 0.4)
    var windup := float(mechanic(planned_kind).windup)
    var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]
-   if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or (not receive and horizontal < 1.0 and reachable and remaining < 0.17)):
+   if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive or planned_kind == Technique.SPIKE) and contact_due()):
     release()
    elif charged_for > 1.05:
     cancel_input()
@@ -296,6 +294,13 @@ func contact_due() -> bool:
   if planned_kind == Technique.UNDERHAND:
    var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20, 1.65)
    if point.distance_to(spine) < radius + 0.25:
+    return true
+  elif planned_kind == Technique.SPIKE:
+   var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
+   var yaw := clampf(angle_difference(visual.rotation.y, camera_yaw), -turn, turn)
+   var hand := Vector3(0.2, 2.05 + sin(float(phase) * PI) * 0.25, 0.12 - float(phase) * 1.15)
+   var offset := (visual.to_global(hand) - position).rotated(Vector3.UP, yaw)
+   if point.distance_to(position + offset + drift) < radius + HAND_RADIUS * 0.75:
     return true
   else:
    var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
@@ -374,6 +379,11 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  apex *= float(profile.get("arc", profile.get("lift", 1.0)))
  var outgoing: Vector3 = manager.game.ball.solve_launch(last_contact_point, target, apex, spin)
  if own_side:
+  var plan := manager.tactics.pass_plan(self, strike_technique)
+  if not plan.is_empty() and bool(plan.attacking):
+   var recipient: ContextAthlete = plan.recipient
+   var travel := VolleyBotTactics.flat(recipient.position, target) / maxf(1.0, float(recipient.style_stats.movement().speed) * 0.75)
+   apex = maxf(apex, 1.2 + travel * 1.6)
   outgoing = manager.game.ball.solve_pass(last_contact_point, target, apex, spin)
  if strike_technique in [Technique.SPIKE, TIP] and air_attack:
   outgoing = manager.game.ball.solve_power_serve(last_contact_point, target, lerpf(14, 27, style_stats.n("spike")) * lerpf(0.8, 1.0, quality), spin)

@@ -18,8 +18,8 @@ with zipfile.ZipFile(path) as archive:
     assert "iPhoneOS" in info["CFBundleSupportedPlatforms"], "Simulator build rejected"
     assert info.get("CADisableMinimumFrameDurationOnPhone") is True, "Missing ProMotion support"
     assert info.get("NSLocalNetworkUsageDescription"), "Missing iOS LAN permission description"
-    assert info["CFBundleShortVersionString"] == "0.28.0"
-    assert info["CFBundleVersion"] == "28"
+    assert info["CFBundleShortVersionString"] == "0.29.0"
+    assert info["CFBundleVersion"] == "29"
     assert "UISupportedInterfaceOrientations" in info, "Missing orientation declarations"
     for key in ("UISupportedInterfaceOrientations", "UISupportedInterfaceOrientations~ipad"):
         if key in info:

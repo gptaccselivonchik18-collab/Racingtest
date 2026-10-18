@@ -20,6 +20,7 @@ var sets := [0, 0]
 var match_winner := -1
 var serve_team := 0
 var serving_turn := [0, -1]
+var rotation_turn := [0, 0]
 var current_server: ContextAthlete
 var round_wait := -1.0
 var last_actor: ContextAthlete
@@ -130,6 +131,7 @@ func home(team: int, slot: int) -> Vector3:
  var n: int = counts[team]
  n += members(team).filter(func(a): return not a is VolleyGameBot).size()
  var side := 1.0 if team == 0 else -1.0
+ slot = posmod(slot + rotation_turn[team], maxi(1, n))
  if n == 1:
   return Vector3(0, 0.02, side * 4.2)
  if n == 2:
@@ -158,6 +160,7 @@ func is_match() -> bool:
  return solo_match or game.lan.match_active
 
 func reset_service(first_team: int) -> void:
+ rotation_turn = [0, 0]
  serving_turn = [-1, -1]
  serving_turn[first_team] = 0
  current_server = null
@@ -166,6 +169,21 @@ func advance_service(winner: int, previous: int) -> void:
  # The winner keeps its current server; a side-out rotates the new team.
  if winner != previous:
   serving_turn[winner] += 1
+  rotation_turn[winner] += 1
+
+func place_team(team: int) -> void:
+ var roster := members(team)
+ for i in range(roster.size()):
+  var actor: ContextAthlete = roster[i]
+  actor.position = home(team, i)
+  actor.velocity = Vector3.ZERO
+
+func role_for(actor: ContextAthlete) -> String:
+ var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1) if game.lan.active else human_team
+ var roster := members(team)
+ var slot := roster.find(actor)
+ var rotated := posmod(slot + rotation_turn[team], maxi(1, roster.size()))
+ return "setter" if rotated == 0 else "attacker" if rotated < 3 else "defender"
 
 func serving_actor(team: int) -> ContextAthlete:
  var candidates := members(team)
@@ -184,6 +202,7 @@ func note_touch(actor: ContextAthlete, kind: int) -> void:
  var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1)
  if team != last_team:
   touches = 0
+  tactics.runs.clear()
  if kind != ContextAthlete.BLOCK:
   touches += 1
  last_actor = actor
@@ -304,9 +323,8 @@ func reset_round() -> void:
  game.previous_ball_valid = false
  game.serving = false
  round_wait = -1
- for bot in bots.values():
-  bot.position = home(bot.court_team, bot.slot)
-  bot.velocity = Vector3.ZERO
+ for team in range(2):
+  place_team(team)
  var side := 1.0 if serve_team == 0 else -1.0
  var server := serving_actor(serve_team)
  if not is_instance_valid(server):

@@ -14,4 +14,6 @@ static func closest(skill: float) -> int:
 
 static func profile(index: int) -> Dictionary:
  var w := clampf(index / 4.0, 0, 1)
- return {"reaction": lerpf(0.30, 0.075, w), "anticipation": lerpf(0.67, 1.0, w), "placement": lerpf(0.50, 0.07, w), "tempo": lerpf(0.85, 0.48, w), "court_read": w, "lookahead": lerpf(0.9, 3.6, w), "decision_noise": lerpf(2.0, 0.22, w), "coverage": w * w}
+ # Basic execution is calibrated to the player's body at every level.
+ # Tactical reading/noise still distinguishes novice decisions from experts.
+ return {"reaction": lerpf(0.18, 0.075, w), "anticipation": lerpf(0.94, 1.0, w), "placement": lerpf(0.50, 0.07, w), "tempo": lerpf(0.85, 0.48, w), "court_read": w, "lookahead": lerpf(2.1, 3.6, w), "decision_noise": lerpf(2.0, 0.22, w), "coverage": w * w}

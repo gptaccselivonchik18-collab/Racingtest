@@ -7,12 +7,14 @@ var assignments := [0, 0]
 var assigned_at := [0.0, 0.0]
 var plans: Dictionary = {}
 var shots: Dictionary = {}
+var runs: Dictionary = {}
 
 func reset() -> void:
  assignments = [0, 0]
  assigned_at = [0.0, 0.0]
  plans.clear()
  shots.clear()
+ runs.clear()
 
 static func flat(a: Vector3, b: Vector3) -> float:
  return Vector2(a.x - b.x, a.z - b.z).length()
@@ -69,7 +71,8 @@ func choose_receivers() -> void:
     var acceleration: float = float(physical.acceleration)
     var accelerating := minf(available, maxf(0, speed - initial) / acceleration)
     var running := initial * accelerating + 0.5 * acceleration * accelerating * accelerating + speed * maxf(0, available - accelerating)
-    var reachable := running * movement + (0.75 if actor is VolleyGameBot else 1.45)
+    var reach := actor.contact_ball_radius * float(actor.mechanic(VolleyAthlete.Technique.UNDERHAND).radius) + 0.25
+    var reachable := running * movement + (reach if actor is VolleyGameBot else 1.45)
     var diving := false
     if distance > reachable:
      if not actor is VolleyGameBot or actor.dive_cooldown > 0 or actor.position.y > 0.12 or actor.velocity.y > 0.2 or point.y > 1.45:
@@ -84,7 +87,9 @@ func choose_receivers() -> void:
       continue
      diving = true
     var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
-    var preferred := 2.95 if high else 2.05 if manager.last_team == team else 1.35
+    var preferred := minf(2.95, 2.15 + float(physical.jump_height) * 0.70) if high else 2.05 if manager.last_team == team else 1.35
+    if high and point.y > 2.35 + float(physical.jump_height):
+     continue
     if actor is VolleyGameBot and jump_set_useful(actor):
      var lift := maxf(0, point.y - 2.15)
      var time := minf(0.50, available)
@@ -93,6 +98,8 @@ func choose_receivers() -> void:
       continue
      preferred = minf(2.95, 2.15 + float(physical.jump_height) * 0.75)
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
+    if manager.last_team == team and manager.touches == 1 and manager.role_for(actor) == "setter":
+     cost -= 0.28
     cost += 0.55 if diving else 0.0
     if not actor is VolleyGameBot:
      cost -= 0.85 # A human already in reach gets room to play.
@@ -169,6 +176,10 @@ func choose_shot(actor: VolleyGameBot, serving: bool) -> Vector3:
  for x in xs:
   for depth in [3.2, 5.5, 7.7]:
    var target := Vector3(x, VolleyBall.RADIUS, side * depth)
+   if serving and manager.difficulty < 2:
+    # Low Serve should choose margin rather than risky corners/floaters.
+    target.x *= 0.65
+    target.z = side * clampf(depth, 3.5, 6.1)
    # At reception height the ball is still short of its floor target.
    var receive_at := target - Vector3(0, 0, side * (0.8 if serving else 0.3))
    var score := coverage_at(receive_at, opponents, reading) * reading
@@ -254,6 +265,33 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
   return {}
  return {"target": target, "time": time, "commit": commit, "height": clampf(ball.position.y, 2.8, 4.2)}
 
+func prepare_runs(setter: VolleyGameBot) -> void:
+ if runs.has(setter.court_team):
+  return
+ var candidates := manager.members(setter.court_team).filter(func(a): return a != setter and not a.holding_ball and a.dive_time < 0)
+ var chosen: Dictionary = {}
+ var side := 1.0 if setter.court_team == 0 else -1.0
+ var amount := mini(candidates.size(), setter.rng.randi_range(1, 3))
+ # Shuffle once per combination; several approach options hide the final set.
+ for i in range(candidates.size() - 1, 0, -1):
+  var j := setter.rng.randi_range(0, i)
+  var swap: ContextAthlete = candidates[i]
+  candidates[i] = candidates[j]
+  candidates[j] = swap
+ for i in range(candidates.size()):
+  var athlete: ContextAthlete = candidates[i]
+  if not athlete is VolleyGameBot or (i >= amount and absf(athlete.position.z) > 3.2):
+   continue
+  var base := manager.home(athlete.court_team, athlete.slot)
+  if absf(athlete.position.z) <= 3.2:
+   base.x = athlete.position.x
+  var depth := lerpf(2.9, 1.8, athlete.style_stats.n("speed"))
+  var target := Vector3(clampf(base.x, -3.3, 3.3), minf(3.3, 2.15 + float(athlete.style_stats.movement().jump_height) * 0.65), side * depth)
+  var start := target + Vector3(0, 0, side * lerpf(1.0, 2.1, athlete.style_stats.n("speed")))
+  start.y = 0.02
+  chosen[athlete.get_instance_id()] = {"start": start, "target": target}
+ runs[setter.court_team] = chosen
+
 func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bool) -> Vector3:
  var team: int = setter.court_team
  var side := 1.0 if team == 0 else -1.0
@@ -270,7 +308,11 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
   point.x = clampf(point.x, -3.2, 3.2)
  # Offer a forward approach that the recipient can actually reach; a deep
  # human is still a teammate, not an invisible spectator outside a bot grid.
- var forward := 0.70 if attacking else 0.40
+ if attacking and recipient is VolleyGameBot:
+  var options: Dictionary = runs.get(team, {})
+  if options.has(recipient.get_instance_id()):
+   return options[recipient.get_instance_id()].target
+ var forward := clampf(float(recipient.style_stats.movement().speed) * 0.45, 1.3, 2.6) if attacking else 0.40
  point.z -= side * forward
  point.x = clampf(point.x, -3.8, 3.8)
  point.z = side * clampf(point.z * side, 1.35, 8.5)
@@ -280,6 +322,8 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
 func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
  var own_touches := manager.touches if manager.last_team == actor.court_team else 0
  var attacking := kind in [VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET]
+ if attacking:
+  prepare_runs(actor)
  var key := "%d:%d:%s" % [actor.bot_id, own_touches, attacking]
  var previous: Dictionary = plans.get(key, {})
  if not previous.is_empty() and float(previous.epoch) == manager.last_touch_time and is_instance_valid(previous.recipient) and previous.recipient in manager.members(actor.court_team):
@@ -299,6 +343,8 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
   score -= flat(actor.position, point) * 0.045
   score -= flat(teammate.position, point) * 0.22
   score += teammate.style_stats.n("spike" if attacking else "set") * 0.45
+  if not attacking and manager.role_for(teammate) == "setter":
+   score += 0.65
   if not teammate is VolleyGameBot:
    score += 0.55
   if attacking:
@@ -324,6 +370,12 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
  return plan
 
 func support(actor: VolleyGameBot) -> Vector3:
+ var options: Dictionary = runs.get(actor.court_team, {})
+ if manager.last_team == actor.court_team and options.has(actor.get_instance_id()):
+  var run: Dictionary = options[actor.get_instance_id()]
+  var point: Vector3 = run.start if manager.touches < 2 else run.target
+  point.y = 0.02
+  return point
  for plan: Dictionary in plans.values():
   if float(plan.epoch) == manager.last_touch_time and is_instance_valid(plan.recipient) and plan.recipient == actor:
    var point: Vector3 = plan.target
