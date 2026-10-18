@@ -13,6 +13,14 @@ var approach_jump := false
 var contact_incoming_spin := Vector3.ZERO
 var style_stats := VolleyStyleStats.new()
 var landing_cooldown := 0.0
+var execution_level := 2
+var contact_error: Dictionary = {}
+
+func effective_speed() -> float:
+ return float(style_stats.movement().speed) * lerpf(0.8, 1.0, energy)
+
+func effective_jump_height() -> float:
+ return float(style_stats.movement().jump_height) * pow(lerpf(0.88, 1.0, energy), 2)
 
 func _init() -> void:
  stats = style_stats
@@ -687,7 +695,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   var forward := -Basis(Vector3.UP, visual.global_rotation.y).z
   var right := Basis(Vector3.UP, visual.global_rotation.y).x
   var normal := VolleyBlockDuel.hand_normal(forward, right, input, style_stats.n("block"))
-  var edge_error := float(p.accuracy) * (1.0 - quality)
+  var edge_error := float(p.accuracy) * (1.0 - quality) * float(VolleyBotDifficulty.execution(execution_level).scatter)
   normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-edge_error, edge_error)))
   outgoing = VolleyBlockDuel.reflection(incoming, normal, quality)
   if not attack.is_empty():
@@ -695,11 +703,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
    if duel_result.pierced:
     outgoing = duel_result.velocity
  else:
-  var spread := float(p.accuracy) * (1.3 - quality)
-  deviation = rng.randf_range(-spread, spread)
-  var pace_scale := rng.randf_range(1.0 - float(p.stability), 1.0 + float(p.stability))
-  var pitch_error := rng.randf_range(-spread, spread) * 0.5
-  var solution := VolleyShotModel.solve(self, strike_technique, last_contact_point, incoming, contact_incoming_spin, quality, strike_power, Vector2(deviation, pitch_error), pace_scale)
+  contact_error = VolleyBotDifficulty.contact_error(rng, execution_level, quality, float(p.accuracy), float(p.stability))
+  deviation = Vector2(contact_error.angle).x
+  var solution := VolleyShotModel.solve(self, strike_technique, last_contact_point, incoming, contact_incoming_spin, quality, strike_power, contact_error.angle, contact_error.pace)
   outgoing = solution.velocity
   strike_direction = solution.direction
  last_result = "" if strike_technique == BLOCK else "%s • %d%%" % [NAMES[strike_technique], int(quality * 100)]

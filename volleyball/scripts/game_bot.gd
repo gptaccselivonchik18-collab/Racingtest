@@ -52,6 +52,15 @@ func reset_plan() -> void:
  is_server = false
  jump_serving = false
  cooldown = 0
+ noticed_touch = -INF
+ reaction_until = 0
+ toss_time = 0
+ dive_time = -1
+ dive_cooldown = 0
+ landing_cooldown = 0
+ move_axis = Vector2.ZERO
+ look_target_valid = false
+ contact_error.clear()
  state = "cover"
 
 func prepare_serve() -> void:
@@ -83,6 +92,8 @@ func steer(target: Vector3, stop := 0.20) -> void:
  var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * braking_margin)
  var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
+ if offset.length() < stop + 0.12 and Vector2(velocity.x, velocity.z).length() < 0.25:
+  move_axis = Vector2.ZERO
  sprint = offset.length() > 2.5
  if offset.length() > 0.6 and action == Action.IDLE:
   camera_yaw = atan2(-offset.x, -offset.y)
@@ -250,7 +261,7 @@ func decide(_dt: float) -> void:
    if planned_kind == JUMP_SET and not airborne() and remaining > 0.16 and remaining < 0.55:
     var lift := maxf(0.15, float(manager.contact_heights[court_team]) - 2.15)
     var needed := (lift + 4.905 * remaining * remaining) / remaining
-    if needed <= sqrt(19.62 * float(style_stats.movement().jump_height)) and horizontal < 0.85:
+    if needed <= sqrt(19.62 * effective_jump_height()) and horizontal < 0.85:
      jump()
      if velocity.y > 0:
       velocity.y = minf(velocity.y, needed)
@@ -259,7 +270,7 @@ func decide(_dt: float) -> void:
     jump(true)
     if velocity.y > 0:
      # Jump to this ball, not to the maximum stat apex every time.
-     var lift := clampf(float(manager.contact_heights[court_team]) - 2.25, 0.25, float(style_stats.movement().jump_height))
+     var lift := clampf(float(manager.contact_heights[court_team]) - 2.25, 0.25, effective_jump_height())
      velocity.y = minf(velocity.y, sqrt(19.62 * lift))
      jumps += 1
    var windup := float(mechanic(planned_kind).windup)
@@ -342,7 +353,7 @@ func attempt_block(side: float) -> bool:
  steer(plan.target, 0.08)
  camera_yaw = 0 if side > 0 else PI
  # Jump from the predicted contact time, not only after the ball is struck.
- var lift := clampf(float(plan.get("height", 3.0)) - 2.25, 0.45, float(style_stats.movement().jump_height))
+ var lift := clampf(float(plan.get("height", 3.0)) - 2.25, 0.45, effective_jump_height())
  var rise := sqrt(2.0 * lift / 9.81)
  if bool(plan.commit) and float(plan.time) <= rise + 0.10 and absf(position.z) < 1.35 and absf(position.x - Vector3(plan.target).x) < 0.85:
   jump()
@@ -367,24 +378,31 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   return delta
  var target := manager.target_for(self, strike_technique)
  var profile := mechanic(strike_technique)
- var spread: float = lerpf(0.95, 0.10, float(profile.control)) * (1.2 - quality)
- target += Vector3(rng.randf_range(-spread, spread), 0, rng.randf_range(-spread, spread))
+ # Reuse the contact's single execution sample, including for planned passes.
+ # A second independent roll used to replace the base athlete's error.
+ var error_angle: Vector2 = contact_error.get("angle", Vector2.ZERO)
+ var heading := target - last_contact_point
+ heading.y = 0
+ var sideways := heading.normalized().cross(Vector3.UP)
+ target += sideways * heading.length() * tan(deg_to_rad(error_angle.x))
  var spin := outgoing_spin(manager.game.ball.angular_velocity, delta)
  var own_side := target.z * (1.0 if court_team == 0 else -1.0) > 0
  var apex := 2.8 if own_side else maxf(2.0, 3.7 - last_contact_point.y * 0.4)
  apex *= float(profile.get("arc", profile.get("lift", 1.0)))
+ apex *= clampf(1.0 + error_angle.y * 0.04, 0.7, 1.3)
  var outgoing: Vector3 = manager.game.ball.solve_launch(last_contact_point, target, apex, spin)
  if own_side:
   var plan := manager.tactics.pass_plan(self, strike_technique)
   if not plan.is_empty() and bool(plan.attacking):
    var recipient: ContextAthlete = plan.recipient
-   var travel := VolleyBotTactics.flat(recipient.position, target) / maxf(1.0, float(recipient.style_stats.movement().speed) * 0.75)
+   var travel := VolleyBotTactics.flat(recipient.position, target) / maxf(1.0, recipient.effective_speed() * 0.75)
    apex = maxf(apex, 1.2 + travel * 1.6)
   outgoing = manager.game.ball.solve_pass(last_contact_point, target, apex, spin)
  if strike_technique in [Technique.SPIKE, TIP] and air_attack:
   outgoing = manager.game.ball.solve_power_serve(last_contact_point, target, lerpf(14, 27, style_stats.n("spike")) * lerpf(0.8, 1.0, quality), spin)
  elif strike_technique == Technique.JUMP_SERVE:
   outgoing = manager.game.ball.solve_power_serve(last_contact_point, target, power_serve_speed() * lerpf(0.84, 1.0, quality), spin)
+ outgoing *= float(contact_error.get("pace", 1.0))
  # Touch is emitted here only after planning the actual outgoing ball. The
  # base signal has no subscribers, avoiding duplicate rules/contact events.
  manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, outgoing)

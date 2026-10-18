@@ -16,9 +16,10 @@ func network_role() -> String:
 func height_hint() -> String:
  return "Малое вращение, непредсказуемый уход мяча. Serve улучшает точность. Низкая дуга может попасть в сетку."
 
-func sample_delivery(aim: Vector3, skill: float, gain := 1.0) -> Dictionary:
- var spread := lerpf(2.7, 0.85, skill) / gain
- var mishit := rng.randf() < lerpf(0.20, 0.025, skill) / gain
+func sample_delivery(aim: Vector3, skill: float, gain := 1.0, execution_level := 2) -> Dictionary:
+ var policy := VolleyBotDifficulty.execution(execution_level)
+ var spread := lerpf(2.7, 0.70, skill) * float(policy.scatter) / gain
+ var mishit := rng.randf() < float(policy.fault) * lerpf(2.4, 0.3, skill) / gain
  var error := Vector3(rng.randfn(0, spread), 0, rng.randfn(0, spread * 1.18))
  if mishit:
   error += Vector3(rng.randf_range(-3, 3), 0, rng.randf_range(-3, 3))
@@ -31,7 +32,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
   return false
  height = clampf(apex, 0.8, 5.0)
  var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "spike"
- delivery = sample_delivery(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill))
+ delivery = sample_delivery(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill), actor.execution_level)
  busy_actor = actor
  actor.cancel_input()
  actor.move_axis = Vector2.ZERO

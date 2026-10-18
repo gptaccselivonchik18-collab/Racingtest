@@ -6,7 +6,7 @@ const PORT := 24681
 const SEARCH_DURATION := 15.0
 const PROBE_INTERVAL := 0.05
 const PROBE_BATCH := 8
-const MAGIC := "VOLLEYLAB29"
+const MAGIC := "VOLLEYLAB30"
 var lan: VolleyLAN
 var responder := PacketPeerUDP.new()
 var seeker := PacketPeerUDP.new()
@@ -94,7 +94,7 @@ func _process(dt: float) -> void:
    var request: Variant = JSON.parse_string(data.get_string_from_utf8())
    if valid_request(request) and is_instance_valid(lan) and lan.hosting:
     responder.set_dest_address(ip, port)
-    responder.put_packet(JSON.stringify({"magic": MAGIC, "token": request.token, "port": game_port, "players": lan.players.size(), "limit": 12, "protocol": VolleyLAN.PROTOCOL, "version": "0.29"}).to_utf8_buffer())
+    responder.put_packet(JSON.stringify({"magic": MAGIC, "token": request.token, "port": game_port, "players": lan.players.size(), "limit": 12, "protocol": VolleyLAN.PROTOCOL, "version": "0.30"}).to_utf8_buffer())
  if not searching:
   return
  search_time += dt

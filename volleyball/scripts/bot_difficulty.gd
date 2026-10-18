@@ -2,7 +2,7 @@ class_name VolleyBotDifficulty
 extends RefCounted
 
 const NAMES := ["Новичок", "Любитель", "Клубный", "Сильный", "Профессионал"]
-const SKILLS := [15.0, 40.0, 65.0, 100.0, 140.0]
+const SKILLS := [35.0, 50.0, 65.0, 100.0, 140.0]
 const THINKING := ["Простые направления, ближайший партнёр, поздняя защита.", "Замечает свободную сторону, строит простую комбинацию.", "Выбирает нападающего и свободные зоны, начинает страховку.", "Читает блок и движение защиты, меняет направления подачи.", "Планирует продолжение атаки, учитывает блок, швы защиты и предыдущие подачи."]
 
 static func closest(skill: float) -> int:
@@ -16,4 +16,23 @@ static func profile(index: int) -> Dictionary:
  var w := clampf(index / 4.0, 0, 1)
  # Basic execution is calibrated to the player's body at every level.
  # Tactical reading/noise still distinguishes novice decisions from experts.
- return {"reaction": lerpf(0.18, 0.075, w), "anticipation": lerpf(0.94, 1.0, w), "placement": lerpf(0.50, 0.07, w), "tempo": lerpf(0.85, 0.48, w), "court_read": w, "lookahead": lerpf(2.1, 3.6, w), "decision_noise": lerpf(2.0, 0.22, w), "coverage": w * w}
+ return {"reaction": lerpf(0.22, 0.06, w), "anticipation": lerpf(0.94, 1.0, w), "scan": lerpf(0.14, 0.05, w), "uncertainty": lerpf(0.22, 0.015, w), "placement": lerpf(0.50, 0.07, w), "tempo": lerpf(0.85, 0.48, w), "court_read": w, "lookahead": lerpf(1.7, 3.6, w), "decision_noise": lerpf(2.0, 0.22, w), "coverage": w * w}
+
+static func execution(index: int) -> Dictionary:
+ # Game balance targets, not empirical professional-player statistics.
+ # Human actors always use club (2); bot difficulty changes this baseline.
+ var grade := clampi(index, 0, 4)
+ return {"fault": [0.08, 0.05, 0.025, 0.012, 0.004][grade], "scatter": [0.95, 0.76, 0.56, 0.35, 0.20][grade]}
+
+static func contact_error(random: RandomNumberGenerator, index: int, quality: float, accuracy: float, stability: float) -> Dictionary:
+ var policy := execution(index)
+ var pressure := lerpf(2.0, 0.65, clampf(quality, 0, 1))
+ var fault := random.randf() < float(policy.fault) * pressure
+ var spread := accuracy * float(policy.scatter) * lerpf(1.3, 0.45, quality)
+ var pace := stability * float(policy.scatter)
+ # Poor touches can go astray; a clean professional touch stays reliable.
+ # Accuracy/stability retain their unlimited-stat scaling even on mishits.
+ if fault:
+  spread *= 4.0
+  pace *= 3.0
+ return {"fault": fault, "angle": Vector2(random.randf_range(-spread, spread), random.randf_range(-spread, spread) * 0.5), "pace": random.randf_range(1.0 - pace, 1.0 + pace)}

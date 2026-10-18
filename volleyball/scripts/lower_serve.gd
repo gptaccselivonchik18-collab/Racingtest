@@ -154,11 +154,12 @@ func close() -> void:
  game.hud._cancel()
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if OS.get_name() in ["iOS", "Android"] else Input.MOUSE_MODE_CAPTURED
 
-func sample_error(aim: Vector3, accuracy: float, gain := 1.0) -> Dictionary:
- var scatter := lerpf(1.15, 0.15, accuracy) / gain
+func sample_error(aim: Vector3, accuracy: float, gain := 1.0, execution_level := 2) -> Dictionary:
+ var policy := VolleyBotDifficulty.execution(execution_level)
+ var scatter := lerpf(1.15, 0.15, accuracy) * float(policy.scatter) / gain
  var aim_error := Vector3(rng.randfn(0, scatter), 0, rng.randfn(0, scatter * 1.2))
- var slip := rng.randf() < lerpf(0.15, 0.015, accuracy) / gain
- return {"target": aim + aim_error, "slip": slip, "angle": rng.randf_range(-0.85, 0.85), "scale": rng.randf_range(0.45, 0.75) if slip else rng.randf_range(1.0 - lerpf(0.04, 0.004, accuracy), 1.0 + lerpf(0.04, 0.004, accuracy))}
+ var slip := rng.randf() < float(policy.fault) * lerpf(1.8, 0.25, accuracy) / gain
+ return {"target": aim + aim_error, "slip": slip, "angle": rng.randf_range(-0.55, 0.55), "scale": rng.randf_range(0.65, 0.9) if slip else rng.randf_range(1.0 - lerpf(0.04, 0.004, accuracy) * float(policy.scatter), 1.0 + lerpf(0.04, 0.004, accuracy) * float(policy.scatter))}
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  var side := 1.0 if actor.position.z >= 0 else -1.0
@@ -166,7 +167,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
   return false
  height = clampf(apex, 0.8, 5.0)
  var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "bump"
- var error := sample_error(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill))
+ var error := sample_error(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill), actor.execution_level)
  target = error.target
  slipped = error.slip
  slip_angle = error.angle

@@ -116,6 +116,7 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     actor.set_physics_process(not actor.replica)
     bots[id] = actor
    var bot: VolleyGameBot = bots[id]
+   bot.execution_level = difficulty
    for key in VolleyStyleStats.KEYS:
     bot.stats.set_stat(key, level)
  game.lan.refresh_contacts()
@@ -177,6 +178,7 @@ func place_team(team: int) -> void:
   var actor: ContextAthlete = roster[i]
   actor.position = home(team, i)
   actor.velocity = Vector3.ZERO
+  actor.energy = 1.0
 
 func role_for(actor: ContextAthlete) -> String:
  var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1) if game.lan.active else human_team
@@ -223,6 +225,9 @@ func reset_rally() -> void:
  contact_heights = [1.35, 1.35]
  samples.clear()
  think_left = 0
+ for team in range(2):
+  for actor: ContextAthlete in members(team):
+   actor.energy = 1.0
  for bot in bots.values():
   bot.reset_plan()
   bot.holding_ball = game.ball.held and game.ball.athlete == bot
@@ -239,7 +244,7 @@ func _physics_process(dt: float) -> void:
   award(1 - last_team)
  think_left -= dt
  if think_left <= 0:
-  think_left = 0.10
+  think_left = float(decision_profile().scan)
   predict()
 
 func predict() -> void:
@@ -255,11 +260,19 @@ func predict() -> void:
  var at: Vector3 = game.ball.position
  var v: Vector3 = game.ball.linear_velocity
  var spin: Vector3 = game.ball.angular_velocity
- for tick in range(72):
+ # Match the authoritative 120 Hz integrator, publishing samples at 20 Hz.
+ # This is shared by all bots, rather than re-simulated for every actor.
+ var step := 1.0 / 120.0
+ var observed_wake := Vector3.ZERO
+ if game.ball.float_active:
+  # Read the current visible acceleration, never the future float seed.
+  observed_wake = (game.ball.acceleration - Vector3.DOWN * 9.81 - game.ball.aero_force(v, spin) / game.ball.mass).limit_length(2.0)
+ for tick in range(432):
   var previous := at
-  v += (Vector3.DOWN * 9.81 + game.ball.aero_force(v, spin) / game.ball.mass) * 0.05
-  spin *= 1.0 - game.ball.angular_damp * 0.05
-  at += v * 0.05
+  var time := (tick + 1) * step
+  v += (Vector3.DOWN * 9.81 + game.ball.aero_force(v, spin) / game.ball.mass + observed_wake * exp(-time * 5.0)) * step
+  spin *= 1.0 - game.ball.angular_damp * step
+  at += v * step
   if previous.z * at.z < 0 and at.y < 2.65 and at.y > 1.3 and absf(at.x) < 4.9:
    v.z *= -0.45
    at.z = signf(previous.z) * 0.20
@@ -269,7 +282,8 @@ func predict() -> void:
   if absf(at.z) > VolleyCourt.INNER_Z:
    at.z = clampf(at.z, -VolleyCourt.INNER_Z, VolleyCourt.INNER_Z)
    v.z *= -0.5
-  samples.append({"at": at, "v": v, "time": (tick + 1) * 0.05})
+  if tick % 6 == 5 or at.y <= VolleyBall.RADIUS:
+   samples.append({"at": at, "v": v, "time": time})
   if at.y <= VolleyBall.RADIUS:
    break
  tactics.choose_receivers()

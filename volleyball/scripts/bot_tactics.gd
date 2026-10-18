@@ -58,13 +58,22 @@ func choose_receivers() -> void:
     if float(sample.time) > float(difficulty.lookahead):
      continue
     var point: Vector3 = sample.at
+    if actor is VolleyGameBot:
+     # Stable error per touch/actor, fading as the ball gets close. Avoids
+     # jittering destinations while allowing beginners to read later.
+     var phase := float(absi(actor.bot_id)) * 1.713 + manager.last_touch_time * 2.31
+     var uncertainty := float(difficulty.uncertainty) * maxf(0, float(sample.time) - 0.35)
+     point += Vector3(sin(phase), 0, cos(phase)) * uncertainty
     if point.z * side < 0.48 or point.y < 0.18 or point.y > 3.6 or sample.v.y > 2:
      continue
     var target := point + Vector3(0, 0, side * 0.34)
     target.y = 0.02
     var distance := flat(target, actor.position)
-    var reaction: float = float(difficulty.reaction) if actor is VolleyGameBot else 0.12
-    var speed: float = float(physical.speed)
+    var reaction := 0.12
+    if actor is VolleyGameBot:
+     reaction = maxf(0, actor.reaction_until - manager.clock) if actor.noticed_touch == manager.last_touch_time else float(difficulty.reaction)
+    var speed := actor.effective_speed()
+    var jump_height := actor.effective_jump_height()
     var movement := float(difficulty.anticipation) if actor is VolleyGameBot else 0.8 if actor.move_axis.length() > 0.15 else 0.0
     var available := maxf(0, float(sample.time) - reaction)
     var initial := maxf(0, Vector2(actor.velocity.x, actor.velocity.z).dot(Vector2(target.x - actor.position.x, target.z - actor.position.z).normalized()))
@@ -87,16 +96,16 @@ func choose_receivers() -> void:
       continue
      diving = true
     var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
-    var preferred := minf(2.95, 2.15 + float(physical.jump_height) * 0.70) if high else 2.05 if manager.last_team == team else 1.35
-    if high and point.y > 2.35 + float(physical.jump_height):
+    var preferred := minf(2.95, 2.15 + jump_height * 0.70) if high else 2.05 if manager.last_team == team else 1.35
+    if high and point.y > 2.35 + jump_height:
      continue
     if actor is VolleyGameBot and jump_set_useful(actor):
      var lift := maxf(0, point.y - 2.15)
      var time := minf(0.50, available)
      var needed := (lift + 4.905 * time * time) / maxf(0.01, time)
-     if point.y > 2.55 and (time < 0.20 or needed > sqrt(19.62 * float(physical.jump_height))):
+     if point.y > 2.55 and (time < 0.20 or needed > sqrt(19.62 * jump_height)):
       continue
-     preferred = minf(2.95, 2.15 + float(physical.jump_height) * 0.75)
+     preferred = minf(2.95, 2.15 + jump_height * 0.75)
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
     if manager.last_team == team and manager.touches == 1 and manager.role_for(actor) == "setter":
      cost -= 0.28
