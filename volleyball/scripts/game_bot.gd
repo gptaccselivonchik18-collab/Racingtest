@@ -79,7 +79,8 @@ func steer(target: Vector3, stop := 0.20) -> void:
  var offset := Vector2(target.x - position.x, target.z - position.z)
  var movement := style_stats.movement()
  var distance := maxf(0, offset.length() - stop)
- var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * 0.82)
+ var braking_margin := 0.65 if manager.counts[court_team] <= 1 else 0.82
+ var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * braking_margin)
  var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
  sprint = offset.length() > 2.5
@@ -203,7 +204,7 @@ func decide(_dt: float) -> void:
   state = "intercept"
   var at: Vector3 = manager.intercepts[court_team]
   at.x = clampf(at.x, -7.6, 7.6)
-  at.z = side * clampf(absf(at.z), 0.65, 11.6)
+  at.z = side * clampf(absf(at.z), 1.05, 11.6)
   steer(at, 0.10)
   var remaining: float = manager.arrival[court_team] - manager.clock
   var offset := ball.position - position
