@@ -22,7 +22,9 @@ func sample_delivery(aim: Vector3, skill: float, gain := 1.0, execution_level :=
  var mishit := rng.randf() < float(policy.fault) * lerpf(2.4, 0.3, skill) / gain
  var error := Vector3(rng.randfn(0, spread), 0, rng.randfn(0, spread * 1.18))
  if mishit:
-  error += Vector3(rng.randf_range(-3, 3), 0, rng.randf_range(-3, 3))
+  # A rare glancing contact can still miss the court. The normal flight is
+  # tighter, rather than giving every serve a large routine random offset.
+  error += Vector3(rng.randf_range(-6, 6), 0, rng.randf_range(-6, 6)) / sqrt(gain)
  var spin := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized() * lerpf(0.95, 0.18, skill) / gain
  return {"target": aim + error, "mishit": mishit, "scale": rng.randf_range(1.0 - lerpf(0.07, 0.012, skill), 1.0 + lerpf(0.07, 0.012, skill)), "spin": spin, "seed": rng.randi(), "skill": skill}
 

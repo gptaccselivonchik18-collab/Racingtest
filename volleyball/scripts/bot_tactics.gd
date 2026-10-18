@@ -233,7 +233,7 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
   # current velocity immediately rather than the previous shot's samples.
   time = (side * 0.15 - ball.position.z) / ball.linear_velocity.z
   var point := ball.position + ball.linear_velocity * time + Vector3.DOWN * 4.905 * time * time
-  if time < 0 or time > 1.1 or point.y < 2.2 or point.y > 2.4 + float(actor.style_stats.movement().jump_height):
+  if time < 0 or time > 1.1 or point.y < 2.2 or point.y > 2.4 + actor.effective_jump_height():
    return {}
   target.x = point.x
   commit = true
@@ -254,6 +254,10 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
    # Move a front defender into the lane while the opponent builds the attack.
    time = 0.8
  target.x = clampf(target.x, -4, 4)
+ # A lone defender cannot leave the entire back court to chase a speculative
+ # block. Commit only when already stationed close to the attack lane.
+ if manager.members(actor.court_team).size() == 1 and (absf(actor.position.z) > 2.0 or flat(actor.position, target) > 1.1):
+  return {}
  var chosen: ContextAthlete
  var best := INF
  for teammate: ContextAthlete in manager.members(actor.court_team):
@@ -264,7 +268,7 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
   if teammate.cooldown > 0 or teammate.action != VolleyAthlete.Action.IDLE or teammate.dive_time >= 0:
    continue
   var distance := flat(teammate.position, target)
-  var arrival := distance / maxf(1, float(teammate.style_stats.movement().speed))
+  var arrival := distance / maxf(1, teammate.effective_speed())
   if arrival > time + 0.38:
    continue
   if arrival < best:

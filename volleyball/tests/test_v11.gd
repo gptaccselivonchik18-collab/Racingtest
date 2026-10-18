@@ -113,8 +113,10 @@ func run() -> void:
  print("Float distribution low=", low, " normal=", normal, " high=", high)
  check(high.error < low.error * 0.5 and high.close > low.close * 2, "Serve substantially improves target accuracy")
  check(low.slips > high.slips * 3 and high.spin < low.spin * 0.3, "Serve improves contact cleanliness and suppresses unintended rotation")
- check(normal.close > 50 and normal.out > 30 and normal.close + normal.out < 1900, "Normal float serves include target hits, other areas and out balls")
- check(high.out > 0 and high.close < 1900, "High Serve retains risk rather than guaranteeing the selected destination")
+ # Club execution in v30 intentionally lowers routine errors. Require real
+ # risk and a monotonic skill benefit instead of the old 1.5% minimum outs.
+ check(normal.close > 50 and normal.out > 0 and normal.out < low.out and normal.close + normal.out < 1900, "Club float serves retain misses while improving on novice accuracy")
+ check(high.out > 0 and high.out < normal.out and high.close < 1900, "High Serve reduces risk without guaranteeing the selected destination")
  var lower_error := 0.0
  game.lower_serve.rng.seed = 11011
  for i in range(2000):
