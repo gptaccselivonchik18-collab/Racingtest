@@ -217,7 +217,7 @@ func decide(_dt: float) -> void:
     if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55:
      kind = JUMP_SET
    var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
-   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5) or solo_attack) and float(manager.contact_heights[court_team]) > 2.35:
+   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5 and float(manager.contact_heights[court_team]) > 2.35) or (solo_attack and float(manager.contact_heights[court_team]) > 2.65)):
     kind = Technique.SPIKE
    if kind == Technique.UNDERHAND and horizontal > 1.6 and ball.position.y < 1.15 and remaining < 0.2:
     if dive():
@@ -263,7 +263,9 @@ func decide(_dt: float) -> void:
      jumps += 1
    var windup := float(mechanic(planned_kind).windup)
    var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]
-   if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive or planned_kind == Technique.SPIKE) and contact_due()):
+   var height := ball.position.y - position.y
+   var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > 1.85 and height < 3.0 and remaining < float(mechanic(planned_kind).duration) * 0.50
+   if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or spike_due):
     release()
    elif charged_for > 1.05:
     cancel_input()
@@ -294,13 +296,6 @@ func contact_due() -> bool:
   if planned_kind == Technique.UNDERHAND:
    var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20, 1.65)
    if point.distance_to(spine) < radius + 0.25:
-    return true
-  elif planned_kind == Technique.SPIKE:
-   var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
-   var yaw := clampf(angle_difference(visual.rotation.y, camera_yaw), -turn, turn)
-   var hand := Vector3(0.2, 2.05 + sin(float(phase) * PI) * 0.25, 0.12 - float(phase) * 1.15)
-   var offset := (visual.to_global(hand) - position).rotated(Vector3.UP, yaw)
-   if point.distance_to(position + offset + drift) < radius + HAND_RADIUS * 0.75:
     return true
   else:
    var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
