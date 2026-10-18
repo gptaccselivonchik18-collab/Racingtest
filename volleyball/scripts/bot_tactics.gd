@@ -256,7 +256,7 @@ func block_plan(actor: VolleyGameBot) -> Dictionary:
  target.x = clampf(target.x, -4, 4)
  # A lone defender cannot leave the entire back court to chase a speculative
  # block. Commit only when already stationed close to the attack lane.
- if manager.members(actor.court_team).size() == 1 and (absf(actor.position.z) > 2.0 or flat(actor.position, target) > 1.1):
+ if manager.members(actor.court_team).size() == 1 and (absf(actor.position.z) > 3.0 or flat(actor.position, target) > 2.6):
   return {}
  var chosen: ContextAthlete
  var best := INF
