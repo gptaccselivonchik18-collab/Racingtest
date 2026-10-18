@@ -4,6 +4,9 @@ extends VolleyTossPreview
 var title: Label3D
 var game: Node3D
 var predicted_launch: Dictionary = {}
+var previous_action := -1
+var previous_kind := -1
+var previous_hit := false
 
 func _ready() -> void:
  super._ready()
@@ -59,12 +62,18 @@ func _physics_process(dt: float) -> void:
  var a := viewer
  var kind := a.planned_technique() if a.action == VolleyAthlete.Action.PREPARE else a.strike_technique
  var just_hit := a.contact_flash > 0 and a.action == VolleyAthlete.Action.STRIKE
- visible = not a.float_serve_active and not a.lower_serve_active and not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (not a.hit_used or just_hit) and kind in [0, 1, 2, 3, 4, 8, 9]
+ # hit_used belongs to the last released strike, not the new preparation.
+ var preparing := a.action == VolleyAthlete.Action.PREPARE
+ var changed := previous_action != a.action or previous_kind != kind or previous_hit != just_hit
+ previous_action = a.action
+ previous_kind = kind
+ previous_hit = just_hit
+ visible = not a.float_serve_active and not a.lower_serve_active and not ball.held and a.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and (preparing or not a.hit_used or just_hit) and kind in [0, 1, 2, 3, 4, 8, 9]
  if not visible:
   elapsed = 1
   return
  elapsed += dt
- if elapsed < 0.05:
+ if elapsed < 0.05 and not changed:
   return
  elapsed = 0
  var at := a.wrists[1]

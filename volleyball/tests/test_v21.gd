@@ -153,6 +153,30 @@ func run() -> void:
  a.approach_jump = false
  game.hud._process(0)
  check(game.hud.buttons.primary.text == "ФИНТ", "The ordinary jump shows its contextual feint button")
+ # A previous successful touch leaves hit_used set throughout recovery.
+ # The next press must still show its own preview, including a fast tap.
+ for kind in [0, 1, 2, 3, 4, 8, 9]:
+  pose(kind, Vector3(0, 0.02, 5))
+  a.action = VolleyAthlete.Action.IDLE
+  a.hit_used = true
+  a.contact_flash = 0
+  a.approach_jump = false
+  game.ball.held = false
+  game.ball.global_position = Vector3(4, 5, -5)
+  preview._physics_process(0)
+  check(a.begin_action(kind), "A new action can start after the previous successful touch")
+  preview._physics_process(0.001)
+  check(preview.visible and not preview.predicted_launch.is_empty(), "New press shows preview despite previous hit for kind %d" % kind)
+  a.camera_yaw += 0.4
+  preview._physics_process(0.06)
+  check(preview.visible, "Held action keeps its preview for kind %d" % kind)
+  a.release()
+  preview.predicted_launch.clear()
+  preview._physics_process(0.001)
+  check(preview.visible and not preview.predicted_launch.is_empty(), "Quick release immediately refreshes preview for kind %d" % kind)
+  a.action = VolleyAthlete.Action.IDLE
+  preview._physics_process(0)
+  check(not preview.visible, "Finished action hides its preview")
  # Exercise the real movement + attack gesture rather than setting its flag.
  a.cancel_input()
  a.action = VolleyAthlete.Action.IDLE
