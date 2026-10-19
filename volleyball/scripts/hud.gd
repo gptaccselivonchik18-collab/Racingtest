@@ -52,7 +52,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
+ for key in ["super", "no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -68,7 +68,7 @@ func _layout() -> void:
   var screen := DisplayServer.screen_get_size()
   if screen.x > 0:
    margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
- var defaults := {"no_look": Vector2(size.x * 0.45, 106), "freak": Vector2(size.x * 0.65, 106), "float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ var defaults := {"super": Vector2(size.x*0.80,106),"no_look": Vector2(size.x * 0.45, 106), "freak": Vector2(size.x * 0.65, 106), "float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
  for key in defaults:
   var at: Vector2 = defaults[key]
   var scale_value := settings.button_scale
@@ -88,7 +88,7 @@ func _layout() -> void:
   elif key in ["menu", "lock", "next"]:
    side = 46
   var dimensions := Vector2(side, side)
-  if key in ["no_look", "freak"]:
+  if key in ["super", "no_look", "freak"]:
    dimensions = Vector2(112, 52) * scale_value
   if key == "context":
    dimensions = Vector2(190, 44)
@@ -433,7 +433,7 @@ func _notification(what: int) -> void:
   _cancel()
 
 func _input(event: InputEvent) -> void:
- if is_instance_valid(game.super_serve) and game.super_serve.active:
+ if is_instance_valid(game.super_serve) and game.super_serve.locks(game.athlete):
   return
  if not visible or (is_instance_valid(game.frontend) and game.frontend.blocks_input()):
   return
@@ -454,7 +454,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
+  for key in ["super", "no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -511,6 +511,10 @@ func _press(role: String, source := -2) -> bool:
  return accepted
 
 func _perform(role: String) -> bool:
+ if game.super_serve.locks(game.athlete):
+  return false
+ if role == "super":
+  return game.super_serve.request()
  if game.athlete.court_team < 0 and not game.game_bots.bots.is_empty() and role not in ["menu", "lock", "next"]:
   return false
  if role in ["no_look", "freak"] and not game.lan.active:
@@ -592,6 +596,9 @@ func _button_at(pos: Vector2, padding := 12.0) -> String:
  return best
 
 func _sync_axes() -> void:
+ if is_instance_valid(game.super_serve) and game.super_serve.locks(game.athlete):
+  game.athlete.move_axis = Vector2.ZERO
+  return
  if move_id < 0 or fingers.get(move_id, "") not in ["move", "approach"]:
   move_value = Vector2.ZERO
   move_id = -1
@@ -602,6 +609,7 @@ func _sync_axes() -> void:
 
 func _refresh_context() -> void:
  var kageyama: bool = game.athlete.character_id == "kageyama" and not game.holding_ball()
+ buttons.super.visible = is_instance_valid(game.super_serve) and game.super_serve.eligible(game.athlete)
  buttons.no_look.visible = kageyama
  buttons.freak.visible = kageyama and is_instance_valid(game.characters) and not game.characters.partners(game.athlete).is_empty()
  buttons.next.visible = not game.lan.active or game.lan.hosting
@@ -763,6 +771,7 @@ func _process(dt: float) -> void:
  buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"
  buttons.no_look.text = "NO-LOOK\nSET"
  buttons.freak.text = "FREAK\nQUICK"
+ buttons.super.text = "SUPER\nSERVE"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
@@ -807,8 +816,11 @@ func _draw() -> void:
    color = Color(0.75, 0.57, 0.25, 0.72)
   if active:
    color = Color("b78d45")
-  if key in ["no_look", "freak"]:
+  if key in ["super", "no_look", "freak"]:
    color = Color("345b73") if key == "no_look" else Color("a26335")
+  if key == "super":
+   color = Color("287a80")
+   draw_style_box(_panel(Color("f2cf87"),20),rect.grow(3))
   draw_style_box(_panel(color, int(rect.size.y * 0.38)), rect)
   var lines: PackedStringArray = buttons[key].text.split("\n")
   for line in range(lines.size()):

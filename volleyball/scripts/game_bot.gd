@@ -103,7 +103,7 @@ func steer(target: Vector3, stop := 0.20) -> void:
   camera_yaw = atan2(-offset.x, -offset.y)
 
 func decide(_dt: float) -> void:
- if is_instance_valid(manager.game.super_serve) and manager.game.super_serve.active:
+ if cinema_time >= 0:
   move_axis = Vector2.ZERO
   return
  var game := manager.game
@@ -134,6 +134,12 @@ func decide(_dt: float) -> void:
    state = "serve"
    steer(Vector3(clampf(position.x, -3, 3), 0.02, side * 9.65))
    if absf(position.z) > 9.3 and velocity.length() < 0.6 and serve_wait <= 0:
+    if character_id == "oikawa":
+     if game.super_serve.begin(self,bot_id):
+      serves += 1
+     # Wait for a real grounded/eligible serve, rather than replacing an
+     # airborne first frame with an unrelated automatic underhand sequence.
+     return
     var target := manager.target_for(self, Technique.SERVE)
     if manager.difficulty >= 3 and serves % 4 == 3:
      var toward := target - position

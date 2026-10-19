@@ -19,7 +19,7 @@ func open_characters(from_court := false) -> void:
  f.get_tree().paused = from_court and not manager.game.lan.active
  f._button("← Назад", close)
  f._heading("ПЕРСОНАЖИ")
- f._label("Karasuno · фиксированные характеристики · без прокачки", 16)
+ f._label("Karasuno / Aoba Johsai · фиксированные характеристики · без прокачки", 16)
  for id in VolleyCharacterDatabase.IDS:
   var data := VolleyCharacterDatabase.get_character(id)
   var panel := PanelContainer.new()

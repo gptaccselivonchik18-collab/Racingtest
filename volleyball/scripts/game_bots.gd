@@ -185,7 +185,7 @@ func place_team(team: int) -> void:
   actor.energy = 1.0
 
 func role_for(actor: ContextAthlete) -> String:
- if actor.character_id == "kageyama":
+ if actor.character_id in ["kageyama", "oikawa"]:
   return "setter"
  if actor.character_id == "hinata":
   return "attacker"
@@ -246,12 +246,10 @@ func reset_rally() -> void:
   bot.holding_ball = game.ball.held and game.ball.athlete == bot
 
 func _physics_process(dt: float) -> void:
- if is_instance_valid(game.super_serve) and game.super_serve.active:
-  return
  if get_tree().paused or not authority() or bots.is_empty():
   return
  clock += dt
- if solo_match and match_winner < 0 and round_wait >= 0:
+ if not game.super_serve.active and solo_match and match_winner < 0 and round_wait >= 0:
   round_wait -= dt
   if round_wait < 0:
    reset_round()

@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 35
+const PROTOCOL := 36
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -132,7 +132,6 @@ func leave() -> void:
   game.super_serve.finish(false)
  if is_instance_valid(game.super_serve):
   game.super_serve.finished_sequence = -1
-  game.super_serve.charges.clear()
   game.super_serve.clear_credit()
  if is_instance_valid(game.float_serve):
   game.float_serve.cancel_sequence()
@@ -256,7 +255,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок", character
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.35." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.36." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -450,9 +449,13 @@ func command(role: String, phase: String, payload: Dictionary) -> void:
  execute(id, role, phase, payload)
 
 func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> bool:
- if not hosting or not players.has(id) or role not in ["no_look", "freak", "primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "float_serve", "stats"] or phase not in ["press", "release", "cancel"]:
+ if not hosting or not players.has(id) or role not in ["super", "no_look", "freak", "primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "float_serve", "stats"] or phase not in ["press", "release", "cancel"]:
   return false
  var actor: ContextAthlete = players[id].actor
+ if game.super_serve.locks(actor):
+  return false
+ if role == "super":
+  return phase == "press" and game.super_serve.begin(actor,id)
  if actor.court_team < 0 and role not in ["cancel", "next"]:
   return false
  _apply_input(id, payload.get("axis", actor.move_axis), payload.get("tilt", actor.tilt), payload.get("yaw", actor.camera_yaw), payload.get("pitch", actor.camera_pitch))
@@ -619,7 +622,7 @@ func _process(dt: float) -> void:
    if not players.has(id) and now - int(last_input[id]) > 5000:
     multiplayer.multiplayer_peer.disconnect_peer(id)
     last_input.erase(id)
-  if not game.super_serve.active and match_active and round_live and game.rules.ended and round_wait < 0:
+  if match_active and round_live and game.rules.ended and round_wait < 0:
    award(1 - last_touch_team)
   if not game.super_serve.active and match_active and match_winner < 0 and round_wait >= 0:
    round_wait -= dt

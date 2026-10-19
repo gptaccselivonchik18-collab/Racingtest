@@ -247,7 +247,7 @@ func _ready() -> void:
  last_result = "Выберите упражнение в меню • R — следующий мяч"
 
 func _process(dt: float) -> void:
- if cinema_time >= 0:
+ if cinema_time >= 0 and not replica:
   return
  if not replica or not pose_ready:
   return

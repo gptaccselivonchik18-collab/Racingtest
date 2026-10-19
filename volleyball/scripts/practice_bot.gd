@@ -21,8 +21,6 @@ func _ready() -> void:
  add_child(tag)
 
 func _physics_process(dt: float) -> void:
- if is_instance_valid(practice) and is_instance_valid(practice.game.super_serve) and practice.game.super_serve.active:
-  return
  if replica:
   return
  super._physics_process(dt)

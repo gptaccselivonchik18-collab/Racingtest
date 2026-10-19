@@ -453,7 +453,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   if obstacle.is_empty():
    var candidates: Array = contact_athletes if not contact_athletes.is_empty() else [athlete]
    for candidate in candidates:
-    if not is_instance_valid(candidate) or (candidate is ContextAthlete and (candidate.lower_serve_active or candidate.float_serve_active)):
+    if not is_instance_valid(candidate) or (candidate is ContextAthlete and (candidate.lower_serve_active or candidate.float_serve_active or candidate.cinema_time >= 0)):
      continue
     if candidate is ContextAthlete:
      candidate.contact_incoming_spin = state.angular_velocity

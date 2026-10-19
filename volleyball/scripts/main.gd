@@ -112,8 +112,6 @@ func _process(_dt: float) -> void:
   ball.feed(Vector3(0, 0.3, 1), Vector3.ZERO)
 
 func _physics_process(_dt: float) -> void:
- if is_instance_valid(super_serve) and super_serve.active:
-  return
  if lan.active and not lan.hosting:
   return
  if (lan.active and not lan.match_active) or (not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match):
@@ -215,8 +213,6 @@ func begin_bump() -> bool:
  return false
 
 func _on_surface(surface: String) -> void:
- if is_instance_valid(super_serve) and super_serve.active:
-  return
  if surface == "floor":
   super_serve.record_floor(ball.global_position)
  if lan.active and not lan.hosting:

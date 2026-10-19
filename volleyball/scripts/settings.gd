@@ -2,7 +2,7 @@ class_name VolleySettings
 extends RefCounted
 const PATH := "user://context_controls.cfg"
 const DEFAULT_KEYS := {"bump": KEY_X, "lower_serve": KEY_V, "float_serve": KEY_B, "forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "primary": -MOUSE_BUTTON_LEFT, "secondary": KEY_Q, "jump": KEY_SPACE, "dive": KEY_CTRL, "jump_set": KEY_E, "pause": KEY_ESCAPE, "next": KEY_R, "pickup": KEY_F, "lock": KEY_SHIFT}
-const KEY_LABELS := {"no_look": "No-Look Set", "freak": "Freak Quick", "bump": "Нижний приём", "lower_serve": "Нижняя подача", "float_serve": "Подача планер", "forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
+const KEY_LABELS := {"super": "Super Serve", "no_look": "No-Look Set", "freak": "Freak Quick", "bump": "Нижний приём", "lower_serve": "Нижняя подача", "float_serve": "Подача планер", "forward": "Вперёд", "back": "Назад", "left": "Влево", "right": "Вправо", "primary": "Атака", "secondary": "Пас / блок", "jump": "Прыжок", "dive": "Подкат", "jump_set": "Пас в прыжке", "pause": "Меню", "next": "Следующий мяч", "pickup": "Подобрать / опустить", "lock": "Фиксация корпуса"}
 var keys := DEFAULT_KEYS.duplicate()
 var layout := {}
 var sensitivity := 1.0
@@ -15,6 +15,7 @@ var nickname := "Игрок"
 func _init() -> void:
  keys["no_look"] = KEY_C
  keys["freak"] = KEY_G
+ keys["super"] = KEY_T
 
 static func clean_nickname(value: String) -> String:
  var result := ""

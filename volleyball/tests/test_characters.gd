@@ -24,8 +24,8 @@ func run() -> void:
  var cm: VolleyCharacters = game.characters
  cm.set_physics_process(false)
  var original := FileAccess.get_file_as_string(cm.SAVE) if FileAccess.file_exists(cm.SAVE) else ""
- check(VolleyCharacterDatabase.IDS.size() == 2, "Only Hinata and Kageyama are available")
- var expected := {"hinata": [69,62,85,100,45,35,100,85], "kageyama": [83,75,70,89,95,100,88,85]}
+ check(VolleyCharacterDatabase.IDS.size() == 3, "Hinata, Kageyama and Oikawa are available")
+ var expected := {"hinata": [69,62,85,100,45,35,100,85], "kageyama": [83,75,70,89,95,100,88,85], "oikawa": [75,79,72,78,100,98,74,76]}
  for hero in VolleyCharacterDatabase.IDS:
   cm.choose_local(hero)
   check(game.athlete.character_id == hero, "Selection applies " + hero)
@@ -34,9 +34,10 @@ func run() -> void:
    values.append(int(game.athlete.stats.values[key]))
   check(values == expected[hero], "Exact fixed eight-stat sheet for " + hero)
   game.athlete.stats.set_stat("jump", 999)
-  check(int(game.athlete.stats.values.jump) == (100 if hero == "hinata" else 89), "Runtime/editor ratings cannot overwrite " + hero)
+  check(int(game.athlete.stats.values.jump) == int(VolleyCharacterDatabase.get_character(hero).stats.jump), "Runtime/editor ratings cannot overwrite " + hero)
+ cm.choose_local("kageyama")
  check(JSON.parse_string(FileAccess.get_file_as_string(cm.SAVE)).selected == "kageyama", "Selected hero persists to user data")
- check(not game.hud.buttons.has("super") and not game.hud.settings.keys.has("super") and not game.super_serve.begin(game.athlete, 0), "Archived super serve has no button, key or callable activation")
+ check(game.hud.buttons.has("super") and game.hud.settings.keys.has("super") and not game.super_serve.begin(game.athlete, 0), "Super serve controls exist but Kageyama cannot activate Oikawa ability")
  check(cm.apply_teams(roster("kageyama", "hinata"), 0, false), "One human, one bot and ten empty slots work")
  var h: ContextAthlete = game.game_bots.bots[-100]
  var k: ContextAthlete = game.athlete
