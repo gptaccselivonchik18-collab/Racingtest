@@ -31,6 +31,13 @@ func run() -> void:
  s.note_contact(other, 42, 2)
  s.record_floor(Vector3(0, 0.155, -5))
  check(int(s.charges.get(42, 0)) == 1 and int(s.charges[0]) == 7, "Another player's score charges only that player")
+ other.position.z = -5
+ s.charges[0] = 0
+ s.note_contact(game.athlete, 0, 2)
+ s.note_contact(other, 42, 1)
+ s.record_floor(Vector3(0, 0.155, -5))
+ check(int(s.charges[0]) == 1 and int(s.charges[42]) == 1, "A failed opponent receive still credits the player who scored")
+ s.charges[0] = 7
  other.queue_free()
  check(s.begin(game.athlete, 0) and s.percent(0) == 0, "Starting the skill consumes the personal charge")
  check(not s.begin(game.athlete, 0), "A second press cannot overlap two cinematic sequences")

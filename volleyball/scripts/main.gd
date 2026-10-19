@@ -245,6 +245,7 @@ func _on_surface(surface: String) -> void:
   rules.fault("Аут: касание ограждения")
 
 func repeat_drill() -> void:
+ super_serve.clear_credit()
  if game_bots.solo_match:
   game_bots.reset_round()
   return

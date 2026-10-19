@@ -37,9 +37,7 @@ var random := RandomNumberGenerator.new()
 var packet := {}
 const KILLS_REQUIRED := 7
 var charges: Dictionary = {}
-var last_scorer: WeakRef
-var last_scorer_id := 0
-var last_scorer_side := 1.0
+var scoring_contacts: Dictionary = {}
 var floor_consumed := true
 var charge_sync := 0.0
 
@@ -55,22 +53,32 @@ func ready_for(id: int) -> bool:
 func note_contact(player: ContextAthlete, id: int, kind: int) -> void:
  if not authority() or active:
   return
+ if floor_consumed:
+  scoring_contacts.clear()
  floor_consumed = false
- last_scorer = weakref(player) if kind != VolleyAthlete.Technique.THROW else null
- last_scorer_id = id
- last_scorer_side = 1.0 if (player.court_team == 0 if player.court_team >= 0 else player.position.z >= 0) else -1.0
+ var team := player.court_team if player.court_team >= 0 else (0 if player.position.z >= 0 else 1)
+ scoring_contacts[team] = {"actor": weakref(player), "id": id, "eligible": kind != VolleyAthlete.Technique.THROW}
+
+func clear_credit() -> void:
+ floor_consumed = true
+ scoring_contacts.clear()
 
 func record_floor(at: Vector3) -> void:
  if not authority() or active or floor_consumed:
   return
  floor_consumed = true
- if last_scorer == null or ((game.lan.match_active or game.game_bots.solo_match) and game.rules.ended):
+ if ((game.lan.match_active or game.game_bots.solo_match) and game.rules.ended):
   return
- var player: Variant = last_scorer.get_ref()
+ var winner := 0 if at.z < 0 else 1
+ var contact: Dictionary = scoring_contacts.get(winner, {})
+ if contact.is_empty() or not contact.eligible:
+  return
+ var player: Variant = contact.actor.get_ref()
  if not is_instance_valid(player) or player is VolleyGameBot or player is VolleyPracticeBot:
   return
- if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9.0 + VolleyBall.RADIUS and at.z * last_scorer_side < -0.15:
-  _earn(last_scorer_id)
+ if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9.0 + VolleyBall.RADIUS and absf(at.z) > 0.15:
+  # A failed defensive touch does not steal the attacker's personal credit.
+  _earn(int(contact.id))
 
 func _earn(id: int) -> void:
  charges[id] = mini(KILLS_REQUIRED, int(charges.get(id, 0)) + 1)
@@ -221,7 +229,7 @@ func _start(data: Dictionary, player: ContextAthlete, time: float) -> void:
  height = float(data.height)
  flight = float(data.flight)
  elapsed = time
- floor_consumed = true
+ clear_credit()
  landed = time >= HIT + flight
  sync_left = 0.35
  had_network = game.lan.active

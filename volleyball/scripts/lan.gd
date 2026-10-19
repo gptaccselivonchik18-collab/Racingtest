@@ -133,7 +133,7 @@ func leave() -> void:
  if is_instance_valid(game.super_serve):
   game.super_serve.finished_sequence = -1
   game.super_serve.charges.clear()
-  game.super_serve.floor_consumed = true
+  game.super_serve.clear_credit()
  if is_instance_valid(game.float_serve):
   game.float_serve.cancel_sequence()
  if is_instance_valid(game.lower_serve):
