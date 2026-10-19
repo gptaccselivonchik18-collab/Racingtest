@@ -567,8 +567,6 @@ func _press(role: String, source := -2) -> bool:
  role_owners[role] = source
  queued.erase(role)
  var accepted := _perform(role)
- if accepted and is_instance_valid(game.sound):
-  game.sound.ui("ui_tap", 0.40)
  if not accepted and role in ["primary", "secondary", "jump_set", "bump", "jump"] and game.action_owner.is_empty():
   if game.athlete.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] or game.athlete.jump_windup > 0 or (role == "jump" and game.athlete.velocity.y < 0):
    queued[role] = {"source": source, "remaining": 0.16, "released": false}

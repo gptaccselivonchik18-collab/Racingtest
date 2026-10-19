@@ -75,7 +75,6 @@ func _physics_process(dt: float) -> void:
  actor.velocity.z = 0
  if elapsed >= 0.12 and not released:
   released = true
-  game.ball.handled.emit("toss", actor.hold_position())
   var release_at := actor.hold_position()
   actor.animate_release()
   game.ball.feed(release_at, Vector3.UP * 4.2, Vector3.ZERO)

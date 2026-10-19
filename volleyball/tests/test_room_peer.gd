@@ -52,10 +52,6 @@ func _process(dt: float) -> bool:
   elif phase == 1 and gate.observed.size() == 2:
    if game.practice.bot.contacts < 1:
     return false
-   # Muting the host is a local preference, not a mute for the whole room.
-   game.sound.master = 0
-   game.sound.apply_volumes()
-   game.sound.world("spike", Vector3(0, 2, -3), 0.7)
    for id in game.lan.players:
     if id != 1:
      var actor: ContextAthlete = game.lan.players[id].actor
@@ -141,9 +137,6 @@ func _process(dt: float) -> bool:
      fail("Guest body/team assignment disagrees with the roster")
    gate.saw_match.rpc_id(1)
   if gate.finished:
-   if game.sound.received_events < 1:
-    fail("Guest did not receive host-authoritative contact audio")
-   print("ROOM_SPATIAL_AUDIO_PASSED events=%d" % game.sound.received_events)
    print("ROOM_CLIENT_PASSED bot=%s match=%s snapshots=%d" % [bot_seen, match_seen, game.lan.snapshot_count])
    quit(0 if bot_seen and match_seen and score_seen else 1)
  return false

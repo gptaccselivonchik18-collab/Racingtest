@@ -93,5 +93,4 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   outgoing = ball.solve_power_serve(last_contact_point, target, lerpf(14, 26, accuracy), spin)
  # The base contact signal is deliberately disconnected for this actor:
  # practice remains outside scored match rules.
- practice.game.sound.contact(strike_technique, last_contact_point, outgoing, self)
  return outgoing - incoming

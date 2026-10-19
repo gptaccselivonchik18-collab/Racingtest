@@ -19,7 +19,6 @@ var float_serve: VolleyFloatServe
 var practice: VolleyPractice
 var game_bots: VolleyGameBots
 var frame_rate: VolleyFrameRate
-var sound: VolleySound
 var feedback_text := ""
 var feedback_color := Color.WHITE
 var feedback_left := 0.0
@@ -85,9 +84,6 @@ func _ready() -> void:
  add_child(game_bots)
  hud.add_bot_settings()
  game_bots.add_settings(hud)
- sound = VolleySound.new()
- sound.game = self
- add_child(sound)
  frontend = VolleyFrontend.new()
  frontend.game = self
  layer.add_child(frontend)
@@ -162,7 +158,6 @@ func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
- sound.contact(kind, _point, _outgoing, actor)
  var first_match_touch: bool = (lan.match_active and not lan.round_live) or (game_bots.solo_match and game_bots.last_team < 0)
  if first_match_touch:
   rules.reset()
