@@ -195,8 +195,8 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging build/VolleyballSimulator-Android.apk | tee build/logs/apk-manifest.log
           grep -q "org.volleylab.simulator" build/logs/apk-manifest.log
           grep -q "uses-permission: name='android.permission.INTERNET'" build/logs/apk-manifest.log
-          grep -q "versionCode='33'" build/logs/apk-manifest.log
-          grep -q "versionName='0.33.0'" build/logs/apk-manifest.log
+          grep -q "versionCode='34'" build/logs/apk-manifest.log
+          grep -q "versionName='0.34.0'" build/logs/apk-manifest.log
           # Current target uses INTERNET for LAN; raising it to 37 requires runtime permission support.
           grep -q "targetSdkVersion:'36'" build/logs/apk-manifest.log
           unzip -l build/VolleyballSimulator-Android.apk | grep 'lib/arm64-v8a/libgodot_android.so'
@@ -262,4 +262,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
-          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.33' --notes-file release-notes.txt --prerelease
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.34' --notes-file release-notes.txt --prerelease

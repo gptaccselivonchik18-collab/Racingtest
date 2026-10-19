@@ -3,9 +3,12 @@ extends Node3D
 
 # Disposable prototype: local choreography and cameras, host-selected outcome.
 # No audio or global slow motion. Charge belongs to the scoring human only.
-const HIT := 2.86
-const LAND := 3.12
-const END := 4.30
+const HIT := 3.55
+const PALM_HOLD := 0.36
+const RELEASE := HIT + PALM_HOLD
+const FLOOR_HOLD := 0.30
+const RESTORE := 6.65
+const END := 7.10
 var game: Node3D
 var active := false
 var elapsed := 0.0
@@ -29,6 +32,8 @@ var camera: Camera3D
 var overlay: CanvasLayer
 var art: Control
 var mesh: MeshInstance3D
+var ball_visual: MeshInstance3D
+var ball_visual_rest := Transform3D.IDENTITY
 var strokes := ImmediateMesh.new()
 var trail: Array[Vector3] = []
 var trail_clock := 0.0
@@ -143,7 +148,7 @@ func request() -> bool:
 
 func choose_target(source: Vector3) -> Dictionary:
  var direction := 1.0 if source.z >= 0 else -1.0
- var good := random.randf() < 0.5
+ var good := random.randf() < 0.9
  var at := Vector3.ZERO
  var best := -INF
  var safe: Array[Vector3] = []
@@ -158,8 +163,7 @@ func choose_target(source: Vector3) -> Dictionary:
    var reach := opponent.contact_ball_radius * float(opponent.mechanic(VolleyAthlete.Technique.UNDERHAND).radius) + 0.55
    for step in range(15):
     var u := step / 14.0
-    var ball_position := contact.lerp(point, u)
-    ball_position.y = lerpf(contact.y, point.y, pow(u, 4.2))
+    var ball_position := flight_position(contact, point, u)
     var body := Vector3(observed.x, clampf(ball_position.y, observed.y + 0.15, observed.y + 2.55), observed.z)
     clearance = minf(clearance, ball_position.distance_to(body) - reach)
   if clearance > best:
@@ -237,7 +241,7 @@ func _start(data: Dictionary, player: ContextAthlete, time: float) -> void:
  flight = float(data.flight)
  elapsed = time
  clear_credit()
- landed = time >= HIT + flight
+ landed = time >= RELEASE + flight
  sync_left = 0.35
  had_network = game.lan.active
  old_hud = game.hud.visible
@@ -258,6 +262,11 @@ func _start(data: Dictionary, player: ContextAthlete, time: float) -> void:
  game.ball.pending_feed = false
  game.ball.clear_float()
  game.ball.clear_attack()
+ for child in game.ball.get_children():
+  if child is MeshInstance3D:
+   ball_visual = child
+   ball_visual_rest = child.transform
+   break
  game.previous_ball_valid = false
  trail.clear()
  active = true
@@ -282,7 +291,7 @@ func _process(dt: float) -> void:
  if authority() and sync_left <= 0:
   sync_left = 0.35
   _broadcast(elapsed)
- if not landed and elapsed >= HIT + flight:
+ if not landed and elapsed >= RELEASE + flight:
   landed = true
   if authority():
    if inside:
@@ -316,14 +325,47 @@ func jump_at(time: float) -> float:
  if time < 1.63:
   var u := clampf((time - 1.10) / 0.53, 0, 1)
   return height * (1.0 - pow(1.0 - u, 2.2))
- if time < HIT:
+ if time < RELEASE:
   return height - 0.12 * smoothstep(1.63, HIT, time)
- return (height - 0.12) * (1.0 - pow(smoothstep(HIT, 3.72, time), 1.4))
+ return (height - 0.12) * (1.0 - pow(smoothstep(RELEASE, RELEASE + 0.95, time), 1.4))
 
 func hit_point() -> Vector3:
  var chest := Vector3(0, 1.23, 0)
  var hit_basis := Basis.from_euler(Vector3(0.12, 0.22, 0))
  return ground_at(HIT) + Vector3.UP * (height - 0.12) + Basis(Vector3.UP, yaw) * (chest + Vector3(0, -0.035, 0) + hit_basis * (Vector3(0.25, 2.22, -0.36) - chest)) + Vector3(0, 0, -side * 0.15)
+
+func flight_position(start: Vector3, end: Vector3, u: float) -> Vector3:
+ # A shallow ballistic bend, rather than carrying high and diving vertically.
+ return start.lerp(end, u) + Vector3.UP * (0.18 * 4.0 * u * (1.0 - u))
+
+func release_point() -> Vector3:
+ return hit_point() + (target - hit_point()).normalized() * 0.07
+
+func rebound_state(time: float) -> Dictionary:
+ # Local cinematic time eases out of the floor close-up. Release the real
+ # body with this same position and velocity so momentum survives the cut.
+ var q := maxf(0, time - RELEASE - flight - FLOOR_HOLD)
+ var remaining := 0.20 * q + 0.80 * (q - 0.55 * (1.0 - exp(-q / 0.55)))
+ var direction := target - release_point()
+ direction.y = 0
+ var speed := direction.normalized() * 6.0 + Vector3.UP * 3.6
+ var at := target
+ while remaining > 0.00001:
+  var dt := minf(remaining, 1.0 / 120.0)
+  speed.y -= 9.81 * dt
+  at += speed * dt
+  if at.y < VolleyBall.RADIUS:
+   at.y = VolleyBall.RADIUS
+   speed.y = absf(speed.y) * 0.60 if speed.y < -0.5 else 0.0
+   speed.x *= 0.97
+   speed.z *= 0.97
+  for axis in [0, 2]:
+   var bound := VolleyCourt.INNER_X if axis == 0 else VolleyCourt.INNER_Z
+   if absf(at[axis]) > bound:
+    at[axis] = signf(at[axis]) * (2.0 * bound - absf(at[axis]))
+    speed[axis] = -speed[axis] * 0.65
+  remaining -= dt
+ return {"position": at, "velocity": speed}
 
 func ball_at(time: float) -> Vector3:
  var facing := Basis(Vector3.UP, yaw)
@@ -337,13 +379,32 @@ func ball_at(time: float) -> Vector3:
   return (1.0 - u) * (1.0 - u) * start + 2.0 * (1.0 - u) * u * control + u * u * (contact + Vector3.UP * 0.16)
  if time < HIT:
   return contact + Vector3.UP * (0.16 * (1.0 - smoothstep(1.63, HIT, time)))
- if time < HIT + flight:
-  var u := clampf((time - HIT) / flight, 0, 1)
-  var point := contact.lerp(target, u)
-  point.y = lerpf(contact.y, target.y, pow(u, 4.2))
-  return point
- var after := maxf(0, time - HIT - flight)
- return target + Vector3.UP * maxf(0, 1.9 * after - 2.6 * after * after) + Vector3((target.x - origin.x) * after * 0.09, 0, -side * after * 0.28)
+ if time < RELEASE:
+  return contact.lerp(release_point(), smoothstep(HIT, RELEASE, time))
+ if time < RELEASE + flight:
+  return flight_position(release_point(), target, clampf((time - RELEASE) / flight, 0, 1))
+ var after := time - RELEASE - flight
+ if after < FLOOR_HOLD:
+  # Keep the underside planted while the shell compresses and springs back.
+  var squash := 1.0 - 0.34 * sin(PI * after / FLOOR_HOLD)
+  return target + Vector3.DOWN * (VolleyBall.RADIUS * (1.0 - squash))
+ return rebound_state(time).position
+
+func _deform_ball() -> void:
+ if not is_instance_valid(ball_visual):
+  return
+ var compression := 1.0
+ var normal := (target - hit_point()).normalized()
+ if elapsed >= HIT and elapsed < RELEASE:
+  compression = 1.0 - 0.28 * sin(PI * (elapsed - HIT) / PALM_HOLD)
+ elif elapsed >= RELEASE + flight and elapsed < RELEASE + flight + FLOOR_HOLD:
+  normal = Vector3.UP
+  compression = 1.0 - 0.34 * sin(PI * (elapsed - RELEASE - flight) / FLOOR_HOLD)
+ var up := Vector3.FORWARD if absf(normal.dot(Vector3.UP)) > 0.95 else Vector3.UP
+ var frame := Basis.looking_at(normal, up)
+ var width := 1.0 / sqrt(compression)
+ var deform := frame * Basis.from_scale(Vector3(width, width, compression)) * frame.inverse()
+ ball_visual.global_basis = deform * game.ball.global_basis * ball_visual_rest.basis
 
 func _sample() -> void:
  actor.cinema_time = elapsed
@@ -353,7 +414,11 @@ func _sample() -> void:
  actor.velocity = Vector3.ZERO
  actor._update_pose(0)
  game.ball.global_position = ball_at(elapsed)
- game.ball.rotation = Vector3(elapsed * (18 if elapsed >= HIT else 2), 0.3, elapsed * 1.2)
+ var turn := minf(elapsed, HIT) * 2.0 + clampf(elapsed - HIT, 0, PALM_HOLD) * 0.4
+ turn += clampf(elapsed - RELEASE, 0, flight) * 24.0 + clampf(elapsed - RELEASE - flight, 0, FLOOR_HOLD) * 0.5
+ turn += maxf(0, elapsed - RELEASE - flight - FLOOR_HOLD) * 9.0
+ game.ball.rotation = Vector3(turn, 0.3, turn * 0.2)
+ _deform_ball()
  _camera()
  _effects()
  art.queue_redraw()
@@ -361,20 +426,21 @@ func _sample() -> void:
 func pose(motion: VolleyMotion) -> void:
  var t := elapsed
  var draw := smoothstep(0.70, 1.80, t)
- var reach := smoothstep(1.95, HIT, t)
- var follow := smoothstep(HIT, 3.15, t)
- var recover := smoothstep(3.4, 4.1, t)
+ var reach := smoothstep(2.15, HIT, t)
+ var follow := smoothstep(RELEASE, RELEASE + 0.38, t)
+ var recover := smoothstep(RELEASE + 0.80, RELEASE + 1.55, t)
  var twist := lerpf(-0.44 * draw, 0.22, reach)
  twist = lerpf(twist, 0.48, follow) * (1.0 - recover)
  var bend := lerpf(-0.18 * draw, 0.12, reach)
  bend = lerpf(bend, 0.26, follow) * (1.0 - recover)
- var crouch := 0.035 + 0.19 * sin(smoothstep(0.75, 1.10, t) * PI) if t < 1.10 else 0.035 + 0.20 * sin(smoothstep(3.55, 4.1, t) * PI)
+ var crouch := 0.035 + 0.19 * sin(smoothstep(0.75, 1.10, t) * PI) if t < 1.10 else 0.035 + 0.20 * sin(smoothstep(RELEASE + 0.80, RELEASE + 1.35, t) * PI)
  motion.body_offset = Vector3(0, -crouch, 0)
  motion.torso_basis = Basis.from_euler(Vector3(bend, twist, 0))
  var left := Vector3(-0.19, 1.40, -0.48).lerp(Vector3(-0.20, 2.05, -0.40), smoothstep(0.18, 0.75, t))
  left = left.lerp(Vector3(-0.35, 1.22, -0.10), reach)
  var right := Vector3(0.29, 1.17, -0.22).lerp(Vector3(0.46, 2.00, 0.25), draw)
  right = right.lerp(Vector3(0.25, 2.22, -0.36), reach)
+ right += Vector3(0, -0.02, -0.05) * smoothstep(HIT, RELEASE, t) * (1.0 - follow)
  right = right.lerp(Vector3(-0.20, 1.25, -0.66), follow)
  var chest := Vector3(0, 1.23, 0)
  motion.wrists.clear()
@@ -387,7 +453,7 @@ func pose(motion: VolleyMotion) -> void:
   motion.wrists.append(chest + motion.body_offset + motion.torso_basis * (wrist - chest))
   var pole := Vector3(-0.40, 1.55, -0.15) if i == 0 else Vector3(0.65, 1.78, 0.28).lerp(Vector3(0.4, 1.65, -0.34), reach)
   motion.poles.append(chest + motion.body_offset + motion.torso_basis * (pole - chest))
-  var tuck := smoothstep(1.1, 1.65, t) * (1.0 - smoothstep(3.0, 3.65, t))
+  var tuck := smoothstep(1.1, 1.65, t) * (1.0 - smoothstep(RELEASE + 0.12, RELEASE + 0.9, t))
   var foot := Vector3(s * 0.20, 0.11 + tuck * (0.23 if i == 0 else 0.10), tuck * (0.23 if i == 0 else -0.15))
   if t < 1.10:
    var stride := sin(t * TAU * 2.0 + i * PI)
@@ -406,24 +472,26 @@ func _camera() -> void:
   at = origin + right * view * 6.0 + forward * 0.8 + Vector3.UP * (4.1 + jump_at(elapsed) * 0.18)
   focus = origin + Vector3.UP * (3.5 + jump_at(elapsed) * 0.35 + smoothstep(0.35, 1.10, elapsed) * 0.45)
   camera.fov = 85
- elif elapsed < HIT:
+ elif elapsed < RELEASE + 0.045:
   var u := smoothstep(1.63, HIT, elapsed)
   at = actor.position + right * lerpf(2.05, 1.52, u) + forward * lerpf(0.35, 0.95, u) + Vector3.UP * lerpf(1.55, 1.80, u)
   focus = (actor.wrists[1] + hit_point()) * 0.5 + Vector3.DOWN * 0.12
-  camera.fov = lerpf(53, 40, u)
+  camera.fov = lerpf(53, 36, u)
  else:
-  at = Vector3(clampf(target.x + (2.0 if target.x < 0 else -2.0), -6.7, 6.7), 0.48, -side * 11.25)
-  focus = target + Vector3.UP * 0.55
-  camera.fov = 72
-  var impact := exp(-maxf(0, elapsed - HIT - flight) * 18.0) if elapsed >= HIT + flight else 0.0
+  var tracking := smoothstep(RELEASE + flight + FLOOR_HOLD, RELEASE + flight + 0.80, elapsed)
+  var framing := target.lerp(game.ball.position, tracking)
+  at = framing + Vector3(1.45 if target.x < 0 else -1.45, 0.24, -side * 1.65)
+  focus = framing + Vector3.UP * 0.12
+  camera.fov = 62
+  var impact := exp(-maxf(0, elapsed - RELEASE - flight) * 14.0) if elapsed >= RELEASE + flight else 0.0
   at += Vector3(sin(elapsed * 137), cos(elapsed * 121), 0) * impact * 0.028
  at.x = clampf(at.x, -7.65, 7.65)
  at.z = clampf(at.z, -11.55, 11.55)
  at.y = clampf(at.y, 0.22, 10.6)
  camera.global_position = at
  camera.look_at(focus, Vector3.UP)
- if elapsed > 3.95:
-  var blend := smoothstep(3.95, END, elapsed)
+ if elapsed > RESTORE:
+  var blend := smoothstep(RESTORE, END, elapsed)
   camera.global_transform = camera.global_transform.interpolate_with(game.camera.global_transform, blend)
   camera.fov = lerpf(camera.fov, game.camera.fov, blend)
 
@@ -446,7 +514,7 @@ func _effects() -> void:
  _line(Vector3.ZERO, Vector3.ZERO, Color(0, 0, 0, 0))
  var t := elapsed
  var ball_at_now: Vector3 = game.ball.position
- if t > 0.35 and t < HIT + flight:
+ if t > 0.35 and t < RELEASE + flight:
   trail.append(ball_at_now)
   if trail.size() > 16:
    trail.pop_front()
@@ -465,38 +533,55 @@ func _effects() -> void:
    var a := i * TAU / 9
    var offset := Vector3(cos(a) * 0.45, -0.3, sin(a) * 0.45)
    _line(actor.position + offset, actor.position + offset + Vector3.DOWN * 0.8, Color(0.95, 0.95, 0.91, 0.45))
- if t > HIT - 0.03 and t < HIT + 0.18:
-  var u := clampf((t - HIT) / 0.18, 0, 1)
+ if t > HIT and t < RELEASE + 0.22:
+  var u := clampf((t - HIT) / (PALM_HOLD + 0.22), 0, 1)
   var center := hit_point()
+  var normal := (target - center).normalized()
+  var frame := Basis.looking_at(normal)
   for i in range(18):
    var a := i * TAU / 18
-   var direction := Vector3(cos(a), sin(a), -side * 0.15).normalized()
-   _line(center + direction * (0.18 + u * 0.25), center + direction * (0.28 + u * 0.75), Color(1, 0.96, 0.76, 1.0 - u))
- if t >= HIT and t < HIT + flight:
+   var direction := frame * Vector3(cos(a), sin(a), 0)
+   _line(center + direction * (0.18 + u * 0.25), center + direction * (0.28 + u * 0.62), Color(1, 0.96, 0.76, sin(u * PI) * 0.85))
+  # Pale curved pressure strokes wrap the palm, not a magical projectile.
+  for arc in range(3):
+   for step in range(10):
+    var a := -1.1 + step * 0.22
+    var b := a + 0.22
+    var r := 0.22 + arc * 0.08 + u * 0.12
+    _line(center + frame * Vector3(cos(a) * r, sin(a) * r, 0.03 * arc), center + frame * Vector3(cos(b) * r, sin(b) * r, 0.03 * arc), Color(1, 0.98, 0.89, sin(u * PI) * 0.55))
+ if t >= RELEASE and t < RELEASE + flight:
   var direction := (target - hit_point()).normalized()
   for i in range(7):
    var offset := Vector3((i - 3) * 0.035, (i % 2) * 0.04, 0)
    _line(ball_at_now + offset, ball_at_now - direction * (1.8 + i * 0.18) + offset, Color(1, 0.97, 0.85, 0.8 - i * 0.07))
- if t >= HIT + flight and t < HIT + flight + 0.45:
-  var u := (t - HIT - flight) / 0.45
-  _ring(target + Vector3.UP * 0.02, 0.12 + u * 0.8, Color(0.92, 0.88, 0.73, (1.0 - u) * 0.8))
+ if t >= RELEASE + flight and t < RELEASE + flight + 0.80:
+  var u := (t - RELEASE - flight) / 0.80
+  var floor_point := Vector3(target.x, 0.025, target.z)
+  _ring(floor_point, 0.12 + u * 0.9, Color(0.92, 0.88, 0.73, (1.0 - u) * 0.7))
+  for i in range(16):
+   var angle := i * TAU / 16.0
+   var dir := Vector3(cos(angle), 0, sin(angle))
+   var dust := floor_point + dir * (0.14 + u * (0.45 + (i % 3) * 0.15)) + Vector3.UP * sin(u * PI) * (0.03 + (i % 4) * 0.025)
+   _line(dust, dust + dir * 0.10 + Vector3.UP * 0.025, Color(0.86, 0.80, 0.66, (1.0 - u) * 0.65))
  strokes.surface_end()
 
 func _draw_frame() -> void:
  if not active:
   return
  var size := art.size
- var letterbox := size.y * 0.075 * (1.0 - smoothstep(3.95, END, elapsed))
+ var letterbox := size.y * 0.075 * (1.0 - smoothstep(RESTORE, END, elapsed))
  art.draw_rect(Rect2(0, 0, size.x, letterbox), Color("07131d"))
  art.draw_rect(Rect2(0, size.y - letterbox, size.x, letterbox), Color("07131d"))
- if elapsed >= HIT and elapsed < HIT + 0.07:
-  art.draw_rect(Rect2(Vector2.ZERO, size), Color(1, 0.98, 0.9, 0.16 * (1.0 - (elapsed - HIT) / 0.07)))
- if elapsed >= HIT and elapsed < HIT + flight:
+ if elapsed >= RELEASE and elapsed < RELEASE + 0.09:
+  art.draw_rect(Rect2(Vector2.ZERO, size), Color(1, 0.98, 0.9, 0.16 * (1.0 - (elapsed - RELEASE) / 0.09)))
+ if elapsed >= RELEASE + flight and elapsed < RELEASE + flight + 0.10:
+  art.draw_rect(Rect2(Vector2.ZERO, size), Color(1, 0.97, 0.86, 0.08 * (1.0 - (elapsed - RELEASE - flight) / 0.10)))
+ if elapsed >= RELEASE and elapsed < RELEASE + flight:
   for i in range(16):
    var a := i * TAU / 16 + 0.04
    var edge := Vector2(cos(a) * size.x * 0.8, sin(a) * size.y * 0.8)
    art.draw_line(size * 0.5 + edge * 0.72, size * 0.5 + edge, Color(0.97, 0.95, 0.89, 0.4), 1.6, true)
- if elapsed > HIT + flight + 0.15 and elapsed < 3.95:
+ if elapsed > RELEASE + flight + FLOOR_HOLD + 0.15 and elapsed < RESTORE:
   var text := "IN" if inside else "OUT"
   var font := ThemeDB.fallback_font
   var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x
@@ -518,10 +603,13 @@ func finish(release_ball := true) -> void:
   actor.action = VolleyAthlete.Action.IDLE
   actor._update_pose(0)
  if is_instance_valid(game.ball):
+  if is_instance_valid(ball_visual):
+   ball_visual.transform = ball_visual_rest
   if authority():
    game.ball.freeze = false
    game.ball.collision_mask = 1
-   game.ball.feed(ball_at(END) if release_ball else origin + Vector3(0, 0.5, -side), Vector3(0.3, 0, -side * 0.25), Vector3.ZERO)
+   var rebound := rebound_state(END)
+   game.ball.feed(rebound.position if release_ball else origin + Vector3(0, 0.5, -side), rebound.velocity if release_ball else Vector3.ZERO, Vector3(9, 2, -side * 4) if release_ball else Vector3.ZERO)
   else:
    game.lan.ball_motion.reset()
    game.lan.ball_age = -1

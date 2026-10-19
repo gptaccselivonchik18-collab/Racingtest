@@ -15,7 +15,7 @@ func run() -> void:
  s.set_process(false)
  var folder := OS.get_environment("VOLLEY_CAPTURE")
  DirAccess.make_dir_recursive_absolute(folder)
- for i in range(108):
+ for i in range(179):
   s.elapsed = i / 25.0
   s._sample()
   await RenderingServer.frame_post_draw
