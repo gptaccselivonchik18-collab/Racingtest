@@ -52,7 +52,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["super", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
+ for key in ["no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -68,7 +68,7 @@ func _layout() -> void:
   var screen := DisplayServer.screen_get_size()
   if screen.x > 0:
    margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
- var defaults := {"float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ var defaults := {"no_look": Vector2(size.x * 0.45, 106), "freak": Vector2(size.x * 0.65, 106), "float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
  for key in defaults:
   var at: Vector2 = defaults[key]
   var scale_value := settings.button_scale
@@ -88,12 +88,14 @@ func _layout() -> void:
   elif key in ["menu", "lock", "next"]:
    side = 46
   var dimensions := Vector2(side, side)
+  if key in ["no_look", "freak"]:
+   dimensions = Vector2(112, 52) * scale_value
   if key == "context":
    dimensions = Vector2(190, 44)
   at.x = clampf(at.x, margin + dimensions.x * 0.5, size.x - margin - dimensions.x * 0.5)
   at.y = clampf(at.y, 18 + dimensions.y * 0.5, size.y - dimensions.y * 0.5 - 12)
   buttons[key].rect = Rect2(at - dimensions * 0.5, dimensions)
- buttons.super.rect = Rect2(Vector2(size.x - margin - 164, 93), Vector2(160, 70))
+
  status.position = Vector2(margin + 70, 28)
  status.size = Vector2(size.x - margin * 2 - 260, 44)
  height_rect = Rect2(Vector2(size.x * 0.5 - 140, 104), Vector2(280, 50))
@@ -241,70 +243,11 @@ func _menu() -> void:
  _native_button(nick_row, "Сохранить", apply_nickname)
  nickname.text_submitted.connect(func(_text: String): apply_nickname.call())
  var explanation := Label.new()
- explanation.text = "65 — стандарт. Скрытого потолка нет: 999 и 9999 продолжают усиливать действие. Множитель показан ниже."
+ explanation.text = "Характеристики определяются выбранным персонажем. Изменение вручную отключено."
  explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  testing.add_child(explanation)
- stat_grid = GridContainer.new()
- stat_grid.columns = 2
- stat_grid.add_theme_constant_override("h_separation", 12)
- stat_grid.add_theme_constant_override("v_separation", 10)
- testing.add_child(stat_grid)
- for key in VolleyStyleStats.KEYS:
-  var stat_key: String = key
-  var card := PanelContainer.new()
-  card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  var card_style := VolleySettingsTheme.box("1b3a46", 14)
-  card_style.border_width_top = 2
-  card_style.border_color = Color("3a6267")
-  card.add_theme_stylebox_override("panel", card_style)
-  stat_grid.add_child(card)
-  var body := VBoxContainer.new()
-  body.add_theme_constant_override("separation", 4)
-  card.add_child(body)
-  var label := Label.new()
-  label.text = VolleyStyleStats.STYLE_LABELS[key]
-  label.add_theme_font_size_override("font_size", 18)
-  body.add_child(label)
-  var row := HBoxContainer.new()
-  body.add_child(row)
-  var value := SpinBox.new()
-  value.min_value = 0
-  value.max_value = 100
-  value.allow_greater = true
-  value.allow_lesser = true
-  value.step = 1
-  value.value = game.athlete.stats.values[key]
-  value.custom_minimum_size = Vector2(90, 44)
-  value.add_theme_font_size_override("font_size", 24)
-  value.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_CENTER
-  value.get_line_edit().add_theme_color_override("font_color", Color("b9e995"))
-  value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  value.value_changed.connect(func(v: float): _change_stat(stat_key, v))
-  _native_button(row, "−", func(): value.value -= 10).custom_minimum_size = Vector2(44, 44)
-  row.add_child(value)
-  _native_button(row, "+", func(): value.value += 10).custom_minimum_size = Vector2(44, 44)
-  stat_sliders[key] = value
-  var effect := Label.new()
-  effect.add_theme_color_override("font_color", Color("b9e995"))
-  effect.text = "Масштаб механики ×%.2f" % game.athlete.style_stats.factor(key)
-  body.add_child(effect)
-  stat_effects[key] = effect
-  var detail := Label.new()
-  detail.text = VolleyStyleStats.DETAILS[key]
-  detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-  detail.visible = false
-  detail.add_theme_font_size_override("font_size", 14)
-  var more := Button.new()
-  more.text = "На что влияет  ▾"
-  more.flat = true
-  more.alignment = HORIZONTAL_ALIGNMENT_LEFT
-  more.custom_minimum_size.y = 30
-  more.pressed.connect(func(): detail.visible = not detail.visible)
-  body.add_child(more)
-  body.add_child(detail)
- _native_button(testing, "Сбросить характеристики: 65", func():
-  for key in VolleyStyleStats.KEYS:
-   stat_sliders[key].value = 65)
+ _native_button(testing, "Персонажи", func(): game.characters.ui.open_characters(true))
+ _native_button(testing, "Настройка матча", func(): game.characters.ui.open_teams(true))
  var footer := HBoxContainer.new()
  footer.add_theme_constant_override("separation", 12)
  content.add_child(footer)
@@ -459,14 +402,6 @@ func _orientation(value: int) -> void:
  if OS.get_name() in ["iOS", "Android"]:
   DisplayServer.screen_set_orientation(value)
 
-func _change_stat(key: String, value: float) -> void:
- game.athlete.stats.set_stat(key, value)
- if stat_effects.has(key):
-  stat_effects[key].text = "Масштаб механики ×%.2f" % game.athlete.style_stats.factor(key)
- _save()
- if is_instance_valid(game.lan) and game.lan.active:
-  game.lan.local_action("stats", "press", {"skill": key, "value": value})
-
 func _save() -> void:
  settings.save(game.athlete)
 
@@ -519,7 +454,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["super", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
+  for key in ["no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -576,8 +511,10 @@ func _press(role: String, source := -2) -> bool:
  return accepted
 
 func _perform(role: String) -> bool:
- if role == "super":
-  return game.super_serve.request()
+ if game.athlete.court_team < 0 and not game.game_bots.bots.is_empty() and role not in ["menu", "lock", "next"]:
+  return false
+ if role in ["no_look", "freak"] and not game.lan.active:
+  return game.begin_special(role)
  if game.automatic_serve_busy() and role not in ["menu", "lock", "next"]:
   return false
  if role == "lower_serve":
@@ -625,7 +562,7 @@ func _release(role: String, source := -2, canceled := false) -> void:
  if canceled:
   game.cancel_action(role)
   return
- if role in ["primary", "secondary", "jump_set", "bump"]:
+ if role in ["primary", "secondary", "jump_set", "bump", "no_look", "freak"]:
   game.finish_action(role)
 
 func _advance_buffers(dt: float) -> void:
@@ -639,7 +576,7 @@ func _advance_buffers(dt: float) -> void:
   if _perform(role):
    var released: bool = queued[role].released
    queued.erase(role)
-   if released and role in ["primary", "secondary", "jump_set", "bump"]:
+   if released and role in ["primary", "secondary", "jump_set", "bump", "no_look", "freak"]:
     game.finish_action(role)
 
 func _button_at(pos: Vector2, padding := 12.0) -> String:
@@ -664,6 +601,9 @@ func _sync_axes() -> void:
  game.athlete.tilt = axis
 
 func _refresh_context() -> void:
+ var kageyama: bool = game.athlete.character_id == "kageyama" and not game.holding_ball()
+ buttons.no_look.visible = kageyama
+ buttons.freak.visible = kageyama and is_instance_valid(game.characters) and not game.characters.partners(game.athlete).is_empty()
  buttons.next.visible = not game.lan.active or game.lan.hosting
  buttons.bump.visible = not game.holding_ball()
  buttons.lower_serve.visible = game.holding_ball()
@@ -734,7 +674,7 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
    game.ball.aim_throw_at(game.camera, pos)
   else:
    _look_or_aim(relative)
- elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump"]:
+ elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "no_look", "freak"]:
   # Capture is fixed at touch-down. Sliding across another button cannot
   # activate it, and leaving the original rectangle does not cancel a hold.
   # A dedicated look finger keeps priority; otherwise this finger can aim.
@@ -801,10 +741,10 @@ func _sync_held_state() -> void:
   held_snapshot = game.holding_ball()
   queued.clear()
   for id in fingers.keys():
-   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "float_serve", "height", "approach"]:
+   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "float_serve", "height", "approach", "no_look", "freak"]:
     _touch_up(id, true)
   for role in role_owners.keys():
-   if role in ["primary", "secondary", "dive", "jump_set", "bump"]:
+   if role in ["primary", "secondary", "dive", "jump_set", "bump", "no_look", "freak"]:
     _release(role, role_owners[role], true)
 
 func _process(dt: float) -> void:
@@ -821,7 +761,8 @@ func _process(dt: float) -> void:
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
  buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"
- buttons.super.text = "СУПЕРПОДАЧА"
+ buttons.no_look.text = "NO-LOOK\nSET"
+ buttons.freak.text = "FREAK\nQUICK"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
@@ -866,9 +807,8 @@ func _draw() -> void:
    color = Color(0.75, 0.57, 0.25, 0.72)
   if active:
    color = Color("b78d45")
-  if key == "super":
-   _super_button(rect, active)
-   continue
+  if key in ["no_look", "freak"]:
+   color = Color("345b73") if key == "no_look" else Color("a26335")
   draw_style_box(_panel(color, int(rect.size.y * 0.38)), rect)
   var lines: PackedStringArray = buttons[key].text.split("\n")
   for line in range(lines.size()):
@@ -897,34 +837,6 @@ func _draw() -> void:
    draw_line(size * 0.5 + Vector2(x * 14, -10), size * 0.5 + Vector2(x * 25, -18), game.feedback_color, 4, true)
  draw_string(font, Vector2(24, size.y - 12), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("a7bdc9"))
  draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
-
-func _super_button(rect: Rect2, pressed: bool) -> void:
- var p := rect.position
- var w := rect.size.x
- var h := rect.size.y
- var percent: int = game.super_serve.percent(game.super_serve.local_id()) if is_instance_valid(game.super_serve) else 0
- var outline := PackedVector2Array([p + Vector2(14, 0), p + Vector2(w, 0), p + Vector2(w, h - 14), p + Vector2(w - 14, h), p + Vector2(0, h), p + Vector2(0, 14)])
- draw_colored_polygon(outline, Color("dbbd67") if pressed else Color("102c3c"))
- outline.append(outline[0])
- draw_polyline(outline, Color("f1cf79"), 2, true)
- draw_line(p + Vector2(18, 5), p + Vector2(w - 8, 5), Color("fcf2c4"), 2, true)
- var center := p + Vector2(26, 29)
- draw_arc(center, 11, -PI * 0.15, TAU - PI * 0.4, 28, Color("f9e9af"), 2, true)
- draw_arc(center + Vector2(-7, -1), 11, -0.9, 1.25, 16, Color("f9e9af"), 1.5, true)
- draw_line(p + Vector2(42, 28), p + Vector2(56, 17), Color("f4d77e"), 2, true)
- draw_line(p + Vector2(46, 35), p + Vector2(59, 26), Color("f4d77e"), 1, true)
- draw_string(font, p + Vector2(59, 29), "SUPER", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("fff2c3"))
- draw_string(font, p + Vector2(17, 52), "ПОДАЧА  ·  G", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f3e9c9"))
- draw_string(font, p + Vector2(w - 43, 15), "%d%%" % percent, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f9e9af"))
- draw_rect(Rect2(p + Vector2(8, h - 9), Vector2(w - 16, 4)), Color("345261"))
- draw_rect(Rect2(p + Vector2(8, h - 9), Vector2((w - 16) * percent / 100.0, 4)), Color("f1cf79"))
- if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and game.athlete.tilt_affects(game.athlete.technique) and not edit_mode:
-  var at := Vector2(size.x * 0.5, size.y - 168)
-  draw_circle(at, 23, Color(0.03, 0.09, 0.14, 0.65))
-  draw_arc(at, 23, 0, TAU, 32, Color("8eaebc"), 1, true)
-  draw_line(at, at + game.athlete.tilt * 20, Color("f4cf77"), 3, true)
-  draw_circle(at + game.athlete.tilt * 20, 4, Color("f4cf77"))
-  draw_string(font, at + Vector2(-35, -29), "TILT", HORIZONTAL_ALIGNMENT_CENTER, 70, 13, Color("f4cf77"))
 
 func _panel(color: Color, corners := 12) -> StyleBoxFlat:
  var style := StyleBoxFlat.new()

@@ -29,11 +29,17 @@ static func standing_target(a: ContextAthlete, at: Vector3, amount: float, quali
  return Vector3(at.x + horizontal.x * distance, VolleyBall.RADIUS, at.z + horizontal.z * distance)
 
 static func solve(a: ContextAthlete, kind: int, at: Vector3, incoming: Vector3, incoming_spin: Vector3, quality: float, amount: float, angular_error := Vector2.ZERO, pace_scale := 1.0) -> Dictionary:
+ if a.ability_solver.is_valid() and not a.special_set.is_empty() and kind in [0, 8]:
+  var special: Dictionary = a.ability_solver.call(a, at, quality)
+  if not special.is_empty():
+   return special
+ if a.character_id == "kageyama" and kind in [0, 8]:
+  angular_error.y *= 0.40 / 0.30
  var p := a.mechanic(kind)
  var direction := a.strike_direction if kind == ContextAthlete.DIVE else a.direction_for(kind, at.y)
  var nominal_direction := direction
  direction = direction.rotated(Vector3.UP, deg_to_rad(angular_error.x))
- direction = direction.rotated(a.visual.global_basis.x, deg_to_rad(angular_error.y))
+ direction = direction.rotated(a.visual.global_basis.x.normalized(), deg_to_rad(angular_error.y))
  var speed := lerpf(3, 12.5, amount)
  match kind:
   VolleyAthlete.Technique.SPIKE: speed = lerpf(16, 31, amount)
@@ -47,7 +53,7 @@ static func solve(a: ContextAthlete, kind: int, at: Vector3, incoming: Vector3, 
  var powerful_jump := a.air_attack if a.action != VolleyAthlete.Action.PREPARE else a.airborne() and a.approach_jump
  if kind == VolleyAthlete.Technique.SPIKE and powerful_jump:
   speed *= 1.07 + minf(a.takeoff_speed, 5.0) * 0.018
- var outgoing := direction * speed + incoming * float(p.carry) + a.velocity * (0.12 * (1.0 - float(p.control)))
+ var outgoing := direction * speed + incoming * float(p.carry) + a.velocity * (0.12 * (1.0 - float(p.control))) * (0.60 if a.character_id == "kageyama" and kind in [0, 8] else 1.0)
  if a.is_receive(kind):
   outgoing = direction * speed + incoming * float(p.carry) * (1.0 - float(p.control)) * 0.12
  elif kind in [VolleyAthlete.Technique.UNDERHAND, ContextAthlete.DIVE]:
@@ -57,7 +63,7 @@ static func solve(a: ContextAthlete, kind: int, at: Vector3, incoming: Vector3, 
   var target := standing_target(a, at, amount, quality)
   var apex := 0.85 + maxf(0, a.body_tilt().y) * 1.2
   outgoing = a.lifted_attack_solver.call(at, target, apex, spin)
-  outgoing = outgoing.rotated(Vector3.UP, deg_to_rad(angular_error.x)).rotated(a.visual.global_basis.x, deg_to_rad(angular_error.y)) * pace_scale
+  outgoing = outgoing.rotated(Vector3.UP, deg_to_rad(angular_error.x)).rotated(a.visual.global_basis.x.normalized(), deg_to_rad(angular_error.y)) * pace_scale
  elif kind == VolleyAthlete.Technique.JUMP_SERVE and a.power_serve_solver.is_valid():
   var side := 1.0 if a.global_position.z >= 0 else -1.0
   if nominal_direction.z * side < -0.25:

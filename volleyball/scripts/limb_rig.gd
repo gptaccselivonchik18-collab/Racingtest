@@ -99,7 +99,7 @@ static func palm_frame(elbow: Vector3, wrist: Vector3, normal: Vector3) -> Basis
  return Basis(right, up, right.cross(up))
 
 func world_segment(node: MeshInstance3D, start: Vector3, end: Vector3, radius: float) -> void:
- segment(node, to_local(start), to_local(end), radius)
+ segment(node, to_local(start), to_local(end), radius * athlete.physical_scale)
 
 static func segment(node: MeshInstance3D, start: Vector3, end: Vector3, radius: float) -> void:
  var up := (end - start).normalized()
@@ -114,6 +114,7 @@ static func segment(node: MeshInstance3D, start: Vector3, end: Vector3, radius: 
 func apply_pose(dt := 0.0) -> void:
  var a := athlete
  motion.update(dt)
+ VolleyCharacterAbilities.pose(motion)
  if a.cinema_pose.is_valid():
   a.cinema_pose.call(motion)
  var chest := a.visual.get_child(0) as MeshInstance3D
@@ -179,14 +180,14 @@ func apply_pose(dt := 0.0) -> void:
    shoe_basis = Basis(Vector3.UP, a.visual.global_rotation.y)
   if motion.cinema_shoe_pitch.size() == 2:
    shoe_basis = a.visual.global_basis.orthonormalized() * Basis(Vector3.RIGHT, motion.cinema_shoe_pitch[i])
-  shoes[i].global_transform = Transform3D(shoe_basis, a.visual.to_global(foot) + shoe_basis * Vector3(0, -0.035, -0.05))
+  shoes[i].global_transform = Transform3D(shoe_basis.scaled_local(Vector3.ONE * a.physical_scale), a.visual.to_global(foot) + shoe_basis * Vector3(0, -0.035, -0.05))
 
 func update_head() -> void:
  var a := athlete
  var head_at := Vector3(0, 1.78, -0.015) + motion.body_offset
  # Counter-rotate body lean: the head points where the player aims, while the
  # torso retains its Tilt and action animation. Nothing is hidden or recast.
- var head_basis := a.visual.global_basis.inverse() * a.view_basis()
+ var head_basis := a.visual.global_basis.orthonormalized().inverse() * a.view_basis()
  if motion.cinema_head is Basis:
   head_basis = motion.cinema_head
  a.visual.get_child(2).transform = Transform3D(head_basis, head_at)

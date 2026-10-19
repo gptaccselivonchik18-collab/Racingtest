@@ -30,6 +30,23 @@ var attack_factor := 1.0
 var attack_quality := 0.0
 var attack_kind := -1
 var last_duel: Dictionary = {}
+var quick_pending := false
+var quick_active := false
+var quick_age := 0.0
+var quick_arrival := 0.0
+var quick_braked := false
+var quick_target: WeakRef
+var quick_brakes := 0
+func configure_quick(arrival: float, recipient: ContextAthlete) -> void:
+ quick_pending = true
+ quick_arrival = arrival
+ quick_target = weakref(recipient)
+ quick_age = 0
+ quick_braked = false
+func clear_quick() -> void:
+ quick_active = false
+ quick_pending = false
+ quick_target = null
 var held := false
 var toss_yaw := 0.0
 var jump_toss := false
@@ -247,6 +264,9 @@ func pick_up() -> bool:
  clear_float()
  clear_attack()
  held = true
+ if athlete is ContextAthlete:
+  athlete.serve_swing_used = false
+  athlete.service_attempt_active = false
  held_mode = HeldMode.TOSS
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
@@ -280,6 +300,9 @@ func toss() -> bool:
  if athlete is ContextAthlete:
   athlete.animate_release()
  feed(athlete.hold_position(), toss_velocity())
+ if athlete is ContextAthlete:
+  athlete.service_attempt_active = true
+  athlete.serve_swing_used = false
  athlete.last_result = "Подброс • удержать и отпустить основную кнопку для удара"
  return true
 
@@ -329,6 +352,7 @@ func clear_float() -> void:
  float_age = 0
 
 func _on_body_entered(body: Node) -> void:
+ clear_quick()
  clear_float()
  var surface := str(body.get_meta("surface", "world"))
  if surface == "net":
@@ -388,10 +412,14 @@ func launch_float(at: Vector3, speed: Vector3, spin: Vector3, skill: float, seed
  float_active = true
 
 func feed(at: Vector3, speed: Vector3, spin := FEED_SPIN) -> void:
+ clear_quick()
  if replica:
   return
  clear_float()
  clear_attack()
+ if athlete is ContextAthlete:
+  athlete.service_attempt_active = false
+  athlete.serve_swing_used = false
  held = false
  athlete.holding_ball = false
  freeze = false
@@ -431,6 +459,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
      candidate.contact_incoming_spin = state.angular_velocity
     var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity, attack_for(candidate)) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
+     if quick_pending:
+      quick_active = true
+      quick_pending = false
+     else:
+      clear_quick()
      clear_float()
      state.apply_central_impulse(delta_v * mass)
      state.angular_velocity = candidate.outgoing_spin(state.angular_velocity, delta_v) if candidate is ContextAthlete else (state.angular_velocity + candidate.hand_velocity.cross(delta_v) * 0.12).limit_length(50)
@@ -441,6 +474,15 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
      break
   previous_center = center
   previous_center_valid = true
+ if quick_active:
+  quick_age += state.step
+  if not quick_braked and quick_age >= quick_arrival:
+   state.linear_velocity *= 0.035
+   state.angular_velocity *= 0.10
+   quick_braked = true
+   quick_brakes += 1
+  if quick_age >= quick_arrival + 0.10:
+   clear_quick()
  # Approximate, bounded Magnus force; no target or player tracking.
  state.apply_central_force(aero_force(state.linear_velocity, state.angular_velocity))
  if float_active:

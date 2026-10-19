@@ -80,6 +80,8 @@ func choose_receivers() -> void:
     var acceleration: float = float(physical.acceleration)
     var accelerating := minf(available, maxf(0, speed - initial) / acceleration)
     var running := initial * accelerating + 0.5 * acceleration * accelerating * accelerating + speed * maxf(0, available - accelerating)
+    if actor.character_id == "hinata" and not actor.airborne():
+     running = speed * available
     var reach := actor.contact_ball_radius * float(actor.mechanic(VolleyAthlete.Technique.UNDERHAND).radius) + 0.25
     var reachable := running * movement + (reach if actor is VolleyGameBot else 1.45)
     var diving := false
@@ -96,16 +98,16 @@ func choose_receivers() -> void:
       continue
      diving = true
     var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
-    var preferred := minf(2.95, 2.15 + jump_height * 0.70) if high else 2.05 if manager.last_team == team else 1.35
-    if high and point.y > 2.35 + jump_height:
+    var preferred := minf(actor.natural_reach() + 0.8, actor.natural_reach() + jump_height * 0.70) if high else 2.05 * actor.physical_scale if manager.last_team == team else 1.35 * actor.physical_scale
+    if high and point.y > actor.natural_reach() + 0.15 + jump_height:
      continue
     if actor is VolleyGameBot and jump_set_useful(actor):
-     var lift := maxf(0, point.y - 2.15)
+     var lift := maxf(0, point.y - actor.natural_reach())
      var time := minf(0.50, available)
      var needed := (lift + 4.905 * time * time) / maxf(0.01, time)
-     if point.y > 2.55 and (time < 0.20 or needed > sqrt(19.62 * jump_height)):
+     if point.y > actor.natural_reach() + 0.35 and (time < 0.20 or needed > sqrt(19.62 * jump_height)):
       continue
-     preferred = minf(2.95, 2.15 + jump_height * 0.75)
+     preferred = minf(actor.natural_reach() + 0.8, actor.natural_reach() + jump_height * 0.75)
     var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
     if manager.last_team == team and manager.touches == 1 and manager.role_for(actor) == "setter":
      cost -= 0.28
@@ -299,7 +301,7 @@ func prepare_runs(setter: VolleyGameBot) -> void:
   if absf(athlete.position.z) <= 3.2:
    base.x = athlete.position.x
   var depth := lerpf(2.9, 1.8, athlete.style_stats.n("speed"))
-  var target := Vector3(clampf(base.x, -3.3, 3.3), minf(3.3, 2.15 + float(athlete.style_stats.movement().jump_height) * 0.65), side * depth)
+  var target := Vector3(clampf(base.x, -3.3, 3.3), minf(3.3, athlete.natural_reach() + float(athlete.style_stats.movement().jump_height) * 0.65), side * depth)
   var start := target + Vector3(0, 0, side * lerpf(1.0, 2.1, athlete.style_stats.n("speed")))
   start.y = 0.02
   chosen[athlete.get_instance_id()] = {"start": start, "target": target}
@@ -329,7 +331,7 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
  point.z -= side * forward
  point.x = clampf(point.x, -3.8, 3.8)
  point.z = side * clampf(point.z * side, 1.35, 8.5)
- point.y = 2.75 if attacking else 2.05
+ point.y = recipient.natural_reach() + minf(0.75, recipient.effective_jump_height() * 0.4) if attacking else 2.05 * recipient.physical_scale
  return point
 
 func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:

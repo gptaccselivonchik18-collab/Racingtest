@@ -56,7 +56,7 @@ func decision_profile() -> Dictionary:
  return thinking
 
 func settings_state() -> Dictionary:
- return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty}
+ return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty, "characters": bots.keys().reduce(func(acc, id): acc[str(id)] = bots[id].character_id; return acc, {})}
 
 func configure(values: Dictionary, broadcast := true) -> bool:
  if broadcast and not authority():
@@ -104,6 +104,7 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     actor.name = "Bot_%d_%d" % [team, slot]
     actor.manager = self
     actor.bot_id = id
+    actor.set_character("kageyama" if slot % 2 == 0 else "hinata")
     actor.court_team = team
     actor.slot = slot
     actor.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -117,8 +118,11 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     bots[id] = actor
    var bot: VolleyGameBot = bots[id]
    bot.execution_level = difficulty
-   for key in VolleyStyleStats.KEYS:
-    bot.stats.set_stat(key, level)
+   var hero := str(values.get("characters", {}).get(str(id), bot.character_id))
+   if bot.character_id != hero and VolleyCharacterDatabase.valid(hero):
+    bot.set_character(hero)
+   if is_instance_valid(game.characters):
+    game.characters.register(bot)
  game.lan.refresh_contacts()
  think_left = 0
  if broadcast and game.lan.active:
@@ -150,10 +154,10 @@ func members(team: int) -> Array:
    result.append(bot)
  if game.lan.active:
   for entry in game.lan.players.values():
-   var side: int = entry.team if game.lan.match_active else (0 if entry.actor.position.z >= 0 else 1)
+   var side: int = entry.actor.court_team if entry.actor.court_team >= 0 else entry.team
    if side == team:
     result.append(entry.actor)
- elif human_team == team:
+ elif game.athlete.court_team == team:
   result.append(game.athlete)
  return result
 
@@ -181,6 +185,13 @@ func place_team(team: int) -> void:
   actor.energy = 1.0
 
 func role_for(actor: ContextAthlete) -> String:
+ if actor.character_id == "kageyama":
+  return "setter"
+ if actor.character_id == "hinata":
+  return "attacker"
+ return legacy_role_for(actor)
+
+func legacy_role_for(actor: ContextAthlete) -> String:
  var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1) if game.lan.active else human_team
  var roster := members(team)
  var slot := roster.find(actor)
@@ -313,13 +324,15 @@ func start_solo() -> bool:
  match_winner = -1
  serve_team = human_team
  reset_service(serve_team)
- game.athlete.court_team = human_team
+ var observing: bool = game.athlete.court_team < 0
+ if not observing:
+  game.athlete.court_team = human_team
  var side := 1.0 if human_team == 0 else -1.0
- game.athlete.position = Vector3(0, 0.02, side * 6.3)
+ game.athlete.position = Vector3(6.8, 0.02, 0) if observing else Vector3(0, 0.02, side * 6.3)
  game.athlete.velocity = Vector3.ZERO
  game.athlete.cancel_input()
  game.athlete.action = VolleyAthlete.Action.IDLE
- game.athlete.camera_yaw = 0 if human_team == 0 else PI
+ game.athlete.camera_yaw = PI / 2 if observing else 0.0 if human_team == 0 else PI
  game.athlete.visual.rotation.y = game.athlete.camera_yaw
  game.rig.yaw = game.athlete.camera_yaw
  reset_round()
@@ -373,75 +386,10 @@ func on_floor(at: Vector3) -> void:
   award((1 if at.z >= 0 else 0) if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9 + VolleyBall.RADIUS else 1 - last_team)
 
 func add_settings(hud: VolleyHUD) -> void:
- var list := hud._tab("Игровые боты")
- var note := Label.new()
- note.text = "Командная игра с людьми и ботами. В комнате состав меняет создатель."
- note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- list.add_child(note)
- difficulty_picker = OptionButton.new()
- difficulty_picker.custom_minimum_size.y = 48
- for title in VolleyBotDifficulty.NAMES:
-  difficulty_picker.add_item("Сложность · " + title)
- difficulty_picker.select(difficulty)
- difficulty_picker.item_selected.connect(func(i: int): configure({"difficulty": i}))
- list.add_child(difficulty_picker)
- ui_controls.append(difficulty_picker)
- difficulty_hint = Label.new()
- difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- list.add_child(difficulty_hint)
- var teams_row := HBoxContainer.new()
- teams_row.add_theme_constant_override("separation", 18)
- list.add_child(teams_row)
- for team in range(2):
-  var side: int = team
-  var row := HBoxContainer.new()
-  row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  row.add_theme_constant_override("separation", 12)
-  var label := Label.new()
-  label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  row.add_child(label)
-  count_labels.append(label)
-  var minus := hud._native_button(row, "−", func(): change_count(side, -1))
-  minus.custom_minimum_size.x = 42
-  ui_controls.append(minus)
-  var plus := hud._native_button(row, "+", func(): change_count(side, 1))
-  plus.custom_minimum_size.x = 42
-  ui_controls.append(plus)
-  teams_row.add_child(row)
- var presets := HBoxContainer.new()
- for n in [1, 3, 6]:
-  var amount: int = n
-  var button := hud._native_button(presets, "%d × %d" % [n, n], func():
-   var next := [amount, amount]
-   if not game.lan.active:
-    next[human_team] -= 1
-   configure({"counts": next}))
-  button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-  ui_controls.append(button)
- list.add_child(presets)
- var side_pick := OptionButton.new()
- side_pick.add_item("Моя команда: A")
- side_pick.add_item("Моя команда: Б")
- side_pick.custom_minimum_size.y = 44
- side_pick.item_selected.connect(func(i: int): configure({"human_team": i}))
- list.add_child(side_pick)
- ui_controls.append(side_pick)
- var start := hud._native_button(list, "Матч с ботами", func():
-  if start_solo():
-   hud.toggle_menu())
- ui_controls.append(start)
- start.set_meta("solo_only", true)
- var free := hud._native_button(list, "Свободная игра", func():
-  if game.lan.active:
-   game.lan.start_free_play()
-  else:
-   end_solo())
- ui_controls.append(free)
- ui_controls.append(hud._native_button(list, "Убрать игровых ботов", func(): configure({"counts": [0, 0]})))
- hint = Label.new()
- hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- list.add_child(hint)
- hud.refresh_navigation()
+ var list := hud._tab("Команды")
+ hud._native_button(list, "Персонажи и способности", func(): game.characters.ui.open_characters(true))
+ hud._native_button(list, "Составы команд / демонстрация", func(): game.characters.ui.open_teams(true))
+
 
 func change_count(team: int, delta: int) -> void:
  var next := counts.duplicate()

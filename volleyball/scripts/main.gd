@@ -19,6 +19,7 @@ var float_serve: VolleyFloatServe
 var practice: VolleyPractice
 var game_bots: VolleyGameBots
 var frame_rate: VolleyFrameRate
+var characters: VolleyCharacters
 var super_serve: VolleySuperServe
 var feedback_text := ""
 var feedback_color := Color.WHITE
@@ -84,6 +85,9 @@ func _ready() -> void:
  game_bots.game = self
  add_child(game_bots)
  hud.add_bot_settings()
+ characters = VolleyCharacters.new()
+ characters.game = self
+ add_child(characters)
  game_bots.add_settings(hud)
  super_serve = VolleySuperServe.new()
  super_serve.game = self
@@ -271,8 +275,8 @@ func start_drill() -> void:
  athlete.dive_cooldown = 0
  athlete.visual.rotation.x = 0
  var shape_node := athlete.get_child(0) as CollisionShape3D
- shape_node.shape.height = 1.75
- shape_node.position.y = 0.875
+ shape_node.shape.height = 1.75 * athlete.physical_scale
+ shape_node.position.y = 0.875 * athlete.physical_scale
  athlete.velocity = Vector3.ZERO
  athlete.position = training.start_position()
  athlete.visual.rotation.y = 0
@@ -293,8 +297,8 @@ func reset_player() -> void:
  athlete.dive_time = -1
  athlete.visual.rotation.x = 0
  var shape_node := athlete.get_child(0) as CollisionShape3D
- shape_node.shape.height = 1.75
- shape_node.position.y = 0.875
+ shape_node.shape.height = 1.75 * athlete.physical_scale
+ shape_node.position.y = 0.875 * athlete.physical_scale
  athlete.action = VolleyAthlete.Action.IDLE
  action_owner = ""
 
@@ -355,6 +359,12 @@ func begin_secondary() -> bool:
 func begin_jump_set() -> bool:
  if action_owner.is_empty() and athlete.airborne() and athlete.begin_action(ContextAthlete.JUMP_SET):
   action_owner = "jump_set"
+  return true
+ return false
+
+func begin_special(mode: String) -> bool:
+ if characters.begin_special(athlete, mode):
+  action_owner = mode
   return true
  return false
 

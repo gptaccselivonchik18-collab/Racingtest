@@ -26,6 +26,7 @@ func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77
  super._ready()
  var tag := Label3D.new()
+ tag.name = "TeamTag"
  tag.text = "%s · БОТ %d" % ["A" if court_team == 0 else "Б", slot + 1]
  tag.position.y = 2.12
  tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -33,6 +34,7 @@ func _ready() -> void:
  tag.pixel_size = 0.006
  tag.modulate = Color("64dce1") if court_team == 0 else Color("ffad79")
  add_child(tag)
+ VolleyCharacterPhysicalProfile.apply(self)
  # Team shirts refine the existing model without replacing its limbs.
  var shirt := visual.get_child(0) as MeshInstance3D
  if shirt:
@@ -90,6 +92,8 @@ func steer(target: Vector3, stop := 0.20) -> void:
  var distance := maxf(0, offset.length() - stop)
  var braking_margin := 0.65 if manager.counts[court_team] <= 1 else 0.82
  var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * braking_margin)
+ if character_id == "hinata" and not airborne():
+  pace = float(movement.speed) if distance > 0.10 else 0.0
  var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
  if offset.length() < stop + 0.12 and Vector2(velocity.x, velocity.z).length() < 0.25:
@@ -105,12 +109,19 @@ func decide(_dt: float) -> void:
  var game := manager.game
  var ball: VolleyBall = game.ball
  var side := 1.0 if court_team == 0 else -1.0
+ if is_instance_valid(game.characters) and game.characters.ai_step(self, _dt):
+  return
  if noticed_touch != manager.last_touch_time:
   noticed_touch = manager.last_touch_time
   reaction_until = manager.clock + float(VolleyBotDifficulty.profile(manager.difficulty).reaction) * (0.82 + fposmod(absi(bot_id) * 0.173, 0.36))
  look_target = ball.position
  look_target_valid = true
  if ball.pending_feed:
+  return
+ if game.characters.demo and ball.position.y < 1.0 and not is_server:
+  if action == Action.PREPARE:
+   cancel_input()
+  move_axis = Vector2.ZERO
   return
  if (manager.solo_match and manager.round_wait >= 0) or (game.lan.match_active and game.lan.round_wait >= 0):
   move_axis = Vector2.ZERO
@@ -229,7 +240,7 @@ func decide(_dt: float) -> void:
    var kind := Technique.UNDERHAND
    if manager.last_team == court_team and manager.touches > 0:
     kind = Technique.OVERHEAD
-    if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55:
+    if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > natural_reach() + 0.35:
      kind = JUMP_SET
    var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
    if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5 and float(manager.contact_heights[court_team]) > 2.35) or (solo_attack and float(manager.contact_heights[court_team]) > 2.65)):
@@ -243,15 +254,20 @@ func decide(_dt: float) -> void:
    elif begin_action(kind):
     planned_kind = kind
   if action == Action.PREPARE:
-   if planned_kind == Technique.OVERHEAD and manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > 2.55 and remaining > 0.20 and not airborne():
+   if planned_kind == Technique.OVERHEAD and manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > natural_reach() + 0.35 and remaining > 0.20 and not airborne():
     planned_kind = JUMP_SET
     technique = JUMP_SET
-   elif planned_kind == JUMP_SET and not airborne() and remaining < 0.20 and float(manager.contact_heights[court_team]) < 2.55:
+   elif planned_kind == JUMP_SET and not airborne() and remaining < 0.20 and float(manager.contact_heights[court_team]) < natural_reach() + 0.35:
     planned_kind = Technique.OVERHEAD
     technique = Technique.OVERHEAD
    var aim := manager.target_for(self, planned_kind)
    var toward := aim - position
-   camera_yaw = atan2(-toward.x, -toward.z)
+   if character_id == "kageyama" and planned_kind in [Technique.OVERHEAD, JUMP_SET] and special_set.is_empty() and absf(angle_difference(visual.global_rotation.y, atan2(-toward.x, -toward.z))) > 0.75:
+    special_set = "no_look"
+    locked_yaw = visual.global_rotation.y
+    special_yaw = atan2(-toward.x, -toward.z)
+   if special_set.is_empty():
+    camera_yaw = atan2(-toward.x, -toward.z)
    camera_pitch = deg_to_rad(55 if planned_kind in [Technique.OVERHEAD, JUMP_SET] else 20)
    # Hands face the intended pass, which may be sideways or behind us.
    # Align the body behind that contact rather than always behind the net.
@@ -262,7 +278,7 @@ func decide(_dt: float) -> void:
     forward = forward.normalized()
     steer(contact - forward * 0.45, 0.05)
    if planned_kind == JUMP_SET and not airborne() and remaining > 0.16 and remaining < 0.55:
-    var lift := maxf(0.15, float(manager.contact_heights[court_team]) - 2.15)
+    var lift := maxf(0.15, float(manager.contact_heights[court_team]) - natural_reach())
     var needed := (lift + 4.905 * remaining * remaining) / remaining
     if needed <= sqrt(19.62 * effective_jump_height()) and horizontal < 0.85:
      jump()
@@ -273,13 +289,13 @@ func decide(_dt: float) -> void:
     jump(true)
     if velocity.y > 0:
      # Jump to this ball, not to the maximum stat apex every time.
-     var lift := clampf(float(manager.contact_heights[court_team]) - 2.25, 0.25, effective_jump_height())
+     var lift := clampf(float(manager.contact_heights[court_team]) - natural_reach(), 0.25, effective_jump_height())
      velocity.y = minf(velocity.y, sqrt(19.62 * lift))
      jumps += 1
    var windup := float(mechanic(planned_kind).windup)
    var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]
    var height := ball.position.y - position.y
-   var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > 1.85 and height < 3.0 and remaining < float(mechanic(planned_kind).duration) * 0.50
+   var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > natural_reach() - 0.35 and height < natural_reach() + 0.8 and remaining < float(mechanic(planned_kind).duration) * 0.50
    if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or spike_due):
     release()
    elif charged_for > 1.05:
@@ -309,7 +325,7 @@ func contact_due() -> bool:
   if airborne():
    drift = velocity * time + Vector3.DOWN * 4.905 * time * time
   if planned_kind == Technique.UNDERHAND:
-   var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20, 1.65)
+   var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20 * physical_scale, 1.65 * physical_scale)
    if point.distance_to(spine) < radius + 0.25:
     return true
   else:
@@ -356,7 +372,7 @@ func attempt_block(side: float) -> bool:
  steer(plan.target, 0.08)
  camera_yaw = 0 if side > 0 else PI
  # Jump from the predicted contact time, not only after the ball is struck.
- var lift := clampf(float(plan.get("height", 3.0)) - 2.25, 0.45, effective_jump_height())
+ var lift := clampf(float(plan.get("height", 3.0)) - natural_reach(), 0.45, effective_jump_height())
  var rise := sqrt(2.0 * lift / 9.81)
  if bool(plan.commit) and float(plan.time) <= rise + 0.10 and absf(position.z) < 1.35 and absf(position.x - Vector3(plan.target).x) < 0.85:
   jump()
@@ -377,6 +393,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  contact_kinds[strike_technique] = int(contact_kinds.get(strike_technique, 0)) + 1
  cooldown = float(VolleyBotDifficulty.profile(manager.difficulty).tempo) * 0.45
  if strike_technique == BLOCK:
+  manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, incoming + delta)
+  return delta
+ if not special_set.is_empty():
   manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, incoming + delta)
   return delta
  var target := manager.target_for(self, strike_technique)

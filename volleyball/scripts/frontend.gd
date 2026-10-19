@@ -47,7 +47,7 @@ func _ready() -> void:
  author.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(author)
  var version := Label.new()
- version.text = "0.34"
+ version.text = "0.35"
  version.add_theme_font_size_override("font_size", 15)
  version.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(version)
@@ -141,6 +141,9 @@ func show_home() -> void:
  _heading("/ LAB", true)
  _button("Играть одному   →", start_solo, true)
  _button("Играть с друзьями", show_network)
+ _button("Персонажи", func(): game.characters.ui.open_characters())
+ _button("Настройка матча", func(): game.characters.ui.open_teams())
+ _button("Тренировка", func(): game.characters.ui.open_teams())
  _button("Настройки", func():
   game.hud.show()
   hide()
@@ -297,6 +300,7 @@ func start_solo() -> void:
  game.lan.leave()
  enter_court()
  game.rules.strict = false
+ game.characters.apply_teams(game.characters.teams, game.characters.difficulty, false)
  game.start_drill()
 
 func blocks_input() -> bool:
