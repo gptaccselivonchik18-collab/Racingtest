@@ -34,6 +34,7 @@ func _process(dt: float) -> bool:
   for id in game.lan.players:
    if id != 1:
     var player: ContextAthlete = game.lan.players[id].actor
+    player.position.z = 10.5 if player.position.z >= 0 else -10.5
     for i in range(7):
      game.super_serve.note_contact(player, id, 2)
      game.super_serve.record_floor(Vector3(0, 0.155, -5 if player.position.z >= 0 else 5))

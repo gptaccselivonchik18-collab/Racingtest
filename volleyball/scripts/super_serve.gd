@@ -98,8 +98,10 @@ func set_charge(kills: int) -> void:
   charges[local_id()] = kills
 
 func ground_at(time: float) -> Vector3:
- var run := clampf(absf(origin.z) - 0.6, 0, 0.95)
- var travel := run * smoothstep(0.05, 1.10, time) + run * 0.15 * smoothstep(1.10, HIT, time)
+ # The whole planted approach ends behind the back line, including toes.
+ # Forward travel across it begins only after take-off (legal on a serve).
+ var run := clampf(absf(origin.z) - 9.50, 0, 0.95)
+ var travel := run * smoothstep(0.05, 1.10, time) + run * 0.65 * smoothstep(1.10, HIT, time)
  return origin + Vector3(0, 0, -side * travel)
 
 func _ready() -> void:
@@ -146,7 +148,8 @@ func choose_target(source: Vector3) -> Dictionary:
  var best := -INF
  var safe: Array[Vector3] = []
  var opponents: Array = game.game_bots.members(1 if direction > 0 else 0)
- var contact := source + Vector3(0, 6.5, -direction * 1.35)
+ var approach := clampf(absf(source.z) - 9.50, 0, 0.95)
+ var contact := source + Vector3(0, 6.5, -direction * (approach * 1.65 + 0.55))
  for candidate in range(80):
   var point := Vector3(random.randf_range(-4.15, 4.15), VolleyBall.RADIUS, -direction * (random.randf_range(8.70, 9.03) if good else random.randf_range(9.48, 10.12)))
   var clearance := 100.0
@@ -174,6 +177,10 @@ func begin(player: ContextAthlete, id: int) -> bool:
  if not ready_for(id):
   if player == game.athlete:
    game.show_feedback("Суперподача · %d%% · нужно 7 ваших забитых мячей" % percent(id), false)
+  return false
+ if absf(player.global_position.z) < 10.05:
+  if player == game.athlete:
+   game.show_feedback("Для разбега отойдите за заднюю линию ещё на %.1f м · заряд сохранён" % (10.05 - absf(player.global_position.z)), false)
   return false
  if player.airborne() or (game.ball.held and game.ball.athlete != player):
   if player == game.athlete:

@@ -13,6 +13,7 @@ func run() -> void:
  var game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
  game.frontend.start_solo()
+ game.athlete.position = Vector3(0, 0.02, 10.5)
  game.hud.set_process(false)
  for i in range(12):
   await physics_frame
@@ -39,9 +40,19 @@ func run() -> void:
  check(int(s.charges[0]) == 1 and int(s.charges[42]) == 1, "A failed opponent receive still credits the player who scored")
  s.charges[0] = 7
  other.queue_free()
+ game.athlete.position.z = 8.5
+ check(not s.begin(game.athlete, 0) and s.percent(0) == 100, "A foot-fault start is refused without spending charge")
+ game.athlete.position = original
  check(s.begin(game.athlete, 0) and s.percent(0) == 0, "Starting the skill consumes the personal charge")
  check(not s.begin(game.athlete, 0), "A second press cannot overlap two cinematic sequences")
  s.set_process(false)
+ var legal := true
+ for step in range(23):
+  s.elapsed = step * 0.05
+  s._sample()
+  for shoe in game.athlete.limb_rig.shoes:
+   legal = legal and shoe.global_position.z - 0.15 > 9.0
+ check(legal, "Every planted approach frame keeps the shoe toes behind the back line")
  s.elapsed = 2.86
  s._sample()
  var distance: float = game.athlete.wrists[1].distance_to(game.ball.position)
