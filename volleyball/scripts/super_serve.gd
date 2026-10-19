@@ -2,7 +2,7 @@ class_name VolleySuperServe
 extends Node3D
 
 # Disposable prototype: local choreography and cameras, host-selected outcome.
-# No audio, global slow motion, charge meter or changes to the normal serve.
+# No audio or global slow motion. Charge belongs to the scoring human only.
 const HIT := 2.86
 const LAND := 3.12
 const END := 4.30
@@ -35,6 +35,64 @@ var trail_clock := 0.0
 var sync_left := 0.0
 var random := RandomNumberGenerator.new()
 var packet := {}
+const KILLS_REQUIRED := 7
+var charges: Dictionary = {}
+var last_scorer: WeakRef
+var last_scorer_id := 0
+var last_scorer_side := 1.0
+var floor_consumed := true
+var charge_sync := 0.0
+
+func local_id() -> int:
+ return game.lan.multiplayer.get_unique_id() if game.lan.active else 0
+
+func percent(id: int) -> int:
+ return roundi(clampi(int(charges.get(id, 0)), 0, KILLS_REQUIRED) * 100.0 / KILLS_REQUIRED)
+
+func ready_for(id: int) -> bool:
+ return int(charges.get(id, 0)) >= KILLS_REQUIRED
+
+func note_contact(player: ContextAthlete, id: int, kind: int) -> void:
+ if not authority() or active:
+  return
+ floor_consumed = false
+ last_scorer = weakref(player) if kind != VolleyAthlete.Technique.THROW else null
+ last_scorer_id = id
+ last_scorer_side = 1.0 if (player.court_team == 0 if player.court_team >= 0 else player.position.z >= 0) else -1.0
+
+func record_floor(at: Vector3) -> void:
+ if not authority() or active or floor_consumed:
+  return
+ floor_consumed = true
+ if last_scorer == null or ((game.lan.match_active or game.game_bots.solo_match) and game.rules.ended):
+  return
+ var player: Variant = last_scorer.get_ref()
+ if not is_instance_valid(player) or player is VolleyGameBot or player is VolleyPracticeBot:
+  return
+ if absf(at.x) <= 4.5 + VolleyBall.RADIUS and absf(at.z) <= 9.0 + VolleyBall.RADIUS and at.z * last_scorer_side < -0.15:
+  _earn(last_scorer_id)
+
+func _earn(id: int) -> void:
+ charges[id] = mini(KILLS_REQUIRED, int(charges.get(id, 0)) + 1)
+ _send_charges()
+
+func _send_charges() -> void:
+ if not game.lan.active or not game.lan.hosting:
+  return
+ for id in game.lan.players:
+  if id != 1 and game.lan._peer_ready(id):
+   # Only the owner receives their percentage, never a team-wide pool.
+   set_charge.rpc_id(id, int(charges.get(id, 0)))
+
+@rpc("authority", "call_remote", "reliable", 3)
+func set_charge(kills: int) -> void:
+ if game.lan.active and not game.lan.hosting and kills >= 0 and kills <= KILLS_REQUIRED:
+  charges[local_id()] = kills
+
+func ground_at(time: float) -> Vector3:
+ var run := clampf(absf(origin.z) - 0.6, 0, 0.95)
+ var travel := run * smoothstep(0.05, 1.10, time) + run * 0.15 * smoothstep(1.10, HIT, time)
+ return origin + Vector3(0, 0, -side * travel)
 
 func _ready() -> void:
  name = "SuperServe"
@@ -76,11 +134,38 @@ func request() -> bool:
 func choose_target(source: Vector3) -> Dictionary:
  var direction := 1.0 if source.z >= 0 else -1.0
  var good := random.randf() < 0.5
- var at := Vector3(random.randf_range(-3.15, 3.15), VolleyBall.RADIUS, -direction * (random.randf_range(8.70, 9.03) if good else random.randf_range(9.48, 10.12)))
+ var at := Vector3.ZERO
+ var best := -INF
+ var safe: Array[Vector3] = []
+ var opponents: Array = game.game_bots.members(1 if direction > 0 else 0)
+ var contact := source + Vector3(0, 6.5, -direction * 1.35)
+ for candidate in range(80):
+  var point := Vector3(random.randf_range(-4.15, 4.15), VolleyBall.RADIUS, -direction * (random.randf_range(8.70, 9.03) if good else random.randf_range(9.48, 10.12)))
+  var clearance := 100.0
+  for opponent: ContextAthlete in opponents:
+   var observed := opponent.position + Vector3(opponent.velocity.x, 0, opponent.velocity.z).limit_length(3) * 0.15
+   var reach := opponent.contact_ball_radius * float(opponent.mechanic(VolleyAthlete.Technique.UNDERHAND).radius) + 0.55
+   for step in range(15):
+    var u := step / 14.0
+    var ball_position := contact.lerp(point, u)
+    ball_position.y = lerpf(contact.y, point.y, pow(u, 4.2))
+    var body := Vector3(observed.x, clampf(ball_position.y, observed.y + 0.15, observed.y + 2.55), observed.z)
+    clearance = minf(clearance, ball_position.distance_to(body) - reach)
+  if clearance > best:
+   best = clearance
+   at = point
+  if clearance > 0.12:
+   safe.append(point)
+ if not safe.is_empty():
+  at = safe[random.randi_range(0, safe.size() - 1)]
  return {"target": at, "inside": good}
 
 func begin(player: ContextAthlete, id: int) -> bool:
  if not authority() or active or not is_instance_valid(player) or player is VolleyGameBot or player is VolleyPracticeBot:
+  return false
+ if not ready_for(id):
+  if player == game.athlete:
+   game.show_feedback("Суперподача · %d%% · нужно 7 ваших забитых мячей" % percent(id), false)
   return false
  if player.airborne() or (game.ball.held and game.ball.athlete != player):
   if player == game.athlete:
@@ -95,6 +180,8 @@ func begin(player: ContextAthlete, id: int) -> bool:
  var duration := clampf(0.31 / sqrt(player.style_stats.factor("serve")), 0.20, 0.30)
  packet = {"sequence": sequence, "actor": id, "origin": player.global_position, "yaw": facing, "target": aim.target, "inside": aim.inside, "height": jump, "flight": duration}
  _start(packet, player, 0.0)
+ charges[id] = 0
+ _send_charges()
  _broadcast(0.0)
  return true
 
@@ -134,6 +221,7 @@ func _start(data: Dictionary, player: ContextAthlete, time: float) -> void:
  height = float(data.height)
  flight = float(data.flight)
  elapsed = time
+ floor_consumed = true
  landed = time >= HIT + flight
  sync_left = 0.35
  had_network = game.lan.active
@@ -163,6 +251,11 @@ func _start(data: Dictionary, player: ContextAthlete, time: float) -> void:
  _sample()
 
 func _process(dt: float) -> void:
+ if authority() and game.lan.active:
+  charge_sync -= dt
+  if charge_sync <= 0:
+   charge_sync = 0.75
+   _send_charges()
  if not active:
   return
  if not is_instance_valid(actor) or (had_network and not game.lan.active) or (is_instance_valid(game.frontend) and game.frontend.in_home):
@@ -177,6 +270,8 @@ func _process(dt: float) -> void:
  if not landed and elapsed >= HIT + flight:
   landed = true
   if authority():
+   if inside:
+    _earn(actor_id)
    var winner := (0 if side > 0 else 1) if inside else (1 if side > 0 else 0)
    if game.game_bots.solo_match:
     game.game_bots.award(winner)
@@ -213,29 +308,31 @@ func jump_at(time: float) -> float:
 func hit_point() -> Vector3:
  var chest := Vector3(0, 1.23, 0)
  var hit_basis := Basis.from_euler(Vector3(0.12, 0.22, 0))
- return origin + Vector3.UP * (height - 0.12) + Basis(Vector3.UP, yaw) * (chest + Vector3(0, -0.035, 0) + hit_basis * (Vector3(0.25, 2.22, -0.36) - chest)) + Vector3(0, 0, -side * 0.15)
+ return ground_at(HIT) + Vector3.UP * (height - 0.12) + Basis(Vector3.UP, yaw) * (chest + Vector3(0, -0.035, 0) + hit_basis * (Vector3(0.25, 2.22, -0.36) - chest)) + Vector3(0, 0, -side * 0.15)
 
 func ball_at(time: float) -> Vector3:
  var facing := Basis(Vector3.UP, yaw)
- var start := origin + facing * Vector3(-0.12, 1.42, -0.48)
+ var start := ground_at(minf(time, 0.35)) + facing * Vector3(-0.12, 1.57, -0.48)
  var contact := hit_point()
  if time < 0.35:
-  return start + Vector3.UP * (smoothstep(0, 0.35, time) * 0.15)
+  return start - Vector3.UP * ((1.0 - smoothstep(0, 0.35, time)) * 0.15)
  if time < 1.63:
   var u := smoothstep(0.35, 1.63, time)
-  var control := origin + Vector3.UP * (height + 7.0) + facing * Vector3(0.1, 0, -0.45)
+  var control := origin + Vector3.UP * (height + 7.0) + facing * Vector3(0.1, 0, -1.75)
   return (1.0 - u) * (1.0 - u) * start + 2.0 * (1.0 - u) * u * control + u * u * (contact + Vector3.UP * 0.16)
  if time < HIT:
   return contact + Vector3.UP * (0.16 * (1.0 - smoothstep(1.63, HIT, time)))
  if time < HIT + flight:
   var u := clampf((time - HIT) / flight, 0, 1)
-  return contact.lerp(target, u) + Vector3.UP * (0.24 * sin(u * PI))
+  var point := contact.lerp(target, u)
+  point.y = lerpf(contact.y, target.y, pow(u, 4.2))
+  return point
  var after := maxf(0, time - HIT - flight)
  return target + Vector3.UP * maxf(0, 1.9 * after - 2.6 * after * after) + Vector3((target.x - origin.x) * after * 0.09, 0, -side * after * 0.28)
 
 func _sample() -> void:
  actor.cinema_time = elapsed
- actor.global_position = origin + Vector3.UP * jump_at(elapsed)
+ actor.global_position = ground_at(elapsed) + Vector3.UP * jump_at(elapsed)
  actor.visual.rotation = Vector3(0, yaw, 0)
  actor.camera_yaw = yaw
  actor.velocity = Vector3.ZERO
@@ -256,7 +353,7 @@ func pose(motion: VolleyMotion) -> void:
  twist = lerpf(twist, 0.48, follow) * (1.0 - recover)
  var bend := lerpf(-0.18 * draw, 0.12, reach)
  bend = lerpf(bend, 0.26, follow) * (1.0 - recover)
- var crouch := 0.035 + 0.19 * sin(clampf(t / 1.10, 0, 1) * PI) if t < 1.10 else 0.035 + 0.20 * sin(smoothstep(3.55, 4.1, t) * PI)
+ var crouch := 0.035 + 0.19 * sin(smoothstep(0.75, 1.10, t) * PI) if t < 1.10 else 0.035 + 0.20 * sin(smoothstep(3.55, 4.1, t) * PI)
  motion.body_offset = Vector3(0, -crouch, 0)
  motion.torso_basis = Basis.from_euler(Vector3(bend, twist, 0))
  var left := Vector3(-0.19, 1.40, -0.48).lerp(Vector3(-0.20, 2.05, -0.40), smoothstep(0.18, 0.75, t))
@@ -276,7 +373,12 @@ func pose(motion: VolleyMotion) -> void:
   var pole := Vector3(-0.40, 1.55, -0.15) if i == 0 else Vector3(0.65, 1.78, 0.28).lerp(Vector3(0.4, 1.65, -0.34), reach)
   motion.poles.append(chest + motion.body_offset + motion.torso_basis * (pole - chest))
   var tuck := smoothstep(1.1, 1.65, t) * (1.0 - smoothstep(3.0, 3.65, t))
-  motion.feet.append(Vector3(s * 0.20, 0.11 + tuck * (0.23 if i == 0 else 0.10), tuck * (0.23 if i == 0 else -0.15)))
+  var foot := Vector3(s * 0.20, 0.11 + tuck * (0.23 if i == 0 else 0.10), tuck * (0.23 if i == 0 else -0.15))
+  if t < 1.10:
+   var stride := sin(t * TAU * 2.0 + i * PI)
+   foot.z += stride * 0.17
+   foot.y += maxf(0, stride) * 0.09
+  motion.feet.append(foot)
  motion.initialized = true
 
 func _camera() -> void:
@@ -393,7 +495,7 @@ func finish(release_ball := true) -> void:
  if is_instance_valid(actor):
   actor.cinema_time = -1
   actor.cinema_pose = Callable()
-  actor.global_position = origin
+  actor.global_position = ground_at(END)
   actor.velocity = Vector3.ZERO
   actor.network_motion.reset()
   actor.network_age = -1

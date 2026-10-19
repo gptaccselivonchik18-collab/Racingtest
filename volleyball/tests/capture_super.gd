@@ -10,6 +10,7 @@ func run() -> void:
   await physics_frame
  var s: VolleySuperServe = game.super_serve
  s.random.seed = 32024
+ s.charges[0] = 7
  s.begin(game.athlete, 0)
  s.set_process(false)
  var folder := OS.get_environment("VOLLEY_CAPTURE")

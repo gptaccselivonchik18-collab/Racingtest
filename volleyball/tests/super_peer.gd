@@ -7,6 +7,7 @@ var requested := false
 var finished := -1.0
 var original := Vector3.ZERO
 var result := ""
+var charged := false
 func _initialize() -> void:
  call_deferred("run")
 func run() -> void:
@@ -28,7 +29,18 @@ func _process(dt: float) -> bool:
  if elapsed > 16:
   push_error("Super room timed out")
   quit(1)
- if not host and game.lan.connected and elapsed > 1 and not requested:
+ if host and game.lan.players.size() == 2 and elapsed > 0.6 and not charged:
+  charged = true
+  for id in game.lan.players:
+   if id != 1:
+    var player: ContextAthlete = game.lan.players[id].actor
+    for i in range(7):
+     game.super_serve.note_contact(player, id, 2)
+     game.super_serve.record_floor(Vector3(0, 0.155, -5 if player.position.z >= 0 else 5))
+  if game.super_serve.percent(1) != 0:
+   push_error("Guest scores incorrectly charged the host")
+   quit(1)
+ if not host and game.lan.connected and game.super_serve.ready_for(game.super_serve.local_id()) and elapsed > 1 and not requested:
   requested = true
   game.lan.local_action("super")
  if game.super_serve.active and not started:

@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 32
+const PROTOCOL := 33
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -132,6 +132,8 @@ func leave() -> void:
   game.super_serve.finish(false)
  if is_instance_valid(game.super_serve):
   game.super_serve.finished_sequence = -1
+  game.super_serve.charges.clear()
+  game.super_serve.floor_consumed = true
  if is_instance_valid(game.float_serve):
   game.float_serve.cancel_sequence()
  if is_instance_valid(game.lower_serve):
@@ -250,7 +252,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок") -> void:
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.32." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.33." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))

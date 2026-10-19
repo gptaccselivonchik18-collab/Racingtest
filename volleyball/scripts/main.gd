@@ -164,6 +164,7 @@ func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
+ super_serve.note_contact(actor, id, kind)
  var first_match_touch: bool = (lan.match_active and not lan.round_live) or (game_bots.solo_match and game_bots.last_team < 0)
  if first_match_touch:
   rules.reset()
@@ -212,6 +213,8 @@ func begin_bump() -> bool:
 func _on_surface(surface: String) -> void:
  if is_instance_valid(super_serve) and super_serve.active:
   return
+ if surface == "floor":
+  super_serve.record_floor(ball.global_position)
  if lan.active and not lan.hosting:
   return
  if lan.active and not lan.match_active:

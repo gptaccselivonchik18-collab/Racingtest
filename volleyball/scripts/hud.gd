@@ -902,6 +902,7 @@ func _super_button(rect: Rect2, pressed: bool) -> void:
  var p := rect.position
  var w := rect.size.x
  var h := rect.size.y
+ var percent: int = game.super_serve.percent(game.super_serve.local_id()) if is_instance_valid(game.super_serve) else 0
  var outline := PackedVector2Array([p + Vector2(14, 0), p + Vector2(w, 0), p + Vector2(w, h - 14), p + Vector2(w - 14, h), p + Vector2(0, h), p + Vector2(0, 14)])
  draw_colored_polygon(outline, Color("dbbd67") if pressed else Color("102c3c"))
  outline.append(outline[0])
@@ -913,7 +914,10 @@ func _super_button(rect: Rect2, pressed: bool) -> void:
  draw_line(p + Vector2(42, 28), p + Vector2(56, 17), Color("f4d77e"), 2, true)
  draw_line(p + Vector2(46, 35), p + Vector2(59, 26), Color("f4d77e"), 1, true)
  draw_string(font, p + Vector2(59, 29), "SUPER", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("fff2c3"))
- draw_string(font, p + Vector2(17, 57), "ПОДАЧА  ·  G", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f3e9c9"))
+ draw_string(font, p + Vector2(17, 52), "ПОДАЧА  ·  G", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f3e9c9"))
+ draw_string(font, p + Vector2(w - 43, 15), "%d%%" % percent, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f9e9af"))
+ draw_rect(Rect2(p + Vector2(8, h - 9), Vector2(w - 16, 4)), Color("345261"))
+ draw_rect(Rect2(p + Vector2(8, h - 9), Vector2((w - 16) * percent / 100.0, 4)), Color("f1cf79"))
  if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and game.athlete.tilt_affects(game.athlete.technique) and not edit_mode:
   var at := Vector2(size.x * 0.5, size.y - 168)
   draw_circle(at, 23, Color(0.03, 0.09, 0.14, 0.65))
