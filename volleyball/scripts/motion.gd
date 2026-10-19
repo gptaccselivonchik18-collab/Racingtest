@@ -24,6 +24,11 @@ var previous_feet: Array[Vector3] = []
 var previous_poles: Array[Vector3] = []
 var air_blend := 0.0
 var run_blend := 0.0
+# Optional authored cinematic articulation, reset before every ordinary pose.
+var cinema_palms: Array[Vector3] = []
+var cinema_wrist_flex: Array[float] = []
+var cinema_shoe_pitch: Array[float] = []
+var cinema_head: Variant = null
 
 static func stride_frequency(speed: float) -> float:
  return clampf(1.15 + speed * 0.23, 1.15, 2.80)
@@ -37,6 +42,10 @@ static func arc(a: Vector3, b: Vector3, c: Vector3, phase: float) -> Vector3:
  return b.lerp(c, smoothstep(0.47, 1.0, phase))
 
 func update(dt: float) -> void:
+ cinema_palms.clear()
+ cinema_wrist_flex.clear()
+ cinema_shoe_pitch.clear()
+ cinema_head = null
  var a := athlete
  clock += dt
  if dt > 0:

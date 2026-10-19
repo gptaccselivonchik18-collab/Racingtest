@@ -9,6 +9,8 @@ const RELEASE := HIT + PALM_HOLD
 const FLOOR_HOLD := 0.30
 const RESTORE := 6.65
 const END := 7.10
+const TAKEOFF := 1.30
+const APEX := 1.95
 var game: Node3D
 var active := false
 var elapsed := 0.0
@@ -105,8 +107,10 @@ func set_charge(kills: int) -> void:
 func ground_at(time: float) -> Vector3:
  # The whole planted approach ends behind the back line, including toes.
  # Forward travel across it begins only after take-off (legal on a serve).
- var run := clampf(absf(origin.z) - 9.50, 0, 0.95)
- var travel := run * smoothstep(0.05, 1.10, time) + run * 0.65 * smoothstep(1.10, HIT, time)
+ var run := clampf(absf(origin.z) - 9.50, 0, 2.0)
+ var retreat := clampf(VolleyCourt.INNER_Z - 0.45 - absf(origin.z), 0, 0.28)
+ var travel := -retreat * smoothstep(0, 0.22, time) + (run + retreat) * smoothstep(0.22, TAKEOFF, time)
+ travel += run * 0.55 * smoothstep(TAKEOFF, HIT, time)
  return origin + Vector3(0, 0, -side * travel)
 
 func _ready() -> void:
@@ -153,8 +157,8 @@ func choose_target(source: Vector3) -> Dictionary:
  var best := -INF
  var safe: Array[Vector3] = []
  var opponents: Array = game.game_bots.members(1 if direction > 0 else 0)
- var approach := clampf(absf(source.z) - 9.50, 0, 0.95)
- var contact := source + Vector3(0, 6.5, -direction * (approach * 1.65 + 0.55))
+ var approach := clampf(absf(source.z) - 9.50, 0, 2.0)
+ var contact := source + Vector3(0, 6.5, -direction * (approach * 1.55 + 0.55))
  for candidate in range(80):
   var point := Vector3(random.randf_range(-4.15, 4.15), VolleyBall.RADIUS, -direction * (random.randf_range(8.70, 9.03) if good else random.randf_range(9.48, 10.12)))
   var clearance := 100.0
@@ -320,19 +324,23 @@ func close_scene(id: int) -> void:
   finished_sequence = id
 
 func jump_at(time: float) -> float:
- if time < 1.10:
+ if time < TAKEOFF:
   return 0
- if time < 1.63:
-  var u := clampf((time - 1.10) / 0.53, 0, 1)
+ if time < APEX:
+  var u := clampf((time - TAKEOFF) / (APEX - TAKEOFF), 0, 1)
   return height * (1.0 - pow(1.0 - u, 2.2))
  if time < RELEASE:
-  return height - 0.12 * smoothstep(1.63, HIT, time)
+  return height - 0.12 * smoothstep(APEX, HIT, time)
  return (height - 0.12) * (1.0 - pow(smoothstep(RELEASE, RELEASE + 0.95, time), 1.4))
 
 func hit_point() -> Vector3:
+ # Use the exact same shoulder, arm-length clamp and wrist as the visible rig.
+ var frame := choreography(HIT)
  var chest := Vector3(0, 1.23, 0)
- var hit_basis := Basis.from_euler(Vector3(0.12, 0.22, 0))
- return ground_at(HIT) + Vector3.UP * (height - 0.12) + Basis(Vector3.UP, yaw) * (chest + Vector3(0, -0.035, 0) + hit_basis * (Vector3(0.25, 2.22, -0.36) - chest)) + Vector3(0, 0, -side * 0.15)
+ var shoulder: Vector3 = chest + frame.offset + frame.torso * Vector3(0.3, 0.22, 0)
+ var wrist: Vector3 = chest + frame.offset + frame.torso * (frame.wrists[1] - chest)
+ wrist = shoulder + (wrist - shoulder).limit_length(0.855)
+ return ground_at(HIT) + Vector3.UP * jump_at(HIT) + Basis(Vector3.UP, yaw) * wrist + Vector3(0, 0, -side * 0.15)
 
 func flight_position(start: Vector3, end: Vector3, u: float) -> Vector3:
  # A shallow ballistic bend, rather than carrying high and diving vertically.
@@ -373,12 +381,12 @@ func ball_at(time: float) -> Vector3:
  var contact := hit_point()
  if time < 0.35:
   return start - Vector3.UP * ((1.0 - smoothstep(0, 0.35, time)) * 0.15)
- if time < 1.63:
-  var u := smoothstep(0.35, 1.63, time)
+ if time < APEX:
+  var u := smoothstep(0.35, APEX, time)
   var control := origin + Vector3.UP * (height + 7.0) + facing * Vector3(0.1, 0, -1.75)
   return (1.0 - u) * (1.0 - u) * start + 2.0 * (1.0 - u) * u * control + u * u * (contact + Vector3.UP * 0.16)
  if time < HIT:
-  return contact + Vector3.UP * (0.16 * (1.0 - smoothstep(1.63, HIT, time)))
+  return contact + Vector3.UP * (0.16 * (1.0 - smoothstep(APEX, HIT, time)))
  if time < RELEASE:
   return contact.lerp(release_point(), smoothstep(HIT, RELEASE, time))
  if time < RELEASE + flight:
@@ -423,43 +431,109 @@ func _sample() -> void:
  _effects()
  art.queue_redraw()
 
-func pose(motion: VolleyMotion) -> void:
- var t := elapsed
- var draw := smoothstep(0.70, 1.80, t)
- var reach := smoothstep(2.15, HIT, t)
- var follow := smoothstep(RELEASE, RELEASE + 0.38, t)
- var recover := smoothstep(RELEASE + 0.80, RELEASE + 1.55, t)
- var twist := lerpf(-0.44 * draw, 0.22, reach)
- twist = lerpf(twist, 0.48, follow) * (1.0 - recover)
- var bend := lerpf(-0.18 * draw, 0.12, reach)
- bend = lerpf(bend, 0.26, follow) * (1.0 - recover)
- var crouch := 0.035 + 0.19 * sin(smoothstep(0.75, 1.10, t) * PI) if t < 1.10 else 0.035 + 0.20 * sin(smoothstep(RELEASE + 0.80, RELEASE + 1.35, t) * PI)
- motion.body_offset = Vector3(0, -crouch, 0)
- motion.torso_basis = Basis.from_euler(Vector3(bend, twist, 0))
- var left := Vector3(-0.19, 1.40, -0.48).lerp(Vector3(-0.20, 2.05, -0.40), smoothstep(0.18, 0.75, t))
- left = left.lerp(Vector3(-0.35, 1.22, -0.10), reach)
- var right := Vector3(0.29, 1.17, -0.22).lerp(Vector3(0.46, 2.00, 0.25), draw)
- right = right.lerp(Vector3(0.25, 2.22, -0.36), reach)
+func foot_advance(t: float) -> float:
+ return (origin - ground_at(t)).z * side
+
+func planted_foot(index: int, t: float) -> Vector3:
+ var body := foot_advance(t)
+ var initial := 0.08 if index == 0 else -0.06
+ var step_start := 0.26 if index == 0 else 0.02
+ var step_end := 0.63 if index == 0 else 0.24
+ var next := foot_advance(0.73) + 0.12 if index == 0 else foot_advance(0.22) - 0.06
+ var progress := smoothstep(step_start, step_end, t)
+ var advance := lerpf(initial, next, progress)
+ var lift := sin(progress * PI) * (0.17 if index == 0 else 0.07)
+ var last_start := 1.01 if index == 0 else 0.60
+ var last_end := 1.28 if index == 0 else 1.00
+ if t >= last_start:
+  var plant := foot_advance(TAKEOFF) + 0.06 if index == 0 else foot_advance(1.17) - 0.03
+  progress = smoothstep(last_start, last_end, t)
+  advance = lerpf(next, plant, progress)
+  lift = sin(progress * PI) * (0.12 if index == 0 else 0.20)
+ return Vector3(-0.17 if index == 0 else 0.19, 0.11 + lift, body - advance)
+
+func choreography(t: float) -> Dictionary:
+ # Feet plant in court space. The penultimate step loads knees/hips, the
+ # two arms swing up, then pelvis/chest lead shoulder, elbow and wrist.
+ var run := smoothstep(0.25, 0.80, t)
+ var load := smoothstep(0.88, 1.12, t) * (1.0 - smoothstep(1.12, TAKEOFF + 0.14, t))
+ var lift := smoothstep(1.05, APEX - 0.12, t)
+ var coil := smoothstep(APEX - 0.10, 2.38, t)
+ var core := smoothstep(2.58, HIT - 0.12, t)
+ var elbow := smoothstep(2.86, HIT - 0.10, t)
+ var wrist_snap := smoothstep(HIT - 0.32, HIT, t)
+ var follow := smoothstep(RELEASE, RELEASE + 0.45, t)
+ var recover := smoothstep(RELEASE + 1.02, RELEASE + 1.80, t)
+ var landing := sin(smoothstep(RELEASE + 0.80, RELEASE + 1.60, t) * PI)
+ var twist := lerpf(-0.10 * run, -0.63, coil)
+ twist = lerpf(twist, 0.22, core)
+ twist = lerpf(twist, 0.62, follow) * (1.0 - recover)
+ var bend := lerpf(-0.18 * run, 0.40, lift * coil)
+ bend = lerpf(bend, 0.10, core)
+ bend = lerpf(bend, -0.26, follow) * (1.0 - recover)
+ var roll := lerpf(-0.08 * coil, 0.05, core) * (1.0 - recover)
+ var crouch := 0.09 + load * 0.24 - lift * 0.05 + landing * 0.25
+ var offset := Vector3(0.025 * sin(run * PI), -crouch, -0.045 * load)
+ var torso := Basis.from_euler(Vector3(bend, twist, roll))
+ var left := Vector3(-0.19, 1.40, -0.48).lerp(Vector3(-0.20, 1.96, -0.44), smoothstep(0.08, 0.35, t))
+ left = left.lerp(Vector3(-0.34, 1.00, 0.38), smoothstep(0.42, 1.03, t))
+ left = left.lerp(Vector3(-0.23, 2.08, -0.30), lift)
+ left = left.lerp(Vector3(-0.24, 1.98, -0.46), coil)
+ left = left.lerp(Vector3(-0.34, 1.16, -0.08), core)
+ left = left.lerp(Vector3(-0.39, 1.04, 0.13), follow)
+ var right := Vector3(0.29, 1.17, -0.22).lerp(Vector3(0.36, 1.00, 0.41), smoothstep(0.22, 1.05, t))
+ right = right.lerp(Vector3(0.33, 2.04, -0.16), lift)
+ right = right.lerp(Vector3(0.40, 1.98, 0.39), coil)
+ right = right.lerp(Vector3(0.43, 2.14, 0.06), elbow)
+ right = right.lerp(Vector3(0.25, 2.22, -0.36), wrist_snap)
  right += Vector3(0, -0.02, -0.05) * smoothstep(HIT, RELEASE, t) * (1.0 - follow)
- right = right.lerp(Vector3(-0.20, 1.25, -0.66), follow)
+ right = right.lerp(Vector3(-0.27, 1.14, -0.61), follow)
+ left = left.lerp(Vector3(-0.29, 1.08, -0.27), recover)
+ right = right.lerp(Vector3(0.29, 1.08, -0.27), recover)
+ var left_pole := Vector3(-0.42, 1.05, 0.14).lerp(Vector3(-0.46, 1.72, -0.16), lift)
+ left_pole = left_pole.lerp(Vector3(-0.44, 1.20, 0.08), core)
+ var right_pole := Vector3(0.44, 1.05, 0.20).lerp(Vector3(0.49, 1.78, -0.07), lift)
+ right_pole = right_pole.lerp(Vector3(0.68, 1.83, 0.25), coil)
+ right_pole = right_pole.lerp(Vector3(0.47, 1.94, -0.28), elbow)
+ right_pole = right_pole.lerp(Vector3(0.16, 1.39, -0.36), follow)
+ left_pole = left_pole.lerp(Vector3(-0.3, 1.02, 0.24), recover)
+ right_pole = right_pole.lerp(Vector3(0.3, 1.02, 0.24), recover)
+ var feet: Array[Vector3] = []
+ var shoe_pitch: Array[float] = []
+ var airborne := smoothstep(TAKEOFF, TAKEOFF + 0.20, t) * (1.0 - smoothstep(RELEASE + 0.60, RELEASE + 0.93, t))
+ for i in range(2):
+  var s := -1.0 if i == 0 else 1.0
+  var foot := planted_foot(i, minf(t, TAKEOFF))
+  var flying := Vector3(s * 0.19, 0.11 + (0.18 if i == 0 else 0.32), 0.16 if i == 0 else 0.36)
+  flying = flying.lerp(Vector3(s * 0.18, 0.18, -0.06 if i == 0 else 0.12), core)
+  foot = foot.lerp(flying, airborne)
+  if t >= RELEASE + 0.93:
+   foot = Vector3(s * 0.22, 0.11, -0.06 if i == 0 else 0.08)
+  feet.append(foot)
+  shoe_pitch.append(-0.46 * airborne + 0.10 * landing)
+ var head_pitch := lerpf(0.12, 0.52, smoothstep(0.15, 0.80, t))
+ head_pitch = lerpf(head_pitch, 0.32, coil)
+ head_pitch = lerpf(head_pitch, -0.10, wrist_snap) * (1.0 - recover)
+ return {"offset": offset, "torso": torso, "wrists": [left, right], "poles": [left_pole, right_pole], "feet": feet, "shoes": shoe_pitch, "head": Basis.from_euler(Vector3(head_pitch, twist * 0.22, 0)), "flex": 0.12 * coil - 0.24 * smoothstep(HIT, RELEASE + 0.18, t) * (1.0 - recover)}
+
+func pose(motion: VolleyMotion) -> void:
+ var frame := choreography(elapsed)
  var chest := Vector3(0, 1.23, 0)
+ motion.body_offset = frame.offset
+ motion.torso_basis = frame.torso
  motion.wrists.clear()
  motion.poles.clear()
  motion.feet.clear()
  for i in range(2):
-  var s := -1.0 if i == 0 else 1.0
-  var wrist := left if i == 0 else right
-  wrist = wrist.lerp(Vector3(s * 0.29, 1.08, -0.27), recover)
+  var wrist: Vector3 = frame.wrists[i]
   motion.wrists.append(chest + motion.body_offset + motion.torso_basis * (wrist - chest))
-  var pole := Vector3(-0.40, 1.55, -0.15) if i == 0 else Vector3(0.65, 1.78, 0.28).lerp(Vector3(0.4, 1.65, -0.34), reach)
+  var pole: Vector3 = frame.poles[i]
   motion.poles.append(chest + motion.body_offset + motion.torso_basis * (pole - chest))
-  var tuck := smoothstep(1.1, 1.65, t) * (1.0 - smoothstep(RELEASE + 0.12, RELEASE + 0.9, t))
-  var foot := Vector3(s * 0.20, 0.11 + tuck * (0.23 if i == 0 else 0.10), tuck * (0.23 if i == 0 else -0.15))
-  if t < 1.10:
-   var stride := sin(t * TAU * 2.0 + i * PI)
-   foot.z += stride * 0.17
-   foot.y += maxf(0, stride) * 0.09
-  motion.feet.append(foot)
+  motion.feet.append(frame.feet[i])
+  motion.cinema_palms.append(Vector3(0, 0.45, -0.9) if i == 0 else Vector3(0.08, -0.10, -1).normalized())
+  motion.cinema_wrist_flex.append(0.05 if i == 0 else float(frame.flex))
+  motion.cinema_shoe_pitch.append(frame.shoes[i])
+ motion.cinema_head = frame.head
  motion.initialized = true
 
 func _camera() -> void:
@@ -468,15 +542,17 @@ func _camera() -> void:
  var view := -signf(origin.x) * side if absf(origin.x) > 1.5 else 1.0
  var at: Vector3
  var focus: Vector3
- if elapsed < 1.63:
-  at = origin + right * view * 6.0 + forward * 0.8 + Vector3.UP * (4.1 + jump_at(elapsed) * 0.18)
-  focus = origin + Vector3.UP * (3.5 + jump_at(elapsed) * 0.35 + smoothstep(0.35, 1.10, elapsed) * 0.45)
-  camera.fov = 85
+ if elapsed < APEX + 0.20:
+  var widen := smoothstep(0.20, 1.10, elapsed)
+  at = origin + right * view * lerpf(4.2, 6.0, widen) + forward * 0.8 + Vector3.UP * (lerpf(1.95, 4.1, widen) + jump_at(elapsed) * 0.18)
+  focus = origin + Vector3.UP * (lerpf(1.25, 3.95, widen) + jump_at(elapsed) * 0.35)
+  camera.fov = lerpf(58, 85, widen)
  elif elapsed < RELEASE + 0.045:
-  var u := smoothstep(1.63, HIT, elapsed)
-  at = actor.position + right * lerpf(2.05, 1.52, u) + forward * lerpf(0.35, 0.95, u) + Vector3.UP * lerpf(1.55, 1.80, u)
-  focus = (actor.wrists[1] + hit_point()) * 0.5 + Vector3.DOWN * 0.12
-  camera.fov = lerpf(53, 36, u)
+  var u := smoothstep(APEX + 0.20, HIT, elapsed)
+  at = actor.position + right * lerpf(3.10, 1.52, u) + forward * lerpf(0.35, 0.95, u) + Vector3.UP * lerpf(1.2, 1.80, u)
+  focus = (actor.position + Vector3.UP * 1.12).lerp((actor.wrists[1] + hit_point()) * 0.5 + Vector3.DOWN * 0.12, u)
+  focus += Vector3.UP * sin(u * PI) * 0.28
+  camera.fov = lerpf(60, 36, u)
  else:
   var tracking := smoothstep(RELEASE + flight + FLOOR_HOLD, RELEASE + flight + 0.80, elapsed)
   var framing := target.lerp(game.ball.position, tracking)
@@ -521,14 +597,15 @@ func _effects() -> void:
   for i in range(1, trail.size()):
    var alpha := float(i) / trail.size()
    _line(trail[i - 1], trail[i], Color(1, 0.91, 0.64, alpha * 0.75))
- if t > 1.10 and t < 1.65:
-  var u := (t - 1.10) / 0.55
-  _ring(origin + Vector3.UP * 0.04, 0.35 + u * 1.1, Color(0.92, 0.87, 0.71, (1.0 - u) * 0.8))
+ if t > TAKEOFF and t < TAKEOFF + 0.55:
+  var u := (t - TAKEOFF) / 0.55
+  var takeoff_at := ground_at(TAKEOFF)
+  _ring(takeoff_at + Vector3.UP * 0.04, 0.35 + u * 1.1, Color(0.92, 0.87, 0.71, (1.0 - u) * 0.8))
   for i in range(14):
    var angle := i * TAU / 14
    var dir := Vector3(cos(angle), 0, sin(angle))
-   _line(origin + dir * u * 0.7 + Vector3.UP * 0.08, origin + dir * (u * 0.9 + 0.12) + Vector3.UP * (0.12 + sin(u * PI) * 0.35), Color(0.8, 0.76, 0.64, (1.0 - u) * 0.65))
- if t >= 1.10 and t < 1.63:
+   _line(takeoff_at + dir * u * 0.7 + Vector3.UP * 0.08, takeoff_at + dir * (u * 0.9 + 0.12) + Vector3.UP * (0.12 + sin(u * PI) * 0.35), Color(0.8, 0.76, 0.64, (1.0 - u) * 0.65))
+ if t >= TAKEOFF and t < APEX:
   for i in range(9):
    var a := i * TAU / 9
    var offset := Vector3(cos(a) * 0.45, -0.3, sin(a) * 0.45)

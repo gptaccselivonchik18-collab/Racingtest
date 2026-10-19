@@ -143,11 +143,15 @@ func apply_pose(dt := 0.0) -> void:
    normal = a.visual.global_basis.inverse() * VolleyBlockDuel.hand_normal(-facing.z, facing.x, a.body_tilt(), a.style_stats.n("block"))
   if a.holding_ball:
    normal = (Vector3(0.18, 1.40, -0.56) - wrist).normalized()
+  if motion.cinema_palms.size() == 2:
+   normal = motion.cinema_palms[i]
   var palm := palm_frame(elbow, wrist, normal)
   if a.float_serve_active and i == 1:
    palm = Basis.IDENTITY
   if kind in [2, 3, 4, 9] and a.action == VolleyAthlete.Action.STRIKE and i == 1 and not a.float_serve_active:
    palm = palm * Basis(Vector3.RIGHT, -smoothstep(0.40, 0.72, a.action_time / a.strike_duration) * 0.65)
+  if motion.cinema_wrist_flex.size() == 2:
+   palm = palm * Basis(Vector3.RIGHT, motion.cinema_wrist_flex[i])
   if palm_frames.size() > i:
    if dt > 0:
     palm = palm_frames[i].slerp(palm, 1.0 - exp(-24.0 * dt))
@@ -173,6 +177,8 @@ func apply_pose(dt := 0.0) -> void:
   var shoe_basis := a.visual.global_basis.orthonormalized()
   if not a.airborne() and a.dive_time < 0:
    shoe_basis = Basis(Vector3.UP, a.visual.global_rotation.y)
+  if motion.cinema_shoe_pitch.size() == 2:
+   shoe_basis = a.visual.global_basis.orthonormalized() * Basis(Vector3.RIGHT, motion.cinema_shoe_pitch[i])
   shoes[i].global_transform = Transform3D(shoe_basis, a.visual.to_global(foot) + shoe_basis * Vector3(0, -0.035, -0.05))
 
 func update_head() -> void:
@@ -181,5 +187,7 @@ func update_head() -> void:
  # Counter-rotate body lean: the head points where the player aims, while the
  # torso retains its Tilt and action animation. Nothing is hidden or recast.
  var head_basis := a.visual.global_basis.inverse() * a.view_basis()
+ if motion.cinema_head is Basis:
+  head_basis = motion.cinema_head
  a.visual.get_child(2).transform = Transform3D(head_basis, head_at)
  a.visual.get_child(3).transform = Transform3D(head_basis, head_at + head_basis * Vector3(0, 0.09, 0.035))

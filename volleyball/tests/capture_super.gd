@@ -5,7 +5,7 @@ func run() -> void:
  var game = load("res://scenes/Main.tscn").instantiate()
  root.add_child(game)
  game.frontend.start_solo()
- game.athlete.position = Vector3(0.7, 0.02, 10.5)
+ game.athlete.position = Vector3(0.7, 0.02, 11.2)
  for i in range(12):
   await physics_frame
  var s: VolleySuperServe = game.super_serve

@@ -47,7 +47,7 @@ func run() -> void:
  check(not s.begin(game.athlete, 0), "A second press cannot overlap two cinematic sequences")
  s.set_process(false)
  var legal := true
- for step in range(23):
+ for step in range(roundi(VolleySuperServe.TAKEOFF / 0.05) + 1):
   s.elapsed = step * 0.05
   s._sample()
   for shoe in game.athlete.limb_rig.shoes:
