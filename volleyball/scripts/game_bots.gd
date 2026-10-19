@@ -225,6 +225,10 @@ func note_touch(actor: ContextAthlete, kind: int) -> void:
  think_left = 0
 
 func reset_rally() -> void:
+ if is_instance_valid(game.characters):
+  game.characters.ai_wait.clear()
+  game.characters.quick_runs.clear()
+  game.characters.jump_events.clear()
  if is_instance_valid(game.super_serve):
   game.super_serve.clear_credit()
  tactics.reset()

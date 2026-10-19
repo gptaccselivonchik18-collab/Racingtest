@@ -52,7 +52,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["super", "no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
+ for key in ["super", "freak", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -68,7 +68,7 @@ func _layout() -> void:
   var screen := DisplayServer.screen_get_size()
   if screen.x > 0:
    margin = maxf(margin, maxf(safe.position.x, screen.x - safe.end.x) * size.x / screen.x + 12)
- var defaults := {"super": Vector2(size.x*0.80,106),"no_look": Vector2(size.x * 0.45, 106), "freak": Vector2(size.x * 0.65, 106), "float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
+ var defaults := {"super": Vector2(size.x*0.80,106),"freak": Vector2(size.x * 0.65, 106), "float_serve": Vector2(size.x - margin - 300, size.y - 103), "bump": Vector2(size.x - margin - 280, size.y - 92), "lower_serve": Vector2(size.x - margin - 190, size.y - 103), "primary": Vector2(size.x - margin - 64, size.y - 174), "secondary": Vector2(size.x - margin - 174, size.y - 227), "jump": Vector2(size.x - margin - 70, size.y - 66), "dive": Vector2(size.x - margin - 190, size.y - 103), "jump_set": Vector2(size.x - margin - 272, size.y - 184), "menu": Vector2(size.x - margin - 26, 40), "next": Vector2(margin + 36, 42), "lock": Vector2(size.x - margin - 103, 40), "context": Vector2(size.x * 0.5, size.y - 48), "move": Vector2(margin + 84, size.y - 116)}
  for key in defaults:
   var at: Vector2 = defaults[key]
   var scale_value := settings.button_scale
@@ -88,7 +88,7 @@ func _layout() -> void:
   elif key in ["menu", "lock", "next"]:
    side = 46
   var dimensions := Vector2(side, side)
-  if key in ["super", "no_look", "freak"]:
+  if key in ["super", "freak"]:
    dimensions = Vector2(112, 52) * scale_value
   if key == "context":
    dimensions = Vector2(190, 44)
@@ -454,7 +454,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["super", "no_look", "freak", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
+  for key in ["super", "freak", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -517,7 +517,7 @@ func _perform(role: String) -> bool:
   return game.super_serve.request()
  if game.athlete.court_team < 0 and not game.game_bots.bots.is_empty() and role not in ["menu", "lock", "next"]:
   return false
- if role in ["no_look", "freak"] and not game.lan.active:
+ if role in ["freak"] and not game.lan.active:
   return game.begin_special(role)
  if game.automatic_serve_busy() and role not in ["menu", "lock", "next"]:
   return false
@@ -566,7 +566,7 @@ func _release(role: String, source := -2, canceled := false) -> void:
  if canceled:
   game.cancel_action(role)
   return
- if role in ["primary", "secondary", "jump_set", "bump", "no_look", "freak"]:
+ if role in ["primary", "secondary", "jump_set", "bump", "freak"]:
   game.finish_action(role)
 
 func _advance_buffers(dt: float) -> void:
@@ -580,7 +580,7 @@ func _advance_buffers(dt: float) -> void:
   if _perform(role):
    var released: bool = queued[role].released
    queued.erase(role)
-   if released and role in ["primary", "secondary", "jump_set", "bump", "no_look", "freak"]:
+   if released and role in ["primary", "secondary", "jump_set", "bump", "freak"]:
     game.finish_action(role)
 
 func _button_at(pos: Vector2, padding := 12.0) -> String:
@@ -610,7 +610,6 @@ func _sync_axes() -> void:
 func _refresh_context() -> void:
  var kageyama: bool = game.athlete.character_id == "kageyama" and not game.holding_ball()
  buttons.super.visible = is_instance_valid(game.super_serve) and game.super_serve.eligible(game.athlete)
- buttons.no_look.visible = kageyama
  buttons.freak.visible = kageyama and is_instance_valid(game.characters) and not game.characters.partners(game.athlete).is_empty()
  buttons.next.visible = not game.lan.active or game.lan.hosting
  buttons.bump.visible = not game.holding_ball()
@@ -682,7 +681,7 @@ func _touch_move(id: int, pos: Vector2, relative := Vector2.ZERO) -> void:
    game.ball.aim_throw_at(game.camera, pos)
   else:
    _look_or_aim(relative)
- elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "no_look", "freak"]:
+ elif role in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "freak"]:
   # Capture is fixed at touch-down. Sliding across another button cannot
   # activate it, and leaving the original rectangle does not cancel a hold.
   # A dedicated look finger keeps priority; otherwise this finger can aim.
@@ -749,10 +748,10 @@ func _sync_held_state() -> void:
   held_snapshot = game.holding_ball()
   queued.clear()
   for id in fingers.keys():
-   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "float_serve", "height", "approach", "no_look", "freak"]:
+   if fingers[id] in ["primary", "secondary", "dive", "jump_set", "bump", "lower_serve", "float_serve", "height", "approach", "freak"]:
     _touch_up(id, true)
   for role in role_owners.keys():
-   if role in ["primary", "secondary", "dive", "jump_set", "bump", "no_look", "freak"]:
+   if role in ["primary", "secondary", "dive", "jump_set", "bump", "freak"]:
     _release(role, role_owners[role], true)
 
 func _process(dt: float) -> void:
@@ -769,7 +768,6 @@ func _process(dt: float) -> void:
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
  buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"
- buttons.no_look.text = "NO-LOOK\nSET"
  buttons.freak.text = "FREAK\nQUICK"
  buttons.super.text = "SUPER\nSERVE"
  buttons.jump.text = "ПРЫЖОК"
@@ -816,8 +814,8 @@ func _draw() -> void:
    color = Color(0.75, 0.57, 0.25, 0.72)
   if active:
    color = Color("b78d45")
-  if key in ["super", "no_look", "freak"]:
-   color = Color("345b73") if key == "no_look" else Color("a26335")
+  if key in ["super", "freak"]:
+   color = Color("a26335")
   if key == "super":
    color = Color("287a80")
    draw_style_box(_panel(Color("f2cf87"),20),rect.grow(3))

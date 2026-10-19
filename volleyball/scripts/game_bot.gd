@@ -93,14 +93,34 @@ func steer(target: Vector3, stop := 0.20) -> void:
  var braking_margin := 0.65 if manager.counts[court_team] <= 1 else 0.82
  var pace := minf(float(movement.speed), sqrt(2.0 * float(movement.braking) * distance) * braking_margin)
  if character_id == "hinata" and not airborne():
-  pace = float(movement.speed) if distance > 0.10 else 0.0
+  # Instant acceleration is a physical ability, not an instruction to use
+  # full throttle through every destination. The controller eases its input.
+  pace = minf(float(movement.speed),distance/0.12)
  var desired := offset.normalized() * pace / float(movement.speed)
  move_axis = manager.tactics.spaced_axis(self, desired)
+ var side := 1.0 if court_team == 0 else -1.0
+ if not airborne() and move_axis.y*side < 0:
+  var margin := 0.60 if block_held or planned_kind == BLOCK or state == "block" else 1.15
+  var toward := minf(-move_axis.y*side,maxf(0,position.z*side-margin)/(maxf(1,effective_speed())*0.14))
+  move_axis.y = -side*toward
  if offset.length() < stop + 0.12 and Vector2(velocity.x, velocity.z).length() < 0.25:
   move_axis = Vector2.ZERO
  sprint = offset.length() > 2.5
  if offset.length() > 0.6 and action == Action.IDLE:
   camera_yaw = atan2(-offset.x, -offset.y)
+
+func jump(from_approach := false) -> void:
+ super.jump(from_approach)
+ if from_approach and velocity.y > 0.1:
+  # Reserve the whole airborne path plus arm clearance, not just takeoff.
+  # This changes bot intent only; human Hinata keeps his original mechanics.
+  var side := 1.0 if court_team == 0 else -1.0
+  var duration := (velocity.y+sqrt(velocity.y*velocity.y+19.62*maxf(0,position.y)))/9.81
+  var toward := -velocity.z*side
+  var available := maxf(0,position.z*side-1.45)
+  if toward > available/maxf(0.1,duration):
+   velocity.z = -side*available/maxf(0.1,duration)
+  velocity.x = clampf(velocity.x,-2.5,2.5)
 
 func decide(_dt: float) -> void:
  if cinema_time >= 0:
@@ -268,12 +288,7 @@ func decide(_dt: float) -> void:
     technique = Technique.OVERHEAD
    var aim := manager.target_for(self, planned_kind)
    var toward := aim - position
-   if character_id == "kageyama" and planned_kind in [Technique.OVERHEAD, JUMP_SET] and special_set.is_empty() and absf(angle_difference(visual.global_rotation.y, atan2(-toward.x, -toward.z))) > 0.75:
-    special_set = "no_look"
-    locked_yaw = visual.global_rotation.y
-    special_yaw = atan2(-toward.x, -toward.z)
-   if special_set.is_empty():
-    camera_yaw = atan2(-toward.x, -toward.z)
+   camera_yaw = atan2(-toward.x, -toward.z)
    camera_pitch = deg_to_rad(55 if planned_kind in [Technique.OVERHEAD, JUMP_SET] else 20)
    # Hands face the intended pass, which may be sideways or behind us.
    # Align the body behind that contact rather than always behind the net.
@@ -291,12 +306,13 @@ func decide(_dt: float) -> void:
      if velocity.y > 0:
       velocity.y = minf(velocity.y, needed)
       jumps += 1
-   if planned_kind == Technique.SPIKE and not airborne() and remaining < 0.45:
+   var attack_lift := clampf(float(manager.contact_heights[court_team])-natural_reach(),0.25,effective_jump_height())
+   var attack_rise := sqrt(2.0*attack_lift/9.81)
+   if planned_kind == Technique.SPIKE and not airborne() and remaining <= attack_rise+0.08 and horizontal < 1.8:
     jump(true)
     if velocity.y > 0:
      # Jump to this ball, not to the maximum stat apex every time.
-     var lift := clampf(float(manager.contact_heights[court_team]) - natural_reach(), 0.25, effective_jump_height())
-     velocity.y = minf(velocity.y, sqrt(19.62 * lift))
+     velocity.y = minf(velocity.y, sqrt(19.62 * attack_lift))
      jumps += 1
    var windup := float(mechanic(planned_kind).windup)
    var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]

@@ -3,7 +3,7 @@ extends RefCounted
 
 static func pose(m: VolleyMotion) -> void:
  var a := m.athlete
- if a.character_id != "kageyama" or a.special_set.is_empty() or a.action not in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER]:
+ if a.character_id != "kageyama" or a.special_set != "freak" or a.action not in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER]:
   return
  var relative := angle_difference(a.visual.global_rotation.y, a.special_yaw)
  var backward := maxf(0, -cos(relative))

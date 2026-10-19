@@ -101,19 +101,18 @@ func run() -> void:
  k.action = VolleyAthlete.Action.IDLE
  check(not k.begin_action(3), "A single toss cannot be attacked twice")
  k.service_attempt_active = false
- k.camera_yaw = PI
+ k.camera_yaw = 0
  k.camera_pitch = 0.5
  k.visual.rotation = Vector3.ZERO
- check(cm.begin_special(k,"no_look"), "No-Look Set uses its own action")
+ check(not cm.begin_special(k,"no_look") and not game.hud.buttons.has("no_look") and not game.hud.settings.keys.has("no_look"), "No-Look removed from actions, HUD and keys")
+ check(k.begin_action(0), "Ordinary Kageyama set remains available")
  k.release()
- k.action_time = k.strike_duration * 0.47
+ k.action_time = k.strike_duration*0.47
  k._update_pose(0)
- var point: Vector3 = (k.wrists[0]+k.wrists[1])*0.5
- var miss: Vector3 = k.try_contact(point+Vector3(5,0,0),Vector3.DOWN)
- check(miss == Vector3.ZERO and not k.hit_used, "No-Look still misses without physical hand contact")
- var delta: Vector3 = k.try_contact(point,Vector3.DOWN)
- check(delta.z > 0 and absf(k.visual.rotation.y) < 0.001 and k.camera_yaw == PI, "A real backward set leaves feet/body facing forward and does not auto-turn the view")
- check(k.wrists[0].distance_to(k.position) < 2.1, "No-Look arm reach remains anatomically bounded")
+ var point: Vector3=(k.wrists[0]+k.wrists[1])*0.5
+ check(k.try_contact(point+Vector3(5,0,0),Vector3.DOWN)==Vector3.ZERO and not k.hit_used, "Ordinary set still requires physical contact")
+ check(k.try_contact(point,Vector3.DOWN)!=Vector3.ZERO, "Ordinary precise set still makes a real touch")
+ var delta := Vector3.ZERO
  for scenario in range(3):
   check(cm.apply_teams(roster("hinata" if scenario == 1 else "kageyama", "kageyama" if scenario == 1 else "hinata", scenario == 2), 2, false), "Configure controller combination %d" % scenario)
   var teammates: Array = cm.actors().filter(func(a): return a.court_team == 0)
@@ -180,14 +179,18 @@ func run() -> void:
  game.rig.pitch = 0.4
  game.action_owner = ""
  game.hud._refresh_context()
- var touch: Vector2 = game.hud.buttons.no_look.rect.get_center()
+ game.athlete.position = Vector3(0,0.02,4)
+ game.athlete.velocity = Vector3.DOWN
+ for i in range(8):game.athlete._physics_process(1.0/120)
+ game.hud._refresh_context()
+ var touch: Vector2 = game.hud.buttons.secondary.rect.get_center()
  game.hud._touch_down(77,touch)
  game.hud._touch_move(77,touch+Vector2(90,0),Vector2(90,0))
  cm._physics_process(1.0/120)
- check(game.hud.role_owners.has("no_look") and absf(game.rig.yaw) > 0.1 and absf(game.athlete.visual.rotation.y) < 0.001, "A held No-Look finger turns aim without rotating feet/body")
+ check(game.hud.role_owners.has("secondary") and absf(game.rig.yaw) > 0.1, "A held ordinary pass finger still turns camera aim")
  game.hud._touch_down(78,game.hud.left_center)
  game.hud._touch_move(78,game.hud.left_center+Vector2(40,0),Vector2(40,0))
- check(game.athlete.move_axis.length() > 0.1 and game.hud.role_owners.has("no_look"), "Movement and special-button fingers work together")
+ check(game.athlete.move_axis.length() > 0.1 and game.hud.role_owners.has("secondary"), "Movement and ordinary pass fingers work together")
  game.hud._touch_up(78)
  game.hud._touch_up(77)
  check(game.athlete.action == VolleyAthlete.Action.STRIKE and game.hud.role_owners.is_empty() and game.athlete.move_axis.length() < 0.01, "Releasing both fingers clears input and executes one set")

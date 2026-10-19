@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 36
+const PROTOCOL := 37
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -255,7 +255,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок", character
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.36." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.37." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -409,7 +409,7 @@ func local_action(role: String, phase := "press", payload: Dictionary = {}) -> b
  if hosting:
   return execute(1, role, phase, payload)
  command.rpc_id(1, role, phase, payload)
- if phase == "press" and role in ["primary", "secondary", "bump", "jump_set", "approach", "no_look", "freak"]:
+ if phase == "press" and role in ["primary", "secondary", "bump", "jump_set", "approach", "freak"]:
   game.action_owner = role
  elif phase != "press":
   game.action_owner = ""
@@ -449,7 +449,7 @@ func command(role: String, phase: String, payload: Dictionary) -> void:
  execute(id, role, phase, payload)
 
 func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> bool:
- if not hosting or not players.has(id) or role not in ["super", "no_look", "freak", "primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "float_serve", "stats"] or phase not in ["press", "release", "cancel"]:
+ if not hosting or not players.has(id) or role not in ["super", "freak", "primary", "secondary", "bump", "jump", "dive", "jump_set", "approach", "pickup", "context", "next", "cancel", "lower_serve", "float_serve", "stats"] or phase not in ["press", "release", "cancel"]:
   return false
  var actor: ContextAthlete = players[id].actor
  if game.super_serve.locks(actor):
@@ -507,7 +507,7 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
   game.finish_action(role)
  else:
   match role:
-   "no_look", "freak": accepted = game.begin_special(role)
+   "freak": accepted = game.begin_special(role)
    "primary": accepted = game.begin_primary()
    "secondary": accepted = game.begin_secondary()
    "bump": accepted = game.begin_bump()
@@ -731,7 +731,7 @@ func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0, stamp := -1.
   a.jump_in_progress = bool(pose[40])
   if VolleyCharacterDatabase.valid(str(pose[32])) and a.character_id != pose[32]:
    a.set_character(str(pose[32]))
-  a.special_set = str(pose[33])
+  a.special_set = "freak" if str(pose[33]) == "freak" else ""
   a.special_yaw = float(pose[34])
   a.locked_yaw = float(pose[35])
   a.air_swing_used = bool(pose[36])

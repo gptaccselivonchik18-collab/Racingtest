@@ -24,8 +24,20 @@ func run() -> void:
   var human: ContextAthlete = game.athlete
   var attackers: Array = cm.actors().filter(func(a): return a.character_id == "hinata" and a.court_team == 0)
   var hinata: ContextAthlete = attackers[0]
+  if hinata is VolleyGameBot:
+   # Reproduce a fast attacker already close to the net, not only a tidy
+   # preset starting position. The AI must reserve a safe takeoff lane.
+   hinata.position.z = 2.05 if scenario==0 else 1.55
+   hinata.velocity.z = -hinata.effective_speed()
+   cm.demo_wait = 0
   var initial_contacts: int = hinata.contact_count
   var observed_contacts := initial_contacts
+  var takeoff_time := -1.0
+  var was_jumping := false
+  var observed_launches := cm.quick_launches
+  var minimum_depth := INF
+  var minimum_window := INF
+  var net_touches := 0
   for frame in range(2400):
    if scenario == 0:
     if not cm.partners(human).is_empty() and human.action == VolleyAthlete.Action.IDLE and game.ball.position.distance_to(human.position + Vector3.UP * human.natural_reach()) < 1.5:
@@ -50,6 +62,15 @@ func run() -> void:
      if game.ball.quick_braked and predicted.distance_to(hand) < 0.90:
       human.hit_approach()
    await physics_frame
+   if hinata is VolleyGameBot:
+    if hinata.jump_in_progress and not was_jumping:takeoff_time=game.game_bots.clock
+    was_jumping=hinata.jump_in_progress
+    if hinata.jump_in_progress:
+     minimum_depth=minf(minimum_depth,hinata.position.z*(1 if hinata.court_team==0 else -1))
+     if game.player_touches_net(hinata):net_touches+=1
+    if cm.quick_launches>observed_launches and takeoff_time>=0:
+     minimum_window=minf(minimum_window,game.game_bots.clock-takeoff_time)
+    observed_launches=cm.quick_launches
    jumped = jumped or hinata.jump_in_progress
    if hinata.contact_count > observed_contacts:
     if hinata.strike_technique in [2,9]:
@@ -57,6 +78,11 @@ func run() -> void:
     observed_contacts = hinata.contact_count
    if cm.quick_launches >= before + 3 and game.ball.quick_brakes >= brakes + 3 and spikes >= 3:
     break
+  if hinata is VolleyGameBot:
+   print("HINATA SAFETY min_depth=",minimum_depth," visible_window=",minimum_window," net_touches=",net_touches)
+   if minimum_depth<1.35 or minimum_window<0.25 or net_touches>0:
+    push_error("Hinata approach must leave real net clearance and a usable reaction window")
+    failures+=1
   print("LIVE SCENARIO ",scenario," jumps=",jumped," quick=",cm.quick_launches-before," brakes=",game.ball.quick_brakes-brakes," spikes=",spikes," setter/hinata ",hinata.position)
   if not jumped or cm.quick_launches < before+3 or game.ball.quick_brakes < brakes+3 or spikes < 3:
    failures += 1
