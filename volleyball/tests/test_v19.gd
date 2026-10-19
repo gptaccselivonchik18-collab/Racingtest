@@ -223,7 +223,7 @@ func run() -> void:
  root.content_scale_size = root.size
  await process_frame
  game.hud._layout()
- check(game.hud.category_picker.item_count == 7 and not game.hud.tabs.tabs_visible, "All settings categories are reachable from a compact selector")
+ check(game.hud.category_picker.item_count == 8 and game.hud.tabs.get_tab_title(7) == "Звук" and not game.hud.tabs.tabs_visible, "All settings categories, including sound, are reachable from a compact selector")
  check(game.hud.stat_grid.columns == 2, "Landscape phones show two stat cards per row")
  game.hud.stat_sliders["set"].value = 143
  game.hud.stat_sliders.bump.value = -12

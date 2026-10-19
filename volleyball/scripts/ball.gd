@@ -1,5 +1,6 @@
 class_name VolleyBall
 extends RigidBody3D
+signal handled(kind: String, at: Vector3)
 
 const RADIUS := 0.155
 
@@ -262,6 +263,7 @@ func pick_up() -> bool:
  linear_velocity = Vector3.ZERO
  angular_velocity = Vector3.ZERO
  athlete.last_result = "Мяч в руках • ПОДБРОС или БРОСОК"
+ handled.emit("pickup", global_position)
  return true
 
 func _physics_process(_dt: float) -> void:
@@ -270,6 +272,7 @@ func _physics_process(_dt: float) -> void:
 
 func drop() -> void:
  if held:
+  handled.emit("toss", athlete.hold_position())
   feed(athlete.hold_position(), athlete.velocity)
 
 func toss() -> bool:
@@ -277,6 +280,7 @@ func toss() -> bool:
   athlete.last_result = "Сначала подберите мяч"
   return false
  jump_toss = athlete.technique == VolleyAthlete.Technique.JUMP_SERVE
+ handled.emit("toss", athlete.hold_position())
  if athlete is ContextAthlete:
   athlete.animate_release()
  feed(athlete.hold_position(), toss_velocity())
@@ -289,6 +293,7 @@ func throw_held() -> bool:
   return false
  if athlete is ContextAthlete:
   athlete.animate_release()
+ handled.emit("throw", athlete.hold_position())
  feed(athlete.hold_position(), throw_velocity())
  athlete.action = VolleyAthlete.Action.RECOVER
  athlete.strike_technique = VolleyAthlete.Technique.THROW
