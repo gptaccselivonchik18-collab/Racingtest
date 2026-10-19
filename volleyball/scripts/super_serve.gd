@@ -333,14 +333,17 @@ func jump_at(time: float) -> float:
   return height - 0.12 * smoothstep(APEX, HIT, time)
  return (height - 0.12) * (1.0 - pow(smoothstep(RELEASE, RELEASE + 0.95, time), 1.4))
 
-func hit_point() -> Vector3:
+func wrist_at(time: float, index: int) -> Vector3:
  # Use the exact same shoulder, arm-length clamp and wrist as the visible rig.
- var frame := choreography(HIT)
+ var frame := choreography(time)
  var chest := Vector3(0, 1.23, 0)
- var shoulder: Vector3 = chest + frame.offset + frame.torso * Vector3(0.3, 0.22, 0)
- var wrist: Vector3 = chest + frame.offset + frame.torso * (frame.wrists[1] - chest)
+ var shoulder: Vector3 = chest + frame.offset + frame.torso * Vector3(-0.3 if index == 0 else 0.3, 0.22, 0)
+ var wrist: Vector3 = chest + frame.offset + frame.torso * (frame.wrists[index] - chest)
  wrist = shoulder + (wrist - shoulder).limit_length(0.855)
- return ground_at(HIT) + Vector3.UP * jump_at(HIT) + Basis(Vector3.UP, yaw) * wrist + Vector3(0, 0, -side * 0.15)
+ return ground_at(time) + Vector3.UP * jump_at(time) + Basis(Vector3.UP, yaw) * wrist
+
+func hit_point() -> Vector3:
+ return wrist_at(HIT, 1) + Vector3(0, 0, -side * 0.15)
 
 func flight_position(start: Vector3, end: Vector3, u: float) -> Vector3:
  # A shallow ballistic bend, rather than carrying high and diving vertically.
@@ -377,10 +380,11 @@ func rebound_state(time: float) -> Dictionary:
 
 func ball_at(time: float) -> Vector3:
  var facing := Basis(Vector3.UP, yaw)
- var start := ground_at(minf(time, 0.35)) + facing * Vector3(-0.12, 1.57, -0.48)
+ var palm_offset := facing * Vector3(0, 0.13, -0.04)
+ var start := wrist_at(0.35, 1) + palm_offset
  var contact := hit_point()
  if time < 0.35:
-  return start - Vector3.UP * ((1.0 - smoothstep(0, 0.35, time)) * 0.15)
+  return wrist_at(time, 1) + palm_offset
  if time < APEX:
   var u := smoothstep(0.35, APEX, time)
   var control := origin + Vector3.UP * (height + 7.0) + facing * Vector3(0.1, 0, -1.75)
@@ -452,6 +456,31 @@ func planted_foot(index: int, t: float) -> Vector3:
   lift = sin(progress * PI) * (0.12 if index == 0 else 0.20)
  return Vector3(-0.17 if index == 0 else 0.19, 0.11 + lift, body - advance)
 
+func approach_arm(index: int, t: float) -> Dictionary:
+ # Retargeted key poses: FIVB Level II manual p.40, Alberto Cisolla's
+ # right-handed jump spin serve (Beijing 2008), frames 1–5. The toss arm
+ # drops before both nearly straight arms pendulum back, then forward/up.
+ # Shoulder angle and elbow flexion generate a coherent two-segment arm;
+ # a separately interpolated wrist target used to fold the elbow backwards.
+ var shoulder_angle := 0.20
+ var flex := 0.20
+ if index == 1:
+  shoulder_angle = lerpf(0.65, 2.40, smoothstep(0.02, 0.35, t))
+  flex = lerpf(1.15, 0.20, smoothstep(0.02, 0.35, t))
+ shoulder_angle = lerpf(shoulder_angle, 0.12, smoothstep(0.40, 0.67, t))
+ flex = lerpf(flex, 0.13, smoothstep(0.40, 0.67, t))
+ shoulder_angle = lerpf(shoulder_angle, -1.35, smoothstep(0.67, 1.02, t))
+ flex = lerpf(flex, 0.10, smoothstep(0.67, 1.02, t))
+ # The swing passes under the shoulder, never through the chest.
+ shoulder_angle = lerpf(shoulder_angle, 2.64, smoothstep(1.02, 1.49, t))
+ flex = lerpf(flex, 0.18, smoothstep(1.18, 1.49, t))
+ var s := -1.0 if index == 0 else 1.0
+ var shoulder := Vector3(s * 0.30, 1.45, 0)
+ var upper := Vector3(s * 0.025, -cos(shoulder_angle), -sin(shoulder_angle)).normalized()
+ var lower := Vector3(s * 0.025, -cos(shoulder_angle + flex), -sin(shoulder_angle + flex)).normalized()
+ var elbow := shoulder + upper * 0.44
+ return {"wrist": elbow + lower * 0.42, "pole": elbow + Vector3(0, -0.04, -0.02)}
+
 func choreography(t: float) -> Dictionary:
  # Feet plant in court space. The penultimate step loads knees/hips, the
  # two arms swing up, then pelvis/chest lead shoulder, elbow and wrist.
@@ -475,14 +504,13 @@ func choreography(t: float) -> Dictionary:
  var crouch := 0.09 + load * 0.24 - lift * 0.05 + landing * 0.25
  var offset := Vector3(0.025 * sin(run * PI), -crouch, -0.045 * load)
  var torso := Basis.from_euler(Vector3(bend, twist, roll))
- var left := Vector3(-0.19, 1.40, -0.48).lerp(Vector3(-0.20, 1.96, -0.44), smoothstep(0.08, 0.35, t))
- left = left.lerp(Vector3(-0.34, 1.00, 0.38), smoothstep(0.42, 1.03, t))
- left = left.lerp(Vector3(-0.23, 2.08, -0.30), lift)
+ var left_arm := approach_arm(0, t)
+ var right_arm := approach_arm(1, t)
+ var left: Vector3 = left_arm.wrist
  left = left.lerp(Vector3(-0.24, 1.98, -0.46), coil)
  left = left.lerp(Vector3(-0.34, 1.16, -0.08), core)
  left = left.lerp(Vector3(-0.39, 1.04, 0.13), follow)
- var right := Vector3(0.29, 1.17, -0.22).lerp(Vector3(0.36, 1.00, 0.41), smoothstep(0.22, 1.05, t))
- right = right.lerp(Vector3(0.33, 2.04, -0.16), lift)
+ var right: Vector3 = right_arm.wrist
  right = right.lerp(Vector3(0.40, 1.98, 0.39), coil)
  right = right.lerp(Vector3(0.43, 2.14, 0.06), elbow)
  right = right.lerp(Vector3(0.25, 2.22, -0.36), wrist_snap)
@@ -490,9 +518,10 @@ func choreography(t: float) -> Dictionary:
  right = right.lerp(Vector3(-0.27, 1.14, -0.61), follow)
  left = left.lerp(Vector3(-0.29, 1.08, -0.27), recover)
  right = right.lerp(Vector3(0.29, 1.08, -0.27), recover)
- var left_pole := Vector3(-0.42, 1.05, 0.14).lerp(Vector3(-0.46, 1.72, -0.16), lift)
+ var left_pole: Vector3 = left_arm.pole
+ left_pole = left_pole.lerp(Vector3(-0.46, 1.72, -0.16), coil)
  left_pole = left_pole.lerp(Vector3(-0.44, 1.20, 0.08), core)
- var right_pole := Vector3(0.44, 1.05, 0.20).lerp(Vector3(0.49, 1.78, -0.07), lift)
+ var right_pole: Vector3 = right_arm.pole
  right_pole = right_pole.lerp(Vector3(0.68, 1.83, 0.25), coil)
  right_pole = right_pole.lerp(Vector3(0.47, 1.94, -0.28), elbow)
  right_pole = right_pole.lerp(Vector3(0.16, 1.39, -0.36), follow)
@@ -530,8 +559,16 @@ func pose(motion: VolleyMotion) -> void:
   var pole: Vector3 = frame.poles[i]
   motion.poles.append(chest + motion.body_offset + motion.torso_basis * (pole - chest))
   motion.feet.append(frame.feet[i])
-  motion.cinema_palms.append(Vector3(0, 0.45, -0.9) if i == 0 else Vector3(0.08, -0.10, -1).normalized())
-  motion.cinema_wrist_flex.append(0.05 if i == 0 else float(frame.flex))
+  var palm := Vector3.RIGHT if i == 0 else Vector3.LEFT
+  if elapsed < 0.40 and i == 1:
+   palm = Vector3.UP
+  elif elapsed > TAKEOFF:
+   palm = Vector3(0, 0.45, -0.9) if i == 0 else Vector3(0.08, -0.10, -1).normalized()
+  motion.cinema_palms.append(palm)
+  var flex := 0.0 if elapsed < TAKEOFF else (0.05 if i == 0 else float(frame.flex))
+  if elapsed < 0.40 and i == 1:
+   flex = lerpf(0.60, 0.20, smoothstep(0.05, 0.35, elapsed))
+  motion.cinema_wrist_flex.append(flex)
   motion.cinema_shoe_pitch.append(frame.shoes[i])
  motion.cinema_head = frame.head
  motion.initialized = true
