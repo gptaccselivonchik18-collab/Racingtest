@@ -13,6 +13,8 @@ var approach_jump := false
 var contact_incoming_spin := Vector3.ZERO
 var style_stats := VolleyStyleStats.new()
 var landing_cooldown := 0.0
+var cinema_time := -1.0
+var cinema_pose: Callable
 var execution_level := 2
 var contact_error: Dictionary = {}
 
@@ -209,6 +211,8 @@ func _ready() -> void:
  last_result = "Выберите упражнение в меню • R — следующий мяч"
 
 func _process(dt: float) -> void:
+ if cinema_time >= 0:
+  return
  if not replica or not pose_ready:
   return
  if network_motion.active:
@@ -423,6 +427,8 @@ func phase_name() -> String:
  return "Восстановление" if action == Action.RECOVER else "Готов"
 
 func _physics_process(dt: float) -> void:
+ if cinema_time >= 0:
+  return
  block_contact_cooldown = maxf(0, block_contact_cooldown - dt)
  release_time = maxf(0, release_time - dt)
  contact_flash = maxf(0, contact_flash - dt)

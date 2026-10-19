@@ -99,6 +99,9 @@ func steer(target: Vector3, stop := 0.20) -> void:
   camera_yaw = atan2(-offset.x, -offset.y)
 
 func decide(_dt: float) -> void:
+ if is_instance_valid(manager.game.super_serve) and manager.game.super_serve.active:
+  move_axis = Vector2.ZERO
+  return
  var game := manager.game
  var ball: VolleyBall = game.ball
  var side := 1.0 if court_team == 0 else -1.0

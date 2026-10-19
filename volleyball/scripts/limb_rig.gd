@@ -114,6 +114,8 @@ static func segment(node: MeshInstance3D, start: Vector3, end: Vector3, radius: 
 func apply_pose(dt := 0.0) -> void:
  var a := athlete
  motion.update(dt)
+ if a.cinema_pose.is_valid():
+  a.cinema_pose.call(motion)
  var chest := a.visual.get_child(0) as MeshInstance3D
  chest.transform = Transform3D(motion.torso_basis, Vector3(0, 1.23, 0) + motion.body_offset)
  a.visual.get_child(1).position = Vector3(0, 0.86, 0) + motion.body_offset * 0.75

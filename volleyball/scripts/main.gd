@@ -19,6 +19,7 @@ var float_serve: VolleyFloatServe
 var practice: VolleyPractice
 var game_bots: VolleyGameBots
 var frame_rate: VolleyFrameRate
+var super_serve: VolleySuperServe
 var feedback_text := ""
 var feedback_color := Color.WHITE
 var feedback_left := 0.0
@@ -84,6 +85,9 @@ func _ready() -> void:
  add_child(game_bots)
  hud.add_bot_settings()
  game_bots.add_settings(hud)
+ super_serve = VolleySuperServe.new()
+ super_serve.game = self
+ add_child(super_serve)
  frontend = VolleyFrontend.new()
  frontend.game = self
  layer.add_child(frontend)
@@ -104,6 +108,8 @@ func _process(_dt: float) -> void:
   ball.feed(Vector3(0, 0.3, 1), Vector3.ZERO)
 
 func _physics_process(_dt: float) -> void:
+ if is_instance_valid(super_serve) and super_serve.active:
+  return
  if lan.active and not lan.hosting:
   return
  if (lan.active and not lan.match_active) or (not lan.active and not game_bots.bots.is_empty() and not game_bots.solo_match):
@@ -204,6 +210,8 @@ func begin_bump() -> bool:
  return false
 
 func _on_surface(surface: String) -> void:
+ if is_instance_valid(super_serve) and super_serve.active:
+  return
  if lan.active and not lan.hosting:
   return
  if lan.active and not lan.match_active:

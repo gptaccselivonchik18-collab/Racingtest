@@ -233,6 +233,8 @@ func reset_rally() -> void:
   bot.holding_ball = game.ball.held and game.ball.athlete == bot
 
 func _physics_process(dt: float) -> void:
+ if is_instance_valid(game.super_serve) and game.super_serve.active:
+  return
  if get_tree().paused or not authority() or bots.is_empty():
   return
  clock += dt

@@ -52,7 +52,7 @@ func _ready() -> void:
  status.add_theme_color_override("font_color", Color("e3ebed"))
  status.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(status)
- for key in ["primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
+ for key in ["super", "primary", "secondary", "jump", "dive", "jump_set", "menu", "next", "lock", "context", "bump", "lower_serve", "float_serve"]:
   buttons[key] = {"rect": Rect2(), "text": "", "visible": true}
  _menu()
  _editor()
@@ -93,6 +93,7 @@ func _layout() -> void:
   at.x = clampf(at.x, margin + dimensions.x * 0.5, size.x - margin - dimensions.x * 0.5)
   at.y = clampf(at.y, 18 + dimensions.y * 0.5, size.y - dimensions.y * 0.5 - 12)
   buttons[key].rect = Rect2(at - dimensions * 0.5, dimensions)
+ buttons.super.rect = Rect2(Vector2(size.x - margin - 164, 93), Vector2(160, 70))
  status.position = Vector2(margin + 70, 28)
  status.size = Vector2(size.x - margin * 2 - 260, 44)
  height_rect = Rect2(Vector2(size.x * 0.5 - 140, 104), Vector2(280, 50))
@@ -451,7 +452,7 @@ func _slider(parent: Node, title: String, low: float, high: float, value: float,
 
 func _refresh_keys() -> void:
  for key in key_buttons:
-  key_buttons[key].text = "%s: %s" % [VolleySettings.KEY_LABELS[key], "ЛКМ" if settings.keys[key] < 0 else OS.get_keycode_string(settings.keys[key])]
+  key_buttons[key].text = "%s: %s" % [VolleySettings.KEY_LABELS.get(key, "Суперподача"), "ЛКМ" if settings.keys[key] < 0 else OS.get_keycode_string(settings.keys[key])]
 
 func _orientation(value: int) -> void:
  settings.orientation = value
@@ -497,6 +498,8 @@ func _notification(what: int) -> void:
   _cancel()
 
 func _input(event: InputEvent) -> void:
+ if is_instance_valid(game.super_serve) and game.super_serve.active:
+  return
  if not visible or (is_instance_valid(game.frontend) and game.frontend.blocks_input()):
   return
  if event is InputEventKey and not event.echo:
@@ -516,7 +519,7 @@ func _input(event: InputEvent) -> void:
    return
   if menu.visible or edit_mode:
    return
-  for key in ["primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
+  for key in ["super", "primary", "secondary", "jump", "dive", "jump_set", "bump", "lower_serve", "float_serve", "next", "pickup", "lock"]:
    if event.is_action_pressed("volley_" + key):
     _press(key, -int(event.physical_keycode) - 100)
    elif event.is_action_released("volley_" + key):
@@ -573,6 +576,8 @@ func _press(role: String, source := -2) -> bool:
  return accepted
 
 func _perform(role: String) -> bool:
+ if role == "super":
+  return game.super_serve.request()
  if game.automatic_serve_busy() and role not in ["menu", "lock", "next"]:
   return false
  if role == "lower_serve":
@@ -816,6 +821,7 @@ func _process(dt: float) -> void:
  buttons.bump.text = "НИЖНИЙ\nПРИЁМ"
  buttons.lower_serve.text = "НИЖНЯЯ\nПОДАЧА"
  buttons.float_serve.text = "ПОДАЧА\nПЛАНЕР"
+ buttons.super.text = "СУПЕРПОДАЧА"
  buttons.jump.text = "ПРЫЖОК"
  buttons.dive.text = "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
@@ -860,6 +866,9 @@ func _draw() -> void:
    color = Color(0.75, 0.57, 0.25, 0.72)
   if active:
    color = Color("b78d45")
+  if key == "super":
+   _super_button(rect, active)
+   continue
   draw_style_box(_panel(color, int(rect.size.y * 0.38)), rect)
   var lines: PackedStringArray = buttons[key].text.split("\n")
   for line in range(lines.size()):
@@ -888,6 +897,23 @@ func _draw() -> void:
    draw_line(size * 0.5 + Vector2(x * 14, -10), size * 0.5 + Vector2(x * 25, -18), game.feedback_color, 4, true)
  draw_string(font, Vector2(24, size.y - 12), "%d FPS" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("a7bdc9"))
  draw_arc(size * 0.5, 3, 0, TAU, 12, Color(1, 1, 1, 0.45), 1, true)
+
+func _super_button(rect: Rect2, pressed: bool) -> void:
+ var p := rect.position
+ var w := rect.size.x
+ var h := rect.size.y
+ var outline := PackedVector2Array([p + Vector2(14, 0), p + Vector2(w, 0), p + Vector2(w, h - 14), p + Vector2(w - 14, h), p + Vector2(0, h), p + Vector2(0, 14)])
+ draw_colored_polygon(outline, Color("dbbd67") if pressed else Color("102c3c"))
+ outline.append(outline[0])
+ draw_polyline(outline, Color("f1cf79"), 2, true)
+ draw_line(p + Vector2(18, 5), p + Vector2(w - 8, 5), Color("fcf2c4"), 2, true)
+ var center := p + Vector2(26, 29)
+ draw_arc(center, 11, -PI * 0.15, TAU - PI * 0.4, 28, Color("f9e9af"), 2, true)
+ draw_arc(center + Vector2(-7, -1), 11, -0.9, 1.25, 16, Color("f9e9af"), 1.5, true)
+ draw_line(p + Vector2(42, 28), p + Vector2(56, 17), Color("f4d77e"), 2, true)
+ draw_line(p + Vector2(46, 35), p + Vector2(59, 26), Color("f4d77e"), 1, true)
+ draw_string(font, p + Vector2(59, 29), "SUPER", HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("fff2c3"))
+ draw_string(font, p + Vector2(17, 57), "ПОДАЧА  ·  G", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f3e9c9"))
  if game.athlete.action in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] and game.athlete.tilt_affects(game.athlete.technique) and not edit_mode:
   var at := Vector2(size.x * 0.5, size.y - 168)
   draw_circle(at, 23, Color(0.03, 0.09, 0.14, 0.65))

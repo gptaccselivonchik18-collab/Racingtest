@@ -12,6 +12,9 @@ var shift_lock := true
 var orientation := 4
 var nickname := "Игрок"
 
+func _init() -> void:
+ keys["super"] = KEY_G
+
 static func clean_nickname(value: String) -> String:
  var result := ""
  for letter in value.strip_edges():
