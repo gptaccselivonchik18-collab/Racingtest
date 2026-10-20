@@ -91,7 +91,7 @@ func choose_receivers() -> void:
      var phase := float(absi(actor.bot_id)) * 1.713 + manager.last_touch_time * 2.31
      var uncertainty := float(difficulty.uncertainty) * maxf(0, float(sample.time) - 0.35)
      point += Vector3(sin(phase), 0, cos(phase)) * uncertainty
-    if point.z * side < 0.48 or point.y < 0.18 or point.y > 3.6 or sample.v.y > 2:
+    if point.z * side < 0.48 or point.y < 0.18 or point.y > actor.natural_reach()+actor.effective_jump_height()+0.35 or sample.v.y > 2:
      continue
     var target := point + Vector3(0, 0, side * 0.34)
     target.y = 0.02
@@ -125,7 +125,7 @@ func choose_receivers() -> void:
       continue
      diving = true
     var high := (manager.last_team == team and manager.touches >= 2 and absf(point.z) < 4.5) or solo_attack
-    var preferred := minf(actor.natural_reach() + 0.8, actor.natural_reach() + jump_height * 0.70) if high else 2.05 * actor.physical_scale if manager.last_team == team else 1.35 * actor.physical_scale
+    var preferred := actor.natural_reach()+jump_height*0.80 if high else 2.05 * actor.physical_scale if manager.last_team == team else 1.35 * actor.physical_scale
     if high and point.y > actor.natural_reach() + 0.15 + jump_height:
      continue
     if actor is VolleyGameBot and jump_set_useful(actor):
@@ -215,8 +215,9 @@ func choose_shot(actor: VolleyGameBot, serving: bool) -> Vector3:
  var best := Vector3(0, VolleyBall.RADIUS, side * 6)
  var best_score := -INF
  var xs := [-3.3, 0.0, 3.3] if manager.difficulty < 3 else [-3.3, -1.65, 0.0, 1.65, 3.3]
+ var depths: Array=[3.2,5.5,7.7] if serving else [6.4,7.8]
  for x in xs:
-  for depth in [3.2, 5.5, 7.7]:
+  for depth in depths:
    var target := Vector3(x, VolleyBall.RADIUS, side * depth)
    if serving and manager.difficulty < 2:
     # Low Serve should choose margin rather than risky corners/floaters.
@@ -333,7 +334,7 @@ func prepare_runs(setter: VolleyGameBot) -> void:
    base.x = athlete.position.x
   var traits:=teammate_profile(athlete)
   var depth:=clampf(2.85-float(traits.speed)*0.035,2.50,2.85)
-  var target:=Vector3(clampf(base.x,-3.3,3.3),float(traits.reach)+minf(1.30,float(traits.jump)*0.60),side*depth)
+  var target:=Vector3(clampf(base.x,-3.3,3.3),float(traits.reach)+float(traits.jump)*0.80,side*depth)
   var start:=target+Vector3(0,0,side*clampf(float(traits.speed)*0.18,0.85,1.45))
   start.y = 0.02
   chosen[athlete.get_instance_id()] = {"start": start, "target": target}
@@ -363,13 +364,13 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
   # The final recipient need not have been one of the random decoy runners.
   # Give that player the same safe attack lane, not the old 1.35 m net lane.
   point.z=side*2.60
-  point.y=float(traits.reach)+minf(1.20,float(traits.jump)*0.60)
+  point.y=float(traits.reach)+float(traits.jump)*0.80
   return point
  var forward := clampf(float(recipient.style_stats.movement().speed) * 0.45, 1.3, 2.6) if attacking else 0.40
  point.z -= side * forward
  point.x = clampf(point.x, -3.8, 3.8)
  point.z = side * clampf(point.z * side, 1.35, 8.5)
- point.y = float(traits.reach)+minf(1.20,float(traits.jump)*0.60) if attacking else 2.05 * recipient.physical_scale
+ point.y = float(traits.reach)+float(traits.jump)*0.80 if attacking else 2.05 * recipient.physical_scale
  return point
 
 func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:

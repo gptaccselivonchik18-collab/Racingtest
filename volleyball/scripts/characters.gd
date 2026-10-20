@@ -378,7 +378,7 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
    return true
  elif bot.character_id == "hinata":
   var continuing:=ai_wait.has(bot.instance_uid) and (bot.airborne() or bot.approach_armed or bot.jump_windup>0)
-  var setters := actors().filter(func(a): return same_team(bot, a) and a.character_id == "kageyama" and (demo or continuing or (a is VolleyGameBot and game.game_bots.receivers[bot.court_team]==a.bot_id) or (not a is VolleyGameBot and a.action==VolleyAthlete.Action.PREPARE)))
+  var setters := actors().filter(func(a): return same_team(bot, a) and a.character_id == "kageyama" and (demo or continuing or (a is VolleyGameBot and game.game_bots.receivers[bot.court_team]==a.bot_id) or (not a is VolleyGameBot and (a.action==VolleyAthlete.Action.PREPARE or game.game_bots.receivers[bot.court_team]==(game.lan.player_id(a) if game.lan.active else 1)))))
   if setters.is_empty():
    return false
   var setter: ContextAthlete = setters[0]
@@ -390,7 +390,7 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
   var side := 1 if bot.court_team == 0 else -1
   var eta := setter_contact_eta(setter)
   var quick_time:=clampf(VolleyBotTactics.flat(bot.position,setter.position)/28.0,0.18,0.48)
-  var lead:=clampf(sqrt(19.62*bot.effective_jump_height())/9.81-quick_time+0.05,0.32,0.62)
+  var lead:=clampf(sqrt(19.62*bot.effective_jump_height())/9.81-quick_time+0.17,0.44,0.74)
   var plant := float(bot.style_stats.movement().plant)
   if bot.jump_windup > 0 and ai_wait.has(bot.instance_uid):
    bot.move_axis = Vector2.ZERO
@@ -412,7 +412,7 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
     ai_wait[bot.instance_uid] = 1.5
     quick_runs.erase(bot.instance_uid)
    return true
-  if is_finite(eta) and eta >= 0.28 and eta <= 1.15 and not bot.airborne() and bot.can_act() and bot.cooldown <= 0 and (demo or (game.game_bots.last_team == bot.court_team and game.game_bots.touches == 1 and game.game_bots.last_actor != setter)):
+  if is_finite(eta) and eta >= 0.28 and eta <= 1.35 and not bot.airborne() and bot.can_act() and bot.cooldown <= 0 and (demo or (game.game_bots.last_team == bot.court_team and game.game_bots.touches == 1 and game.game_bots.last_actor != setter)):
    var depth := clampf(bot.position.z*side-0.65,2.6,4.2)
    var takeoff := Vector3(clampf(bot.position.x,-3.3,3.3),0.02,side*depth)
    # Do not promise a rushed quick if the attacker cannot reach the plant.

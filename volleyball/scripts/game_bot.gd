@@ -56,6 +56,7 @@ func reset_plan() -> void:
  serve_aim = Vector3.INF
  cancel_input()
  action = Action.IDLE
+ approach_jump=false
  holding_ball = false
  planned_kind = -1
  is_server = false
@@ -129,6 +130,17 @@ func jump(from_approach := false) -> void:
   if toward > available/maxf(0.1,duration):
    velocity.z = -side*available/maxf(0.1,duration)
   velocity.x = clampf(velocity.x,-2.5,2.5)
+
+func cancel_input() -> void:
+ var jumped_for_attack:=approach_jump and jump_in_progress
+ super.cancel_input()
+ # Cancelling a stale receiving plan does not undo a physical approach jump.
+ if jumped_for_attack:approach_jump=true
+
+func release() -> void:
+ if planned_technique()==Technique.SPIKE:power=0.82
+ super.release()
+ if action==Action.STRIKE:move_axis=Vector2.ZERO
 
 func decide(_dt: float) -> void:
  if cinema_time >= 0:
@@ -324,8 +336,7 @@ func decide(_dt: float) -> void:
      jumps += 1
    var windup := float(mechanic(planned_kind).windup)
    var receive := planned_kind in [Technique.UNDERHAND, Technique.OVERHEAD, JUMP_SET]
-   var height := ball.position.y - position.y
-   var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > natural_reach() - 0.35 and height < natural_reach() + 0.8 and remaining < float(mechanic(planned_kind).duration) * 0.50
+   var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.3 and (airborne() or remaining<0.10) and contact_due()
    if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or spike_due):
     release()
    elif charged_for > 1.05:
