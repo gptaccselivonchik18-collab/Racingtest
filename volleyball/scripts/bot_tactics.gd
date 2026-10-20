@@ -356,6 +356,11 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
   var options: Dictionary = runs.get(team, {})
   if options.has(recipient.get_instance_id()):
    return options[recipient.get_instance_id()].target
+  # The final recipient need not have been one of the random decoy runners.
+  # Give that player the same safe attack lane, not the old 1.35 m net lane.
+  point.z=side*2.60
+  point.y=float(traits.reach)+minf(1.20,float(traits.jump)*0.60)
+  return point
  var forward := clampf(float(recipient.style_stats.movement().speed) * 0.45, 1.3, 2.6) if attacking else 0.40
  point.z -= side * forward
  point.x = clampf(point.x, -3.8, 3.8)
@@ -409,6 +414,14 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
    friend = teammate
  if not is_instance_valid(friend):
   return {}
+ if attacking and friend is VolleyGameBot:
+  var options: Dictionary=runs.get(actor.court_team,{})
+  if not options.has(friend.get_instance_id()):
+   var contact:=pass_point(friend,actor,true)
+   var start:=contact+Vector3(0,0,side*clampf(friend.effective_speed()*0.18,0.85,1.45))
+   start.y=0.02
+   options[friend.get_instance_id()]={"start":start,"target":contact}
+   runs[actor.court_team]=options
  var plan := {"epoch": manager.last_touch_time, "recipient": friend, "target": pass_point(friend, actor, attacking), "attacking": attacking}
  plans[key] = plan
  return plan

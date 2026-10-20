@@ -136,7 +136,7 @@ func decide(_dt: float) -> void:
  var game := manager.game
  var ball: VolleyBall = game.ball
  var side := 1.0 if court_team == 0 else -1.0
- if game.characters.demo and game.characters.ai_step(self,_dt):
+ if (game.characters.demo or character_id=="hinata") and game.characters.ai_step(self,_dt):
   return
  if noticed_touch != manager.last_touch_time:
   noticed_touch = manager.last_touch_time
@@ -326,8 +326,6 @@ func decide(_dt: float) -> void:
    var height := ball.position.y - position.y
    var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > natural_reach() - 0.35 and height < natural_reach() + 0.8 and remaining < float(mechanic(planned_kind).duration) * 0.50
    if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or spike_due):
-    if planned_kind in [Technique.OVERHEAD,JUMP_SET]:
-     game.characters.upgrade_ready_set(self)
     release()
    elif charged_for > 1.05:
     cancel_input()
@@ -404,6 +402,9 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, incoming + delta)
   return delta
  if not special_set.is_empty():
+  if special_recipient!=null:
+   var recipient: Variant=special_recipient.get_ref()
+   if is_instance_valid(recipient):last_pass_recipient=recipient.get_instance_id()
   manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, incoming + delta)
   return delta
  var target := manager.target_for(self, strike_technique)
@@ -413,6 +414,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  var error_angle: Vector2 = contact_error.get("angle", Vector2.ZERO)
  var heading := target - last_contact_point
  heading.y = 0
+ strike_direction=heading.normalized()
  var sideways := heading.normalized().cross(Vector3.UP)
  target += sideways * heading.length() * tan(deg_to_rad(error_angle.x))
  var spin := outgoing_spin(manager.game.ball.angular_velocity, delta)
@@ -434,6 +436,18 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
  elif strike_technique == Technique.JUMP_SERVE:
   outgoing = manager.game.ball.solve_power_serve(last_contact_point, target, power_serve_speed() * lerpf(0.84, 1.0, quality), spin)
  outgoing *= float(contact_error.get("pace", 1.0))
+ if not own_side:
+  # Validate the FINAL impulse/spin after execution variation, at the actual
+  # contact height. A too-low hit needs lift, not an impossible hard spike.
+  spin=outgoing_spin(manager.game.ball.angular_velocity,outgoing-incoming)
+  var flight: Dictionary=manager.game.ball.power_serve_flight(last_contact_point,outgoing,spin)
+  if float(flight.net_clearance)<2.85 or float(flight.net_height)<2.90:
+   var lift:=0.65
+   for attempt in range(10):
+    outgoing=manager.game.ball.solve_lifted_hit(last_contact_point,target,lift,spin)
+    flight=manager.game.ball.power_serve_flight(last_contact_point,outgoing,spin)
+    if float(flight.net_clearance)>=2.85 and float(flight.net_height)>=2.90:break
+    lift=lift*1.35+0.20
  # Touch is emitted here only after planning the actual outgoing ball. The
  # base signal has no subscribers, avoiding duplicate rules/contact events.
  manager.game._on_player_touch(self, bot_id, strike_technique, last_contact_point, outgoing)

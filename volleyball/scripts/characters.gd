@@ -218,6 +218,8 @@ func begin_special(a: ContextAthlete, mode: String) -> bool:
  return true
 
 func solve_special(a: ContextAthlete, at: Vector3, _quality: float) -> Dictionary:
+ if a is VolleyGameBot and not demo and a.resolving_contact and a.special_set.is_empty():
+  upgrade_ready_set(a,at)
  if a.resolving_contact:
   last_special_contact = "%s %s at %s" % [a.character_id, a.special_set, at]
  if a.character_id != "kageyama":
@@ -316,15 +318,15 @@ func setter_contact_eta(setter: ContextAthlete) -> float:
   at += v/60.0
  return INF
 
-func upgrade_ready_set(bot: VolleyGameBot) -> bool:
- # No reservations or waiting: ordinary positioning/timing already succeeded.
- # A viable airborne partner may upgrade this single imminent real contact.
- if bot.character_id!="kageyama" or bot.action!=VolleyAthlete.Action.PREPARE:
+func upgrade_ready_set(bot: VolleyGameBot, at: Vector3) -> bool:
+ # Upgrade only AFTER the real ordinary hand contact has been established.
+ # Changing the arm pose on release invalidated that same contact prediction.
+ if bot.character_id!="kageyama" or not bot.resolving_contact:
   return false
  var options := partners(bot)
  options.sort_custom(func(a,b):return a.position.distance_squared_to(bot.position)<b.position.distance_squared_to(bot.position))
  for recipient: ContextAthlete in options:
-  var plan:=quick_plan(bot,recipient,(bot.wrists[0]+bot.wrists[1])*0.5)
+  var plan:=quick_plan(bot,recipient,at)
   if plan.is_empty():continue
   bot.special_set="freak"
   bot.special_recipient=weakref(recipient)
@@ -335,7 +337,9 @@ func upgrade_ready_set(bot: VolleyGameBot) -> bool:
  return false
 
 func ai_step(bot: VolleyGameBot, dt: float) -> bool:
- if not demo:return false
+ # The setter always keeps ordinary contact timing. Only the attacker's
+ # optional approach runs before a normal set; it must never stall the setter.
+ if not demo and bot.character_id!="hinata":return false
  if not authority() or game.ball.held or game.ball.pending_feed or bot.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] or bot.jump_serving or bot.is_server:
   return false
  if demo and bot.airborne() and not bot.jump_in_progress:
@@ -373,10 +377,16 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
    bot.steer(Vector3(-2.4, 0.02, 3.0 * (1 if bot.court_team == 0 else -1)), 0.08)
    return true
  elif bot.character_id == "hinata":
-  var setters := actors().filter(func(a): return same_team(bot, a) and a.character_id == "kageyama")
+  var continuing:=ai_wait.has(bot.instance_uid) and (bot.airborne() or bot.approach_armed or bot.jump_windup>0)
+  var setters := actors().filter(func(a): return same_team(bot, a) and a.character_id == "kageyama" and (demo or continuing or (a is VolleyGameBot and game.game_bots.receivers[bot.court_team]==a.bot_id) or (not a is VolleyGameBot and a.action==VolleyAthlete.Action.PREPARE)))
   if setters.is_empty():
    return false
   var setter: ContextAthlete = setters[0]
+  if not demo and not bot.airborne() and not bot.approach_armed and bot.jump_windup<=0:
+   if setter is VolleyGameBot:
+    var intended: Dictionary=game.game_bots.tactics.pass_plan(setter,VolleyAthlete.Technique.OVERHEAD)
+    if intended.is_empty() or intended.recipient!=bot:return false
+   ai_wait.erase(bot.instance_uid)
   var side := 1 if bot.court_team == 0 else -1
   var eta := setter_contact_eta(setter)
   var lead := clampf(0.50+VolleyBotTactics.flat(bot.position,setter.position)/50.0,0.54,0.62)

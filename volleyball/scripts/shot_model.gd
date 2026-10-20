@@ -29,7 +29,7 @@ static func standing_target(a: ContextAthlete, at: Vector3, amount: float, quali
  return Vector3(at.x + horizontal.x * distance, VolleyBall.RADIUS, at.z + horizontal.z * distance)
 
 static func solve(a: ContextAthlete, kind: int, at: Vector3, incoming: Vector3, incoming_spin: Vector3, quality: float, amount: float, angular_error := Vector2.ZERO, pace_scale := 1.0) -> Dictionary:
- if a.ability_solver.is_valid() and not a.special_set.is_empty() and kind in [0, 8]:
+ if a.ability_solver.is_valid() and kind in [0, 8]:
   var special: Dictionary = a.ability_solver.call(a, at, quality)
   if not special.is_empty():
    return special
