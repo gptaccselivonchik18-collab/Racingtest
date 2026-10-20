@@ -389,7 +389,8 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
    ai_wait.erase(bot.instance_uid)
   var side := 1 if bot.court_team == 0 else -1
   var eta := setter_contact_eta(setter)
-  var lead := clampf(0.50+VolleyBotTactics.flat(bot.position,setter.position)/50.0,0.54,0.62)
+  var quick_time:=clampf(VolleyBotTactics.flat(bot.position,setter.position)/28.0,0.18,0.48)
+  var lead:=clampf(sqrt(19.62*bot.effective_jump_height())/9.81-quick_time+0.05,0.32,0.62)
   var plant := float(bot.style_stats.movement().plant)
   if bot.jump_windup > 0 and ai_wait.has(bot.instance_uid):
    bot.move_axis = Vector2.ZERO

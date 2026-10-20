@@ -7,7 +7,7 @@ var cache_key := ""
 var samples: Array = []
 
 func prepare(a: ContextAthlete,kind: int) -> void:
- var key:="%s:%d:%s:%s"%[a.character_id,kind,a.airborne(),a.special_set]
+ var key:="%s:%d:%s:%s:%.4f"%[a.character_id,kind,a.airborne(),a.special_set,(a.style_stats as VolleyCharacterStats).difficulty_multiplier]
  if key==cache_key:return
  cache_key=key
  samples.clear()

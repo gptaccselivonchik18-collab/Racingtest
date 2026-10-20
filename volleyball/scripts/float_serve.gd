@@ -16,8 +16,8 @@ func network_role() -> String:
 func height_hint() -> String:
  return "Малое вращение, непредсказуемый уход мяча. Serve улучшает точность. Низкая дуга может попасть в сетку."
 
-func sample_delivery(aim: Vector3, skill: float, gain := 1.0, execution_level := 2) -> Dictionary:
- var policy := VolleyBotDifficulty.execution(execution_level)
+func sample_delivery(aim: Vector3, skill: float, gain := 1.0, execution_level := 2, bot := false) -> Dictionary:
+ var policy := VolleyBotDifficulty.execution(execution_level,bot)
  var spread := lerpf(2.7, 0.70, skill) * float(policy.scatter) / gain
  var mishit := rng.randf() < float(policy.fault) * lerpf(2.4, 0.3, skill) / gain
  var error := Vector3(rng.randfn(0, spread), 0, rng.randfn(0, spread * 1.18))
@@ -26,7 +26,8 @@ func sample_delivery(aim: Vector3, skill: float, gain := 1.0, execution_level :=
   # tighter, rather than giving every serve a large routine random offset.
   error += Vector3(rng.randf_range(-6, 6), 0, rng.randf_range(-6, 6)) / sqrt(gain)
  var spin := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized() * lerpf(0.95, 0.18, skill) / gain
- return {"target": aim + error, "mishit": mishit, "scale": rng.randf_range(1.0 - lerpf(0.07, 0.012, skill), 1.0 + lerpf(0.07, 0.012, skill)), "spin": spin, "seed": rng.randi(), "skill": skill}
+ var pace_error:=lerpf(0.07,0.012,skill)*(float(policy.scatter) if bot else 1.0)
+ return {"target": aim + error, "mishit": mishit, "scale": rng.randf_range(1.0-pace_error,1.0+pace_error), "spin": spin, "seed": rng.randi(), "skill": skill}
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  var side := 1.0 if actor.position.z >= 0 else -1.0
@@ -34,7 +35,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
   return false
  height = clampf(apex, 0.8, 5.0)
  var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "spike"
- delivery = sample_delivery(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill), actor.execution_level)
+ delivery = sample_delivery(aim, actor.style_stats.n(skill), actor.style_stats.factor(skill), actor.execution_level,actor.bot_execution)
  busy_actor = actor
  actor.cancel_input()
  actor.move_axis = Vector2.ZERO

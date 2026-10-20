@@ -173,6 +173,10 @@ func serve_target(actor: VolleyGameBot) -> Vector3:
  if actor.serve_aim.is_finite():
   return actor.serve_aim
  actor.serve_aim = choose_shot(actor, true)
+ # Leave a margin for the real float wake instead of aiming at a boundary
+ # and expecting low Serve to behave like the full-strength character.
+ actor.serve_aim.x=clampf(actor.serve_aim.x,-2.7,2.7)
+ actor.serve_aim.z=signf(actor.serve_aim.z)*clampf(absf(actor.serve_aim.z),3.2,6.8)
  actor.serve_history.append(actor.serve_aim)
  if actor.serve_history.size() > 3:
   actor.serve_history.pop_front()

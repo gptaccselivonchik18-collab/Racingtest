@@ -2,11 +2,19 @@ class_name VolleyCharacterStats
 extends VolleyStyleStats
 
 var character_id := "kageyama"
+var difficulty_multiplier := 1.0
 
 func install(id: String) -> void:
  character_id = id
  values = VolleyCharacterDatabase.get_character(id).stats.duplicate()
+ for key in KEYS:
+  values[key]=float(values[key])*difficulty_multiplier
  cache.clear()
+
+func set_difficulty_multiplier(value: float) -> void:
+ if is_equal_approx(difficulty_multiplier,value):return
+ difficulty_multiplier=value
+ install(character_id)
 
 func set_stat(_key: String, _value: float) -> void:
  # Character sheets are authoritative data, never user/client supplied ratings.

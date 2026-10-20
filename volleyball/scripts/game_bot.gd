@@ -27,6 +27,7 @@ var last_pass_recipient := 0
 func _init() -> void:
  super()
  fatigue_enabled = false
+ bot_execution = true
 
 func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77

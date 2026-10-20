@@ -48,6 +48,7 @@ var landing_cooldown := 0.0
 var cinema_time := -1.0
 var cinema_pose: Callable
 var execution_level := 2
+var bot_execution := false
 var fatigue_enabled := true
 var contact_error: Dictionary = {}
 
@@ -777,7 +778,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   var forward := -Basis(Vector3.UP, visual.global_rotation.y).z
   var right := Basis(Vector3.UP, visual.global_rotation.y).x
   var normal := VolleyBlockDuel.hand_normal(forward, right, input, style_stats.n("block"))
-  var edge_error := float(p.accuracy) * (1.0 - quality) * float(VolleyBotDifficulty.execution(execution_level).scatter)
+  var edge_error := float(p.accuracy) * (1.0 - quality) * float(VolleyBotDifficulty.execution(execution_level,bot_execution).scatter)
   normal = normal.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-edge_error, edge_error)))
   outgoing = VolleyBlockDuel.reflection(incoming, normal, quality)
   if not attack.is_empty():
@@ -785,7 +786,7 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
    if duel_result.pierced:
     outgoing = duel_result.velocity
  else:
-  contact_error = VolleyBotDifficulty.contact_error(rng, execution_level, quality, float(p.accuracy), float(p.stability))
+  contact_error = VolleyBotDifficulty.contact_error(rng, execution_level, quality, float(p.accuracy), float(p.stability),bot_execution)
   deviation = Vector2(contact_error.angle).x
   resolving_contact = true
   var solution := VolleyShotModel.solve(self, strike_technique, last_contact_point, incoming, contact_incoming_spin, quality, strike_power, contact_error.angle, contact_error.pace)

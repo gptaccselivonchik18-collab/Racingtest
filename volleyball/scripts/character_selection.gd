@@ -89,7 +89,7 @@ func draw_teams() -> void:
   return
  f._label("Пустые слоты допустимы. Выберите участников и героев независимо.", 16)
  var level := OptionButton.new()
- for title in ["Лёгкий · медленная реакция", "Средний · обычная игра", "Сложный · сильная тактика"]:
+ for title in ["Лёгкий · характеристики ботов 80%", "Средний · характеристики ботов 90%", "Сложный · характеристики ботов 100%"]:
   level.add_item(title)
  level.select(chosen_level)
  level.item_selected.connect(func(index: int): chosen_level = index)

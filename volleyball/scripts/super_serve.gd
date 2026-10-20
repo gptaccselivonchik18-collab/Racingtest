@@ -105,9 +105,9 @@ func request() -> bool:
   return game.lan.local_action("super")
  return begin(game.athlete, 0)
 
-func choose_target(source: Vector3) -> Dictionary:
+func choose_target(source: Vector3, success_chance := IN_CHANCE) -> Dictionary:
  var direction := 1.0 if source.z >= 0 else -1.0
- var good := random.randf() < IN_CHANCE
+ var good := random.randf() < success_chance
  # No receiver avoidance: a well positioned defender can genuinely touch it.
  var at := Vector3(random.randf_range(-3.85, 3.85), VolleyBall.RADIUS, -direction * random.randf_range(7.0, 8.50) if good else -direction * random.randf_range(9.55, 10.65))
  return {"target": at, "inside": good}
@@ -115,7 +115,8 @@ func choose_target(source: Vector3) -> Dictionary:
 func begin(player: ContextAthlete, id: int) -> bool:
  if not authority() or not eligible(player) or game.automatic_serve_busy():
   return false
- var aim := choose_target(player.global_position)
+ var chance:=1.0-float(VolleyBotDifficulty.execution(player.execution_level,true).fault) if player.bot_execution else IN_CHANCE
+ var aim := choose_target(player.global_position,chance)
  game.characters.demo = false
  if not game.rules.strict:
   game.rules.reset(true)
@@ -320,7 +321,7 @@ func solve_delivery(start: Vector3,destination: Vector3) -> Dictionary:
  # The ability has its own pace. Serve controls only ordinary deliveries.
  # Extra downward curvature is a deliberately stylized super-serve profile,
  # applied from release until first touch, not a late target correction.
- var desired:=ARCHIVED_REFERENCE_SPEED*SPEED_MULTIPLIER
+ var desired:=ability_speed(actor)
  var curve:=SUPER_TOPSPIN_ACCEL
  var speed:=Vector3.ZERO
  var duration:=0.4
@@ -339,6 +340,12 @@ func solve_delivery(start: Vector3,destination: Vector3) -> Dictionary:
   if float(state.net_clearance)>=2.66 and float(state.net_height)>=2.70:break
   if attempt<5:curve*=1.15
  return {"velocity":speed,"duration":duration,"curve":curve,"landing":state.get("landing",destination),"net_height":state.get("net_height",0)}
+
+func ability_speed(player: ContextAthlete) -> float:
+ var multiplier:=1.0
+ if is_instance_valid(player) and player.bot_execution:
+  multiplier=(player.style_stats as VolleyCharacterStats).difficulty_multiplier
+ return ARCHIVED_REFERENCE_SPEED*SPEED_MULTIPLIER*multiplier
 
 func _physics_process(dt: float) -> void:
  if not active:return

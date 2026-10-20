@@ -54,7 +54,7 @@ func run() -> void:
  check(h.get_child(0).shape.height < k.get_child(0).shape.height and h.wrists[0].y < k.wrists[0].y, "Colliders and actual wrists scale with the original model instance")
  var low_stats := h.stats.values.duplicate()
  game.game_bots.configure({"difficulty":4}, false)
- check(h.stats.values == low_stats and h.execution_level == 4, "Bot difficulty changes execution decisions without rewriting fixed stats")
+ check(is_equal_approx(float(low_stats.jump),80.0) and is_equal_approx(float(h.stats.values.jump),100.0) and h.execution_level == 4, "Bot difficulty applies 80% / 100% of the original sheet")
  h.set_physics_process(false)
  var mover := ContextAthlete.new()
  game.add_child(mover)

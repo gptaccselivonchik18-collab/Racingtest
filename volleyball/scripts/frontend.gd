@@ -47,7 +47,7 @@ func _ready() -> void:
  author.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(author)
  var version := Label.new()
- version.text = "0.40"
+ version.text = "0.41"
  version.add_theme_font_size_override("font_size", 15)
  version.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(version)

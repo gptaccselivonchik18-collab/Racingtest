@@ -118,6 +118,7 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     bots[id] = actor
    var bot: VolleyGameBot = bots[id]
    bot.execution_level = difficulty
+   (bot.style_stats as VolleyCharacterStats).set_difficulty_multiplier(VolleyBotDifficulty.stat_multiplier(difficulty))
    var hero := str(values.get("characters", {}).get(str(id), bot.character_id))
    if bot.character_id != hero and VolleyCharacterDatabase.valid(hero):
     bot.set_character(hero)
@@ -127,6 +128,8 @@ func configure(values: Dictionary, broadcast := true) -> bool:
  think_left = 0
  if broadcast and game.lan.active:
   game.lan.send_game_bots()
+ tactics.reset()
+ tactics.teammate_readings.clear()
  return true
 
 static func bot_id(team: int, slot: int) -> int:

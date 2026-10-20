@@ -12,6 +12,7 @@ var contacts := 0
 func _init() -> void:
  super()
  fatigue_enabled=false
+ bot_execution=true
 
 func _ready() -> void:
  super._ready()
