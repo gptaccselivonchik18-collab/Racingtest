@@ -9,6 +9,10 @@ var supplied := false
 var cycles := 0
 var contacts := 0
 
+func _init() -> void:
+ super()
+ fatigue_enabled=false
+
 func _ready() -> void:
  super._ready()
  var tag := Label3D.new()

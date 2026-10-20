@@ -21,6 +21,12 @@ var noticed_touch := -INF
 var reaction_until := 0.0
 var serve_aim := Vector3.INF
 var serve_history: Array[Vector3] = []
+var calibration := VolleyBotCalibration.new()
+var last_pass_recipient := 0
+
+func _init() -> void:
+ super()
+ fatigue_enabled = false
 
 func _ready() -> void:
  random_seed = 20261019 + absi(bot_id) * 77
@@ -78,6 +84,7 @@ func prepare_serve() -> void:
  state = "retrieve"
 
 func _physics_process(dt: float) -> void:
+ energy = 1.0
  if replica:
   return
  cooldown = maxf(0, cooldown - dt)
@@ -129,7 +136,7 @@ func decide(_dt: float) -> void:
  var game := manager.game
  var ball: VolleyBall = game.ball
  var side := 1.0 if court_team == 0 else -1.0
- if is_instance_valid(game.characters) and game.characters.ai_step(self, _dt):
+ if game.characters.demo and game.characters.ai_step(self,_dt):
   return
  if noticed_touch != manager.last_touch_time:
   noticed_touch = manager.last_touch_time
@@ -181,7 +188,7 @@ func decide(_dt: float) -> void:
      serves += 1
   else:
    state = "cover"
-   steer(manager.home(court_team, slot))
+   steer(manager.tactics.support(self))
   return
  if jump_serving:
   toss_time += _dt
@@ -319,6 +326,8 @@ func decide(_dt: float) -> void:
    var height := ball.position.y - position.y
    var spike_due := planned_kind == Technique.SPIKE and horizontal < 1.0 and height > natural_reach() - 0.35 and height < natural_reach() + 0.8 and remaining < float(mechanic(planned_kind).duration) * 0.50
    if charged_for >= windup and (planned_kind != JUMP_SET or airborne()) and ((receive and contact_due()) or spike_due):
+    if planned_kind in [Technique.OVERHEAD,JUMP_SET]:
+     game.characters.upgrade_ready_set(self)
     release()
    elif charged_for > 1.05:
     cancel_input()
@@ -335,30 +344,7 @@ func decide(_dt: float) -> void:
   camera_yaw = 0 if side > 0 else PI
 
 func contact_due() -> bool:
- # Time the real animation window using this player's current skill profile.
- # This only decides when to release; normal swept collision still decides hits.
- var p := mechanic(planned_kind)
- var ball: VolleyBall = manager.game.ball
- var radius := contact_ball_radius * float(p.radius)
- for phase in [maxf(float(p.start), 0.22), 0.47, minf(float(p.end), 0.80)]:
-  var time: float = float(p.duration) * float(phase)
-  var point := ball.position + ball.linear_velocity * time + Vector3.DOWN * 4.905 * time * time
-  var drift := Vector3(velocity.x, 0, velocity.z) * time * 0.5
-  if airborne():
-   drift = velocity * time + Vector3.DOWN * 4.905 * time * time
-  if planned_kind == Technique.UNDERHAND:
-   var spine := position + drift + Vector3.UP * clampf(point.y - position.y - drift.y, 0.20 * physical_scale, 1.65 * physical_scale)
-   if point.distance_to(spine) < radius + 0.25:
-    return true
-  else:
-   var turn := float(style_stats.movement().turn) * time * (0.45 if airborne() else 1.0)
-   var yaw := clampf(angle_difference(visual.rotation.y, camera_yaw), -turn, turn)
-   var offset := (wrists[0] + wrists[1]) * 0.5 - position
-   offset -= visual.global_basis.z * (0.35 * float(phase))
-   var hands := position + offset.rotated(Vector3.UP, yaw) + drift + Vector3.UP * (0.35 * sin(float(phase) * PI * 0.5))
-   if point.distance_to(hands) < radius + HAND_RADIUS * 0.65:
-    return true
- return false
+ return calibration.contact_due(self,manager.game.ball,planned_kind)
 
 func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
  if action not in [Action.IDLE, Action.PREPARE] or cooldown > 0 or dive_cooldown > 0 or airborne():
@@ -439,7 +425,8 @@ func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack
   var plan := manager.tactics.pass_plan(self, strike_technique)
   if not plan.is_empty() and bool(plan.attacking):
    var recipient: ContextAthlete = plan.recipient
-   var travel := VolleyBotTactics.flat(recipient.position, target) / maxf(1.0, recipient.effective_speed() * 0.75)
+   last_pass_recipient=recipient.get_instance_id()
+   var travel := VolleyBotTactics.flat(recipient.position, target) / maxf(1.0, recipient.speed_toward(Vector2(target.x-recipient.position.x,target.z-recipient.position.z)) * 0.75)
    apex = maxf(apex, 1.2 + travel * 1.6)
   outgoing = manager.game.ball.solve_pass(last_contact_point, target, apex, spin)
  if strike_technique in [Technique.SPIKE, TIP] and air_attack:

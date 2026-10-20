@@ -39,6 +39,13 @@ func run() -> void:
  check(exact,"Oikawa exact fixed sheet")
  check(a.height_cm==184.3 and absf(a.physical_scale-184.3/204.0)<0.00001,"Physical height scales existing rig and reach")
  check(s.SPEED_MULTIPLIER>=0.85 and s.SPEED_MULTIPLIER<=0.90,"Exposed requested-speed multiplier reduces archived pace 10–15%")
+ var fixed_start:=Vector3(0,3.5,9.2)
+ var fixed_target:=Vector3(1.5,VolleyBall.RADIUS,-8.2)
+ var strong_delivery:=s.solve_delivery(fixed_start,fixed_target)
+ a.set_character("hinata")
+ var weak_delivery:=s.solve_delivery(fixed_start,fixed_target)
+ check(strong_delivery.velocity.is_equal_approx(weak_delivery.velocity) and strong_delivery.velocity.length()>60,"Super pace exceeds 60 m/s independently of ordinary Serve")
+ a.set_character("oikawa")
  var good := 0
  var transitions := 0
  var previous := false
@@ -94,7 +101,7 @@ func run() -> void:
   var aim:=s.choose_target(start)
   var delivery:=s.solve_delivery(start,aim.target)
   floor_at=Vector3.INF
-  game.ball.feed(start,delivery.velocity,s.SPIN)
+  game.ball.launch_super(start,delivery.velocity,s.SPIN,delivery.curve)
   for tick in range(240):
    await physics_frame
    if floor_at!=Vector3.INF:break

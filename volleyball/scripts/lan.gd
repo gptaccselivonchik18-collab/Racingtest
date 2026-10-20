@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 37
+const PROTOCOL := 38
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -255,7 +255,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок", character
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.37." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.38." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -753,7 +753,7 @@ func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0, stamp := -1.
  a.power = pose[8]
  a.strike_power = pose[9]
  a.strike_duration = pose[10]
- a.energy = pose[11]
+ a.energy = pose[11] if a.fatigue_enabled else 1.0
  if a != game.athlete:
   a.move_axis = pose[12]
   a.tilt = pose[13]

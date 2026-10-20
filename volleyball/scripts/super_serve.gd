@@ -11,7 +11,9 @@ const RESTORE := 6.65
 const END := 7.10
 const TAKEOFF := 1.30
 const APEX := 1.95
-const SPEED_MULTIPLIER := 0.875 # Tune against the archived requested pace.
+const SPEED_MULTIPLIER := 0.90
+const ARCHIVED_REFERENCE_SPEED := 70.0 # Cinematic ability pace, unrelated to Serve.
+const SUPER_TOPSPIN_ACCEL := 75.0 # Stylized super arc, fixed before release.
 const IN_CHANCE := 0.70
 const SPIN := Vector3(3, 0, 0)
 var game: Node3D
@@ -107,7 +109,7 @@ func choose_target(source: Vector3) -> Dictionary:
  var direction := 1.0 if source.z >= 0 else -1.0
  var good := random.randf() < IN_CHANCE
  # No receiver avoidance: a well positioned defender can genuinely touch it.
- var at := Vector3(random.randf_range(-3.85, 3.85), VolleyBall.RADIUS, -direction * random.randf_range(7.0, 8.70) if good else -direction * random.randf_range(9.55, 10.65))
+ var at := Vector3(random.randf_range(-3.85, 3.85), VolleyBall.RADIUS, -direction * random.randf_range(7.0, 8.50) if good else -direction * random.randf_range(9.55, 10.65))
  return {"target": at, "inside": good}
 
 func begin(player: ContextAthlete, id: int) -> bool:
@@ -271,35 +273,72 @@ func wrist_at(t: float, index: int) -> Vector3:
 func hit_point() -> Vector3:
  return wrist_at(HIT,1)+Vector3(0,0,-side*0.15)
 
-func timed_launch(start: Vector3, end: Vector3, duration: float, spin: Vector3) -> Vector3:
+func timed_launch(start: Vector3,end: Vector3,duration: float,spin: Vector3,curve:=0.0) -> Vector3:
+ if curve>0:end.y=maxf(end.y,VolleyBall.RADIUS+0.04)
  var steps := maxi(1,roundi(duration*120))
  var seconds := steps/120.0
- var launch := (end-start)/seconds+Vector3.UP*4.905*seconds
+ var launch := (end-start)/seconds+Vector3.UP*(9.81+curve)*0.5*seconds
  for iteration in range(5):
   var at := start
   var v := launch
   var w := spin
+  var previous_force:=Vector3.ZERO
   for tick in range(steps):
-   v += (Vector3.DOWN*9.81+game.ball.aero_force(v,w)/game.ball.mass)/120.0
+   if curve>0:
+    # feed() installs state on the first tick; aerodynamic force begins on
+    # the following ordinary integrator tick, exactly as in VolleyBall.
+    if tick>0:v+=(Vector3.DOWN*9.81+previous_force)/120.0
+   else:
+    v+=(Vector3.DOWN*9.81+game.ball.aero_force(v,w)/game.ball.mass)/120.0
    w *= 1.0-game.ball.angular_damp/120.0
    at += v/120.0
+   if curve>0 and tick>0:previous_force=Vector3.DOWN*curve+game.ball.aero_force(v,w)/game.ball.mass
   launch += (end-at)/seconds
  return launch
 
-func solve_delivery(start: Vector3, destination: Vector3) -> Dictionary:
- # 12.5% lower requested archived speed. Physical height/net constraints can
- # reduce pace further: the old 4-5 m floating jump was deliberately removed.
- var archived_time := clampf(0.31/sqrt(actor.style_stats.factor("serve")),0.20,0.30)
- var duration := archived_time/SPEED_MULTIPLIER
- var speed := Vector3.ZERO
- var state := {}
- for attempt in range(36):
-  speed = timed_launch(start,destination,duration,SPIN)
-  state = game.ball.power_serve_flight(start,speed,SPIN)
-  if float(state.net_clearance) >= 2.66 and float(state.net_height) >= 2.70 and Vector2(state.landing.x-destination.x,state.landing.z-destination.z).length() < 0.12:
-   break
-  duration += 0.035
- return {"velocity":speed,"duration":roundf(duration*120)/120.0,"landing":state.get("landing",destination),"net_height":state.get("net_height",0)}
+func delivery_flight(start: Vector3,launch: Vector3,curve: float) -> Dictionary:
+ var at:=start
+ var v:=launch
+ var spin:=SPIN
+ var net:=INF
+ var clearance:=INF
+ var previous_force:=Vector3.ZERO
+ for tick in range(300):
+  var previous:=at
+  if tick>0:v+=(Vector3.DOWN*9.81+previous_force)/120.0
+  spin*=1.0-game.ball.angular_damp/120.0
+  at+=v/120.0
+  if tick>0:previous_force=Vector3.DOWN*curve+game.ball.aero_force(v,spin)/game.ball.mass
+  if previous.z*at.z<0:net=previous.lerp(at,previous.z/(previous.z-at.z)).y
+  for plane in [-VolleyBall.RADIUS-0.04,VolleyBall.RADIUS+0.04]:
+   if (previous.z-plane)*(at.z-plane)<0:
+    clearance=minf(clearance,previous.lerp(at,(previous.z-plane)/(previous.z-at.z)).y)
+  if at.y<=VolleyBall.RADIUS+0.04:break
+ return {"landing":at,"net_height":net,"net_clearance":clearance}
+
+func solve_delivery(start: Vector3,destination: Vector3) -> Dictionary:
+ # The ability has its own pace. Serve controls only ordinary deliveries.
+ # Extra downward curvature is a deliberately stylized super-serve profile,
+ # applied from release until first touch, not a late target correction.
+ var desired:=ARCHIVED_REFERENCE_SPEED*SPEED_MULTIPLIER
+ var curve:=SUPER_TOPSPIN_ACCEL
+ var speed:=Vector3.ZERO
+ var duration:=0.4
+ var state: Dictionary={}
+ for attempt in range(6):
+  var low:=0.20
+  var high:=0.75
+  for iteration in range(10):
+   duration=(low+high)*0.5
+   speed=timed_launch(start,destination,duration,SPIN,curve)
+   if speed.length()>desired:low=duration
+   else:high=duration
+  duration=roundf(duration*120)/120.0
+  speed=timed_launch(start,destination,duration,SPIN,curve)
+  state=delivery_flight(start,speed,curve)
+  if float(state.net_clearance)>=2.66 and float(state.net_height)>=2.70:break
+  if attempt<5:curve*=1.15
+ return {"velocity":speed,"duration":duration,"curve":curve,"landing":state.get("landing",destination),"net_height":state.get("net_height",0)}
 
 func _physics_process(dt: float) -> void:
  if not active:return
@@ -361,7 +400,8 @@ func _strike() -> void:
  flight = float(delivery.duration)
  packet.flight = flight
  end_clock = maxf(land_clock+0.45,clock+flight+1.65)
- game.ball.feed(game.ball.position,launch_velocity,SPIN)
+ game.ball.launch_super(game.ball.position,launch_velocity,SPIN,float(delivery.curve))
+ packet.curve=delivery.curve
  # feed() intentionally starts ordinary new attempts; consume this one AFTER it.
  actor.service_attempt_active = true
  actor.serve_swing_used = true

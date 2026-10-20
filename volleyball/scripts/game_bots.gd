@@ -253,6 +253,7 @@ func _physics_process(dt: float) -> void:
  if get_tree().paused or not authority() or bots.is_empty():
   return
  clock += dt
+ tactics.observe_teammates(dt)
  if not game.super_serve.active and solo_match and match_winner < 0 and round_wait >= 0:
   round_wait -= dt
   if round_wait < 0:
@@ -287,7 +288,7 @@ func predict() -> void:
  for tick in range(432):
   var previous := at
   var time := (tick + 1) * step
-  v += (Vector3.DOWN * 9.81 + game.ball.aero_force(v, spin) / game.ball.mass + observed_wake * exp(-time * 5.0)) * step
+  v += (Vector3.DOWN * (9.81 + game.ball.super_curve) + game.ball.aero_force(v, spin) / game.ball.mass + observed_wake * exp(-time * 5.0)) * step
   spin *= 1.0 - game.ball.angular_damp * step
   at += v * step
   if previous.z * at.z < 0 and at.y < 2.65 and at.y > 1.3 and absf(at.x) < 4.9:

@@ -226,12 +226,14 @@ func solve_special(a: ContextAthlete, at: Vector3, _quality: float) -> Dictionar
   return {}
  var recipient: Variant = a.special_recipient.get_ref()
  if not is_instance_valid(recipient) or recipient.character_id != "hinata" or not same_team(a, recipient) or not recipient.airborne():
+  if a.resolving_contact:a.special_set=""
   a.last_result = "Freak Quick: окно прыжка закрыто"
   if a.resolving_contact:
    last_special_contact += " closed"
   return {}
  var plan := quick_plan(a, recipient, at)
  if plan.is_empty():
+  if a.resolving_contact:a.special_set=""
   if a.resolving_contact:
    last_special_contact += " unreachable: %s %s" % [recipient.position, recipient.velocity]
   a.last_result = "Freak Quick: траектория недостижима"
@@ -314,7 +316,26 @@ func setter_contact_eta(setter: ContextAthlete) -> float:
   at += v/60.0
  return INF
 
+func upgrade_ready_set(bot: VolleyGameBot) -> bool:
+ # No reservations or waiting: ordinary positioning/timing already succeeded.
+ # A viable airborne partner may upgrade this single imminent real contact.
+ if bot.character_id!="kageyama" or bot.action!=VolleyAthlete.Action.PREPARE:
+  return false
+ var options := partners(bot)
+ options.sort_custom(func(a,b):return a.position.distance_squared_to(bot.position)<b.position.distance_squared_to(bot.position))
+ for recipient: ContextAthlete in options:
+  var plan:=quick_plan(bot,recipient,(bot.wrists[0]+bot.wrists[1])*0.5)
+  if plan.is_empty():continue
+  bot.special_set="freak"
+  bot.special_recipient=weakref(recipient)
+  bot.locked_yaw=bot.visual.global_rotation.y
+  var toward:=recipient.position-bot.position
+  bot.special_yaw=atan2(-toward.x,-toward.z)
+  return true
+ return false
+
 func ai_step(bot: VolleyGameBot, dt: float) -> bool:
+ if not demo:return false
  if not authority() or game.ball.held or game.ball.pending_feed or bot.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] or bot.jump_serving or bot.is_server:
   return false
  if demo and bot.airborne() and not bot.jump_in_progress:

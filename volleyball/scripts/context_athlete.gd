@@ -48,13 +48,26 @@ var landing_cooldown := 0.0
 var cinema_time := -1.0
 var cinema_pose: Callable
 var execution_level := 2
+var fatigue_enabled := true
 var contact_error: Dictionary = {}
 
+func stamina() -> float:
+ return energy if fatigue_enabled else 1.0
+
+func direction_pace(axis: Vector2) -> float:
+ if axis.length_squared()<0.0001:return 1.0
+ var local := Basis(Vector3.UP,visual.global_rotation.y).inverse()*Vector3(axis.x,0,axis.y).normalized()
+ var longitudinal := 1.0 if local.z<=0 else 0.60
+ return 1.0/sqrt(pow(local.x/0.76,2)+pow(local.z/longitudinal,2))
+
 func effective_speed() -> float:
- return float(style_stats.movement().speed) * lerpf(0.8, 1.0, energy)
+ return float(style_stats.movement().speed)*lerpf(0.8,1.0,stamina())
+
+func speed_toward(axis: Vector2) -> float:
+ return effective_speed()*direction_pace(axis)
 
 func effective_jump_height() -> float:
- return float(style_stats.movement().jump_height) * pow(lerpf(0.88, 1.0, energy), 2)
+ return float(style_stats.movement().jump_height) * pow(lerpf(0.88, 1.0, stamina()), 2)
 
 func _init() -> void:
  style_stats = VolleyCharacterStats.new()
@@ -392,7 +405,7 @@ func jump(from_approach := false) -> void:
   jump_origin = global_position
   approach_jump = from_approach
   takeoff_speed = Vector2(velocity.x, velocity.z).length()
-  velocity.y = sqrt(2.0 * 9.81 * style_stats.movement().jump_height) * lerpf(0.88, 1.0, energy)
+  velocity.y = sqrt(2.0 * 9.81 * style_stats.movement().jump_height) * lerpf(0.88, 1.0, stamina())
   if from_approach and absf(global_position.z) < 5.0:
    # Plant before taking off: keep a useful approach without carrying the
    # torso into the net for the whole ballistic flight.
@@ -402,7 +415,7 @@ func jump(from_approach := false) -> void:
    var available := maxf(0, absf(global_position.z) - 0.65)
    if toward_net > available / duration:
     velocity.z = -side * available / duration
-  energy = maxf(0, energy - style_stats.movement().jump_cost)
+  if fatigue_enabled:energy = maxf(0,energy-style_stats.movement().jump_cost)
   jump_started.emit(self)
 
 func dive() -> bool:
@@ -424,7 +437,7 @@ func dive() -> bool:
  action_time = 0
  hit_used = false
  strike_count += 1
- energy = maxf(0, energy - 0.12)
+ if fatigue_enabled:energy = maxf(0,energy-0.12)
  last_result = "Подкат"
  return true
 
@@ -524,7 +537,7 @@ func _physics_process(dt: float) -> void:
    shape_node.position.y = 0.875 * physical_scale
    action = Action.IDLE
  else:
-  var speed := float(movement.speed) * lerpf(0.8, 1.0, energy)
+  var speed := speed_toward(move_axis)
   var horizontal := Vector2(velocity.x, velocity.z)
   if airborne():
    # Keep takeoff momentum; small corrections cannot reverse flight instantly.
@@ -572,7 +585,7 @@ func _physics_process(dt: float) -> void:
   action = Action.IDLE
  position.x = clampf(position.x, -8, 8)
  position.z = clampf(position.z, -12, 12)
- energy = clampf(energy + dt * (0.13 if move_axis.length() < 0.2 else -float(movement.drain)), 0, 1)
+ energy = clampf(energy+dt*(0.13 if move_axis.length()<0.2 else -float(movement.drain)),0,1) if fatigue_enabled else 1.0
  action_time += dt
  if block_held and not airborne():
   end_block()

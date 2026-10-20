@@ -20,6 +20,7 @@ var pending_feed := false
 var feed_position := Vector3.ZERO
 var feed_velocity := Vector3.ZERO
 var feed_spin := FEED_SPIN
+var super_curve := 0.0 # Ability-only stylized topspin acceleration, no target tracking.
 var float_active := false
 var float_age := 0.0
 var float_flight := VolleyFloatFlight.new()
@@ -222,6 +223,10 @@ func solve_power_serve(start: Vector3, destination: Vector3, speed: float, spin:
   speed *= 0.94
  return launch
 
+func launch_super(at: Vector3,speed: Vector3,spin: Vector3,curve: float) -> void:
+ feed(at,speed,spin)
+ super_curve=maxf(0,curve)
+
 func aero_force(speed: Vector3, spin: Vector3) -> Vector3:
  var area := PI * VolleyBall.RADIUS * VolleyBall.RADIUS
  return (spin.cross(speed) * magnus_coefficient).limit_length(magnus_force_limit) - speed * speed.length() * 0.5 * air_density * drag_coefficient * area
@@ -261,6 +266,7 @@ func pick_up() -> bool:
  if not can_pick_up():
   athlete.last_result = "Подойдите к медленному мячу (до 1.6 м)"
   return false
+ super_curve=0
  clear_float()
  clear_attack()
  held = true
@@ -352,6 +358,7 @@ func clear_float() -> void:
  float_age = 0
 
 func _on_body_entered(body: Node) -> void:
+ super_curve=0
  clear_quick()
  clear_float()
  var surface := str(body.get_meta("surface", "world"))
@@ -412,6 +419,7 @@ func launch_float(at: Vector3, speed: Vector3, spin: Vector3, skill: float, seed
  float_active = true
 
 func feed(at: Vector3, speed: Vector3, spin := FEED_SPIN) -> void:
+ super_curve=0
  clear_quick()
  if replica:
   return
@@ -459,6 +467,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
      candidate.contact_incoming_spin = state.angular_velocity
     var delta_v: Vector3 = candidate.try_swept_contact(from, center, state.linear_velocity, attack_for(candidate)) if candidate is ContextAthlete else candidate.try_contact(center, state.linear_velocity)
     if delta_v != Vector3.ZERO:
+     super_curve=0
      if quick_pending:
       quick_active = true
       quick_pending = false
@@ -484,7 +493,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
   if quick_age >= quick_arrival + 0.10:
    clear_quick()
  # Approximate, bounded Magnus force; no target or player tracking.
- state.apply_central_force(aero_force(state.linear_velocity, state.angular_velocity))
+ state.apply_central_force(aero_force(state.linear_velocity,state.angular_velocity)+Vector3.DOWN*mass*super_curve)
  if float_active:
   float_age += state.step
   state.apply_central_force(float_flight.force(state.linear_velocity, state.angular_velocity, float_age))

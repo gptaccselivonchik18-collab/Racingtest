@@ -8,6 +8,33 @@ var assigned_at := [0.0, 0.0]
 var plans: Dictionary = {}
 var shots: Dictionary = {}
 var runs: Dictionary = {}
+var teammate_readings: Dictionary = {}
+
+func observe_teammates(dt: float) -> void:
+ var present := {}
+ var actors: Array=manager.game.characters.actors() if is_instance_valid(manager.game.characters) else []
+ for a: ContextAthlete in actors:
+  var id:=a.get_instance_id()
+  present[id]=true
+  if not teammate_readings.has(id) or teammate_readings[id].character!=a.character_id:
+   teammate_readings[id]={"character":a.character_id,"velocity":Vector3.ZERO,"jump":a.effective_jump_height(),"peak":0.0,"air":false,"reach":a.natural_reach(),"speed":a.effective_speed()}
+  var data: Dictionary=teammate_readings[id]
+  data.velocity=Vector3(data.velocity).lerp(Vector3(a.velocity.x,0,a.velocity.z),1.0-exp(-dt*8.0))
+  data.reach=a.natural_reach()
+  data.speed=a.effective_speed()
+  if a.jump_in_progress:
+   data.peak=maxf(float(data.peak),a.position.y-a.jump_origin.y)
+   data.air=true
+  elif data.air:
+   data.jump=lerpf(float(data.jump),clampf(float(data.peak),a.effective_jump_height()*0.75,a.effective_jump_height()),0.25)
+   data.peak=0.0
+   data.air=false
+ for id in teammate_readings.keys():
+  if not present.has(id):teammate_readings.erase(id)
+
+func teammate_profile(a: ContextAthlete) -> Dictionary:
+ var data: Dictionary=teammate_readings.get(a.get_instance_id(),{})
+ return {"velocity":data.get("velocity",Vector3(a.velocity.x,0,a.velocity.z)),"jump":clampf(float(data.get("jump",a.effective_jump_height())),a.effective_jump_height()*0.75,a.effective_jump_height()),"reach":a.natural_reach(),"speed":a.effective_speed()}
 
 func reset() -> void:
  assignments = [0, 0]
@@ -72,7 +99,7 @@ func choose_receivers() -> void:
     var reaction := 0.12
     if actor is VolleyGameBot:
      reaction = maxf(0, actor.reaction_until - manager.clock) if actor.noticed_touch == manager.last_touch_time else float(difficulty.reaction)
-    var speed := actor.effective_speed()
+    var speed := actor.speed_toward(Vector2(target.x-actor.position.x,target.z-actor.position.z))
     var jump_height := actor.effective_jump_height()
     var movement := float(difficulty.anticipation) if actor is VolleyGameBot else 0.8 if actor.move_axis.length() > 0.15 else 0.0
     var available := maxf(0, float(sample.time) - reaction)
@@ -300,9 +327,10 @@ func prepare_runs(setter: VolleyGameBot) -> void:
   var base := manager.home(athlete.court_team, athlete.slot)
   if absf(athlete.position.z) <= 3.2:
    base.x = athlete.position.x
-  var depth := lerpf(2.9, 1.8, athlete.style_stats.n("speed"))
-  var target := Vector3(clampf(base.x, -3.3, 3.3), minf(3.3, athlete.natural_reach() + float(athlete.style_stats.movement().jump_height) * 0.65), side * depth)
-  var start := target + Vector3(0, 0, side * lerpf(1.0, 2.1, athlete.style_stats.n("speed")))
+  var traits:=teammate_profile(athlete)
+  var depth:=clampf(2.85-float(traits.speed)*0.035,2.50,2.85)
+  var target:=Vector3(clampf(base.x,-3.3,3.3),float(traits.reach)+minf(1.30,float(traits.jump)*0.60),side*depth)
+  var start:=target+Vector3(0,0,side*clampf(float(traits.speed)*0.18,0.85,1.45))
   start.y = 0.02
   chosen[athlete.get_instance_id()] = {"start": start, "target": target}
  runs[setter.court_team] = chosen
@@ -312,7 +340,8 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
  var side := 1.0 if team == 0 else -1.0
  var until_contact := clampf(manager.arrival[team] - manager.clock, 0, 1.3)
  var reading := float(manager.decision_profile().court_read)
- var lead := Vector3(recipient.velocity.x, 0, recipient.velocity.z) * minf(0.75, until_contact + 0.35) * lerpf(0.15, 1.0, reading)
+ var traits:=teammate_profile(recipient)
+ var lead := Vector3(traits.velocity) * minf(0.75, until_contact + 0.35) * lerpf(0.15, 1.0, reading)
  lead = lead.limit_length(2.0)
  var point := recipient.position + lead
  if recipient is VolleyGameBot:
@@ -331,7 +360,7 @@ func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bo
  point.z -= side * forward
  point.x = clampf(point.x, -3.8, 3.8)
  point.z = side * clampf(point.z * side, 1.35, 8.5)
- point.y = recipient.natural_reach() + minf(0.75, recipient.effective_jump_height() * 0.4) if attacking else 2.05 * recipient.physical_scale
+ point.y = float(traits.reach)+minf(1.20,float(traits.jump)*0.60) if attacking else 2.05 * recipient.physical_scale
  return point
 
 func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
@@ -385,6 +414,15 @@ func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
  return plan
 
 func support(actor: VolleyGameBot) -> Vector3:
+ var ball: VolleyBall=manager.game.ball
+ var server: ContextAthlete=ball.athlete if ball.held else manager.game.super_serve.actor if manager.game.super_serve.preparing() else null
+ if is_instance_valid(server) and server.court_team!=actor.court_team and VolleyRules.in_service_zone(server.position):
+  # Read the visible server, never the hidden destination. Prepare a genuine
+  # receiving formation before contact, rather than waiting at attacking homes.
+  var ready:=manager.home(actor.court_team,actor.slot)
+  var own_side:=1.0 if actor.court_team==0 else -1.0
+  ready.z=own_side*(6.6 if manager.members(actor.court_team).size()<=2 else 5.2 if absf(ready.z)<4 else 6.8)
+  return ready
  var options: Dictionary = runs.get(actor.court_team, {})
  if manager.last_team == actor.court_team and options.has(actor.get_instance_id()):
   var run: Dictionary = options[actor.get_instance_id()]

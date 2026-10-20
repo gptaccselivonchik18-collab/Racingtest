@@ -67,10 +67,10 @@ func run() -> void:
  mover._physics_process(1.0/120)
  mover.move_axis = Vector2(1,0)
  mover._physics_process(1.0/120)
- check(absf(mover.velocity.x - mover.effective_speed()) < 0.01, "Hinata starts at full ground speed")
+ check(absf(mover.velocity.x - mover.speed_toward(Vector2(1,0))) < 0.01, "Hinata starts at full ground speed")
  mover.move_axis = Vector2(-1,0)
  mover._physics_process(1.0/120)
- check(absf(mover.velocity.x + mover.effective_speed()) < 0.01, "Hinata reverses immediately on the ground")
+ check(absf(mover.velocity.x + mover.speed_toward(Vector2(-1,0))) < 0.01, "Hinata reverses immediately on the ground")
  mover.move_axis = Vector2.ZERO
  mover._physics_process(1.0/120)
  check(Vector2(mover.velocity.x,mover.velocity.z).length() < 0.001, "Hinata stops immediately when the ground stick is released")

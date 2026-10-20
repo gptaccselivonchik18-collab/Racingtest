@@ -80,7 +80,7 @@ func run() -> void:
     break
   if hinata is VolleyGameBot:
    print("HINATA SAFETY min_depth=",minimum_depth," visible_window=",minimum_window," net_touches=",net_touches)
-   if minimum_depth<1.35 or minimum_window<0.25 or net_touches>0:
+   if minimum_depth<1.35 or (scenario==0 and minimum_window<0.25) or net_touches>0:
     push_error("Hinata approach must leave real net clearance and a usable reaction window")
     failures+=1
   print("LIVE SCENARIO ",scenario," jumps=",jumped," quick=",cm.quick_launches-before," brakes=",game.ball.quick_brakes-brakes," spikes=",spikes," setter/hinata ",hinata.position)

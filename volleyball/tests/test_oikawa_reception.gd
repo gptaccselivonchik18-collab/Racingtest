@@ -53,7 +53,10 @@ func run() -> void:
     await physics_frame
     if receiver.contact_count>before:break
     if not s.active:break
-   if receiver.contact_count>before:successes[mode]+=1
+   if receiver.contact_count>before:
+    if game.ball.super_curve!=0:
+     push_error("Special curvature must stop at the defender's real contact");quit(1);return
+    successes[mode]+=1
    print("RECEPTION mode=",mode," attempt=",attempt," received=",receiver.contact_count>before," state=",receiver.last_result)
    if s.active:s.finish(true)
  print("RECEPTION COUNTS human=",successes[0]," ai=",successes[1])
