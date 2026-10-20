@@ -163,7 +163,7 @@ func sample_error(aim: Vector3, accuracy: float, gain := 1.0, execution_level :=
 
 func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  var side := 1.0 if actor.position.z >= 0 else -1.0
- if game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
+ if (not VolleyRoles.can_serve(actor) and VolleyRules.in_service_zone(actor.service_origin())) or game.automatic_serve_busy() or not game.ball.held or game.ball.athlete != actor or not opposite_target(aim, side) or not is_finite(apex):
   return false
  height = clampf(apex, 0.8, 5.0)
  var skill := "serve" if VolleyRules.in_service_zone(actor.service_origin()) else "bump"
@@ -172,6 +172,7 @@ func launch(actor: ContextAthlete, aim: Vector3, apex: float) -> bool:
  slipped = error.slip
  slip_angle = error.angle
  launch_scale = error.scale
+ game.formation.authorize_server(actor)
  busy_actor = actor
  actor.cancel_input()
  actor.move_axis = Vector2.ZERO

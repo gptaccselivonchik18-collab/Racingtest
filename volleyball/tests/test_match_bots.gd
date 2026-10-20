@@ -5,6 +5,8 @@ func _initialize() -> void:call_deferred("run")
 func run() -> void:
  var count:=2 if OS.get_cmdline_user_args().is_empty() else int(OS.get_cmdline_user_args()[0])
  for grade in range(3):
+  if OS.get_cmdline_user_args().size()>1 and grade!=int(OS.get_cmdline_user_args()[1]):
+   continue
   game=load("res://scenes/Main.tscn").instantiate()
   root.add_child(game)
   game.frontend.start_solo()

@@ -24,8 +24,8 @@ func run() -> void:
  var cm: VolleyCharacters = game.characters
  cm.set_physics_process(false)
  var original := FileAccess.get_file_as_string(cm.SAVE) if FileAccess.file_exists(cm.SAVE) else ""
- check(VolleyCharacterDatabase.IDS.size() == 3, "Hinata, Kageyama and Oikawa are available")
- var expected := {"hinata": [69,62,85,100,45,35,100,85], "kageyama": [83,75,70,89,95,100,88,85], "oikawa": [75,79,72,78,100,98,74,76]}
+ check(VolleyCharacterDatabase.IDS.size() == 4, "Hinata, Kageyama, Oikawa and Nishinoya are available")
+ var expected := {"hinata": [69,62,85,100,45,35,100,85], "kageyama": [83,75,70,89,95,100,88,85], "oikawa": [75,79,72,78,100,98,74,76], "yu_nishinoya":[18,100,100,75,20,68,96,20]}
  for hero in VolleyCharacterDatabase.IDS:
   cm.choose_local(hero)
   check(game.athlete.character_id == hero, "Selection applies " + hero)
@@ -203,7 +203,7 @@ func run() -> void:
  cm.ui.open_teams(true)
  var picker: VolleyCharacterSelection = cm.ui
  check(picker.occupied(0) == 4 and picker.occupied(1) == 2, "Bot editor counts live participants instead of stale saved teams")
- check(picker.clubs().Karasuno == ["hinata","kageyama"] and picker.clubs()["Aoba Johsai"] == ["oikawa"], "Every catalog character appears under their anime team")
+ check(picker.clubs().Karasuno == ["hinata","kageyama","yu_nishinoya"] and picker.clubs()["Aoba Johsai"] == ["oikawa"], "Every catalog character appears under their anime team")
  var h_count := picker.bot_count(0,"hinata")
  check(picker.change_bot(0,"hinata",1) and picker.change_bot(0,"hinata",1) and picker.bot_count(0,"hinata") == h_count+2, "Plus adds independent duplicate character bots")
  check(picker.occupied(0) == 6 and not picker.change_bot(0,"oikawa",1), "A human plus five bots fills the side and blocks a seventh participant")

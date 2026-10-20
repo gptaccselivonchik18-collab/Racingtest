@@ -32,4 +32,11 @@ func profile(kind: int) -> Dictionary:
   result.start /= 1.20
   result.edge = lerpf(1.0, float(result.edge), 0.60)
   result.control = lerpf(float(result.control), 1.0, 0.40)
+ if character_id == "yu_nishinoya" and kind in [1,7]:
+  result.accuracy *= 0.70
+  result.carry *= 0.75
+  result.pressure *= 1.25
+  result.windup *= 0.80
+  result.spin *= 0.70
+  result.stability *= 0.80
  return result

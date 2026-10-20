@@ -46,7 +46,7 @@ func _ready() -> void:
  var shirt := visual.get_child(0) as MeshInstance3D
  if shirt:
   var material := StandardMaterial3D.new()
-  material.albedo_color = tag.modulate
+  material.albedo_color = Color("f4e9c9") if volley_role=="L" else tag.modulate
   shirt.material_override = material
  camera_yaw = 0 if court_team == 0 else PI
  visual.rotation.y = camera_yaw
@@ -65,8 +65,7 @@ func reset_plan() -> void:
  noticed_touch = -INF
  reaction_until = 0
  toss_time = 0
- dive_time = -1
- dive_cooldown = 0
+ reset_dive()
  landing_cooldown = 0
  move_axis = Vector2.ZERO
  look_target_valid = false
@@ -89,9 +88,14 @@ func _physics_process(dt: float) -> void:
  energy = 1.0
  if replica:
   return
+ if benched:
+  tactical_state = VolleyRoles.State.BENCH
+  super._physics_process(dt)
+  return
  cooldown = maxf(0, cooldown - dt)
  serve_wait = maxf(0, serve_wait - dt)
  decide(dt)
+ tactical_state = manager.tactics.state_for(self)
  super._physics_process(dt)
 
 func steer(target: Vector3, stop := 0.20) -> void:
@@ -143,6 +147,10 @@ func release() -> void:
  if action==Action.STRIKE:move_axis=Vector2.ZERO
 
 func decide(_dt: float) -> void:
+ if benched:
+  state = "bench"
+  move_axis = Vector2.ZERO
+  return
  if cinema_time >= 0:
   move_axis = Vector2.ZERO
   return
@@ -171,10 +179,18 @@ func decide(_dt: float) -> void:
   return
  if ball.held:
   if ball.athlete == self:
+   if volley_role=="L":
+    var partners: Array=manager.members(court_team).filter(func(a):return a!=self)
+    if not partners.is_empty() and serve_wait<=0:
+     ball.throw_target=partners[0].position
+     ball.throw_height=1.6
+     ball.throw_held()
+    move_axis=Vector2.ZERO
+    return
    state = "serve"
    steer(Vector3(clampf(position.x, -3, 3), 0.02, side * 9.65))
    if absf(position.z) > 9.3 and velocity.length() < 0.6 and serve_wait <= 0:
-    if character_id == "oikawa":
+    if character_id == "oikawa" and VolleyRoles.can_serve(self):
      if game.super_serve.begin(self,bot_id):
       serves += 1
      # Wait for a real grounded/eligible serve, rather than replacing an
@@ -289,10 +305,10 @@ func decide(_dt: float) -> void:
     if manager.tactics.jump_set_useful(self) and float(manager.contact_heights[court_team]) > natural_reach() + 0.35:
      kind = JUMP_SET
    var solo_attack := manager.members(court_team).size() == 1 and manager.last_team != court_team and manager.last_kind not in [3, 4]
-   if ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5 and float(manager.contact_heights[court_team]) > 2.35) or (solo_attack and float(manager.contact_heights[court_team]) > 2.65)):
+   if VolleyRoles.attack_capable(self) and ((manager.last_team == court_team and manager.touches >= 2 and absf(at.z) < 4.5 and float(manager.contact_heights[court_team]) > 2.35) or (solo_attack and float(manager.contact_heights[court_team]) > 2.65)):
     kind = Technique.SPIKE
    if kind == Technique.UNDERHAND and horizontal > 1.6 and ball.position.y < 1.15 and remaining < 0.2:
-    if dive():
+    if defensive_dive():
      dives += 1
      planned_kind = DIVE
     elif dive_cooldown > 0 and begin_action(kind):
@@ -328,7 +344,7 @@ func decide(_dt: float) -> void:
       jumps += 1
    var attack_lift := clampf(float(manager.contact_heights[court_team])-natural_reach(),0.25,effective_jump_height())
    var attack_rise := sqrt(2.0*attack_lift/9.81)
-   if planned_kind == Technique.SPIKE and not airborne() and remaining <= attack_rise+0.08 and horizontal < 1.8:
+   if planned_kind == Technique.SPIKE and not airborne() and (not strict_positions or rotation_slot in [2,3,4] or absf(position.z)>=3.25) and remaining <= attack_rise+0.08 and horizontal < 1.8:
     jump(true)
     if velocity.y > 0:
      # Jump to this ball, not to the maximum stat apex every time.
@@ -359,7 +375,7 @@ func contact_due() -> bool:
 func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
  if action not in [Action.IDLE, Action.PREPARE] or cooldown > 0 or dive_cooldown > 0 or airborne():
   return false
- var p := mechanic(DIVE)
+ var p := defense_dive_profile()
  var distance := VolleyBotTactics.flat(at, position)
  var low: bool = manager.game.ball.position.y < 1.6
  if not planned and not (low and distance > 1.3):
@@ -370,7 +386,7 @@ func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
  camera_yaw = atan2(-move_axis.x, -move_axis.y)
  if action == Action.PREPARE:
   cancel_input()
- if not dive():
+ if not defensive_dive():
   return false
  var time := clampf(remaining, float(p.contact_from) + 0.04, float(p.contact_to))
  var needed := maxf(0.8, distance - 0.45) / (time * (1.0 - 0.5 * time / float(p.travel)))
@@ -381,7 +397,7 @@ func attempt_dive(at: Vector3, remaining: float, planned: bool) -> bool:
  return true
 
 func attempt_block(side: float) -> bool:
- if cooldown > 0 or action != Action.IDLE or dive_time >= 0:
+ if not VolleyRoles.can_block(self) or cooldown > 0 or action != Action.IDLE or dive_time >= 0:
   return false
  var plan := manager.tactics.block_plan(self)
  if plan.is_empty():

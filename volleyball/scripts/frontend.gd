@@ -47,7 +47,7 @@ func _ready() -> void:
  author.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(author)
  var version := Label.new()
- version.text = "0.44"
+ version.text = "0.45"
  version.add_theme_font_size_override("font_size", 15)
  version.add_theme_color_override("font_color", Color("c2d0d2"))
  footer.add_child(version)
@@ -65,7 +65,7 @@ func _layout() -> void:
  var margin := maxf(28, size.x * 0.07)
  var wide := size.x >= size.y * 1.45
  card.position = Vector2(margin, maxf(20, size.y * 0.075))
- card.size = Vector2(size.x * (0.44 if page == "home" and wide else 0.68) if wide else size.x - margin * 2, size.y - card.position.y - 66)
+ card.size = Vector2(size.x * (0.45 if page == "home" and wide else 0.68) if wide else size.x - margin * 2, size.y - card.position.y - 66)
  footer.position = Vector2(margin, size.y - 43)
  footer.size = Vector2(size.x - margin * 2, 24)
  var compact := size.y < 500

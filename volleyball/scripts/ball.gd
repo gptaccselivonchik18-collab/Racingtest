@@ -5,6 +5,7 @@ const RADIUS := 0.155
 
 signal surface_contact(surface: String)
 signal toss_finished(player: ContextAthlete)
+signal toss_started(player: ContextAthlete)
 var toss_owner: WeakRef
 var held_owner: WeakRef
 
@@ -19,6 +20,7 @@ func begin_toss(player: ContextAthlete) -> void:
  toss_owner = weakref(player)
  player.service_attempt_active = true
  player.serve_swing_used = false
+ toss_started.emit(player)
 
 func finish_toss() -> void:
  # ball.athlete is reassigned by bot serves and LAN input. It is not the

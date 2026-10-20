@@ -415,7 +415,7 @@ func toggle_menu() -> void:
  Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if menu.visible else Input.MOUSE_MODE_CAPTURED if OS.get_name() not in ["iOS", "Android"] else Input.MOUSE_MODE_VISIBLE
  _cancel()
 
-func _cancel() -> void:
+func clear_pointer_state() -> void:
  fingers.clear()
  role_owners.clear()
  finger_positions.clear()
@@ -425,6 +425,9 @@ func _cancel() -> void:
  move_value = Vector2.ZERO
  for key in ["left", "right", "forward", "back"]:
   Input.action_release("volley_" + key)
+
+func _cancel() -> void:
+ clear_pointer_state()
  game.athlete.cancel_input()
  game.cancel_action("")
 
@@ -511,6 +514,8 @@ func _press(role: String, source := -2) -> bool:
  return accepted
 
 func _perform(role: String) -> bool:
+ if game.athlete.benched and role not in ["menu","lock","context","pickup"]:
+  return false
  if game.super_serve.locks(game.athlete):
   return false
  if role == "super":
@@ -540,7 +545,7 @@ func _perform(role: String) -> bool:
   "dive":
    if game.holding_ball():
     return false
-   var did_dive: bool = game.athlete.dive()
+   var did_dive: bool = game.athlete.defensive_dive()
    if did_dive:
     game.action_owner = ""
    return did_dive
@@ -596,6 +601,9 @@ func _button_at(pos: Vector2, padding := 12.0) -> String:
  return best
 
 func _sync_axes() -> void:
+ if game.athlete.benched:
+  game.athlete.move_axis = Vector2.ZERO
+  return
  if is_instance_valid(game.super_serve) and game.super_serve.locks(game.athlete):
   game.athlete.move_axis = Vector2.ZERO
   return
@@ -608,17 +616,20 @@ func _sync_axes() -> void:
  game.athlete.tilt = axis
 
 func _refresh_context() -> void:
+ var a: ContextAthlete = game.athlete
  var kageyama: bool = game.athlete.character_id == "kageyama" and not game.holding_ball()
  buttons.super.visible = is_instance_valid(game.super_serve) and game.super_serve.eligible(game.athlete)
  buttons.freak.visible = kageyama and is_instance_valid(game.characters) and not game.characters.partners(game.athlete).is_empty()
  buttons.next.visible = not game.lan.active or game.lan.hosting
  buttons.bump.visible = not game.holding_ball()
- buttons.lower_serve.visible = game.holding_ball()
- buttons.float_serve.visible = game.holding_ball()
- var a: ContextAthlete = game.athlete
+ buttons.lower_serve.visible = game.holding_ball() and VolleyRoles.can_serve(a)
+ buttons.float_serve.visible = game.holding_ball() and VolleyRoles.can_serve(a)
  buttons.dive.visible = not game.holding_ball()
  buttons.jump_set.visible = a.airborne() and settings.show_jump_set and not game.holding_ball()
- buttons.context.visible = game.holding_ball() or game.ball.can_pick_up_for(game.athlete)
+ buttons.context.visible = a.benched or game.holding_ball() or game.ball.can_pick_up_for(game.athlete)
+ if a.benched:
+  for role in ["primary","secondary","bump","jump","dive","jump_set","super","freak","lower_serve","float_serve","next"]:
+   buttons[role].visible = false
 
 func _touch_down(id: int, pos: Vector2) -> void:
  _sync_held_state()
@@ -771,12 +782,12 @@ func _process(dt: float) -> void:
  buttons.freak.text = "FREAK\nQUICK"
  buttons.super.text = "SUPER\nSERVE"
  buttons.jump.text = "ПРЫЖОК"
- buttons.dive.text = "ПОДКАТ"
+ buttons.dive.text = "ROLLING\nTHUNDER" if a.character_id == "yu_nishinoya" else "ПОДКАТ"
  buttons.jump_set.text = "ПАС ↑"
  buttons.menu.text = "≡"
  buttons.next.text = "↻"
  buttons.lock.text = "●" if a.shift_lock else "○"
- buttons.context.text = "ОПУСТИТЬ • F" if game.holding_ball() else "ПОДОБРАТЬ • F"
+ buttons.context.text = ("ГОТОВ К МАТЧУ • F" if game.lan.active and not game.lan.match_active else "НА ПЛОЩАДКУ • F") if a.benched else "ОПУСТИТЬ • F" if game.holding_ball() else "ПОДОБРАТЬ • F"
  status.text = VolleyTraining.NAMES[game.training.selected] + "  •  " + (game.rules.message if game.rules.ended else a.last_result)
  if game.holding_ball():
   status.text = "Подброс: +%.1f м над руками • высота ползунком • свайп: направление" % game.ball.release_height()
@@ -794,6 +805,10 @@ func _process(dt: float) -> void:
   status.text = VolleyMatchScore.label(game.game_bots.scores, game.game_bots.sets, game.game_bots.match_winner) + " • " + (game.rules.message if game.rules.ended else a.last_result)
  if game.lan.active and not game.lan.match_active:
   status.text = game.lan.ready_message + " • " + a.last_result
+ if a.benched:
+  status.text = "Ожидание замены · наблюдайте со своей камеры · F: выйти в допустимый момент"
+ elif a.strict_positions:
+  status.text += " · %s · позиция %d (%s)" % [a.volley_role,a.rotation_slot,"передняя" if a.rotation_slot in [2,3,4] else "задняя"]
  if edit_mode:
   status.text = ""
  queue_redraw()

@@ -7,12 +7,14 @@ var game: Node3D
 var selected := "kageyama"
 var teams: Array = []
 var difficulty := 1
+var lineup_settings := default_lineup_settings()
 var demo := false
 var demo_wait := 0.0
 var jump_events: Dictionary = {}
 var registered: Dictionary = {}
 var ai_wait: Dictionary = {}
 var quick_runs: Dictionary = {}
+var quick_setters: Dictionary = {}
 var quick_launches := 0
 var last_special_contact := ""
 var ui: VolleyCharacterSelection
@@ -25,10 +27,13 @@ func _ready() -> void:
  if FileAccess.file_exists(SAVE):
   var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE))
   if data is Dictionary:
+   normalize_saved(data)
    if VolleyCharacterDatabase.valid(str(data.get("selected", ""))):
     selected = data.selected
    if valid_teams(data.get("teams", [])):
     teams = data.teams
+   if valid_lineup_settings(data.get("lineup",{}),teams):
+    lineup_settings = data.lineup.duplicate(true)
    difficulty = clampi(int(data.get("difficulty", 1)), 0, 2)
  game.athlete.set_character(selected)
  register(game.athlete)
@@ -48,7 +53,7 @@ func default_teams() -> Array:
 func save() -> void:
  var file := FileAccess.open(SAVE, FileAccess.WRITE)
  if file:
-  file.store_string(JSON.stringify({"selected": selected, "teams": teams, "difficulty": difficulty}))
+  file.store_string(JSON.stringify({"selected": selected, "teams": teams, "difficulty": difficulty, "lineup":lineup_settings}))
 
 func authority() -> bool:
  return not game.lan.active or game.lan.hosting
@@ -71,10 +76,13 @@ func same_team(a: ContextAthlete, b: ContextAthlete) -> bool:
 func partners(a: ContextAthlete, airborne_only := true) -> Array:
  if a.character_id != "kageyama":
   return []
- return actors().filter(func(b): return is_instance_valid(b) and same_team(a, b) and b.character_id == "hinata" and (not airborne_only or (b.jump_in_progress and b.airborne())))
+ return actors().filter(func(b): return is_instance_valid(b) and same_team(a, b) and not b.benched and b.character_id == "hinata" and (not b.strict_positions or b.rotation_slot in [2,3,4]) and (not airborne_only or (b.jump_in_progress and b.airborne())))
 
 func choose_local(id: String) -> bool:
- if not VolleyCharacterDatabase.valid(id):
+ if not VolleyCharacterDatabase.valid(id) or (is_instance_valid(game.formation) and game.formation.enabled):
+  return false
+ if game.athlete.designated_libero and VolleyRoles.default_role(id)!="L":
+  game.athlete.last_result="Сначала снимите назначение либеро в составе команды"
   return false
  selected = id
  var owner: int = game.lan.multiplayer.get_unique_id() if game.lan.active else 0
@@ -82,6 +90,10 @@ func choose_local(id: String) -> bool:
   for slot in team:
    if slot.kind == "human" and slot.human in [0, owner]:
     slot.character = id
+    slot.role = VolleyRoles.default_role(id)
+ for entry in lineup_settings.liberos:
+  if entry.kind=="human" and entry.human in [0,owner]:
+   entry.character=id
  save()
  if game.lan.active and not game.lan.hosting:
   select_character.rpc_id(1, id)
@@ -96,10 +108,66 @@ func select_character(id: String) -> void:
  var sender := multiplayer.get_remote_sender_id()
  if not game.lan.active or not game.lan.hosting or not game.lan.players.has(sender) or not VolleyCharacterDatabase.valid(id):
   return
- if game.lan.match_active and game.lan.round_live:
+ if game.lan.match_active and (game.lan.round_live or game.formation.enabled):
   return
  game.lan.players[sender].actor.set_character(id)
  game.lan._broadcast_roster()
+
+func normalize_saved(data: Dictionary) -> void:
+ # JSON has one numeric type; Godot parses saved integers as float. Keep
+ # strict runtime validation while restoring only integral saved fields.
+ var slots: Array = []
+ if data.get("teams") is Array:
+  for team in data.teams:
+   if team is Array:
+    slots.append_array(team)
+ if data.get("lineup") is Dictionary:
+  var config: Dictionary=data.lineup
+  if config.get("liberos") is Array:
+   slots.append_array(config.liberos)
+  if config.get("initial") is Array:
+   for index in range(config.initial.size()):
+    var value: Variant=config.initial[index]
+    if value is float and is_finite(value) and value==floor(value):
+     config.initial[index]=int(value)
+ for slot in slots:
+  if not slot is Dictionary:
+   continue
+  for key in ["human","rotation"]:
+   var value: Variant=slot.get(key)
+   if value is float and is_finite(value) and value==floor(value):
+    slot[key]=int(value)
+
+func default_lineup_settings() -> Dictionary:
+ return {"liberos":[{"kind":"empty","character":"yu_nishinoya","human":0},{"kind":"empty","character":"yu_nishinoya","human":0}],"auto":[true,true],"initial":[0,0]}
+
+func valid_lineup_settings(value: Variant, roster: Array) -> bool:
+ if not value is Dictionary or not value.get("liberos") is Array or value.liberos.size()!=2 or not value.get("auto") is Array or value.auto.size()!=2 or not value.get("initial") is Array or value.initial.size()!=2:
+  return false
+ var people: Array = []
+ for team in roster:
+  var positions: Array = []
+  for slot in team:
+   if slot.kind=="human":
+    people.append(slot.human)
+   var role := str(slot.get("role",VolleyRoles.default_role(slot.character)))
+   if role not in VolleyRoles.IDS or (role=="L" and VolleyRoles.default_role(slot.character)!="L") or (VolleyRoles.default_role(slot.character)=="L" and role!="L"):
+    return false
+   if slot.kind!="empty" and slot.has("rotation"):
+    if not slot.rotation is int or slot.rotation not in range(1,7) or slot.rotation in positions:
+     return false
+    positions.append(slot.rotation)
+ for t in range(2):
+  var entry: Variant = value.liberos[t]
+  if not value.auto[t] is bool or not value.initial[t] is int or value.initial[t] not in range(6) or not entry is Dictionary or entry.get("kind","") not in ["empty","human","bot"] or not entry.get("human") is int or not VolleyCharacterDatabase.valid(str(entry.get("character",""))):
+   return false
+  if entry.kind!="empty" and VolleyRoles.default_role(entry.character)!="L":
+   return false
+  if entry.kind=="human":
+   if entry.human in people or (game.lan.active and entry.human!=0 and not game.lan.players.has(entry.human)):
+    return false
+   people.append(entry.human)
+ return true
 
 func valid_teams(value: Variant) -> bool:
  if not value is Array or value.size() != 2:
@@ -117,8 +185,11 @@ func valid_teams(value: Variant) -> bool:
     humans.append(slot.human)
  return true
 
-func apply_teams(value: Array, level: int, persist := true) -> bool:
+func apply_teams(value: Array, level: int, persist := true, options: Dictionary = {}) -> bool:
  if not authority() or not valid_teams(value) or level not in [0, 1, 2]:
+  return false
+ var settings := default_lineup_settings() if options.is_empty() else options.duplicate(true)
+ if not valid_lineup_settings(settings,value):
   return false
  var local: int = game.lan.multiplayer.get_unique_id() if game.lan.active else 0
  var normalized := value.duplicate(true)
@@ -129,7 +200,13 @@ func apply_teams(value: Array, level: int, persist := true) -> bool:
      slot.kind = "empty"
     elif slot.human == 0 or not game.lan.active:
      slot.human = local
- if not valid_teams(normalized):
+ for entry in settings.liberos:
+  if entry.kind=="human":
+   if not game.lan.active and entry.human not in [0,1]:
+    entry.kind="empty"
+   elif entry.human==0 or not game.lan.active:
+    entry.human=local
+ if not valid_teams(normalized) or not valid_lineup_settings(settings,normalized):
   return false
  if game.lan.active:
   for team in normalized:
@@ -140,8 +217,10 @@ func apply_teams(value: Array, level: int, persist := true) -> bool:
  elif game.game_bots.solo_match:
   game.game_bots.end_solo()
  teams = normalized
+ lineup_settings = settings
  ai_wait.clear()
  quick_runs.clear()
+ quick_setters.clear()
  jump_events.clear()
  difficulty = level
  var counts := [0, 0]
@@ -152,7 +231,13 @@ func apply_teams(value: Array, level: int, persist := true) -> bool:
     counts[t] += 1
    elif slot.kind == "human" and slot.human == local:
     human_team = t
- game.game_bots.configure({"counts": counts, "human_team": human_team, "difficulty": LEVELS[level]}, false)
+ var extra := ["", ""]
+ for t in range(2):
+  if settings.liberos[t].kind=="bot":
+   extra[t] = settings.liberos[t].character
+  elif settings.liberos[t].kind=="human" and settings.liberos[t].human==local:
+   human_team = t
+ game.game_bots.configure({"counts": counts, "human_team": human_team, "difficulty": LEVELS[level],"libero_bots":extra}, false)
  for a: ContextAthlete in actors():
   if not a is VolleyGameBot:
    a.court_team = -1
@@ -172,6 +257,13 @@ func apply_teams(value: Array, level: int, persist := true) -> bool:
    a.velocity = Vector3.ZERO
    a.jump_in_progress = false
    a.air_swing_used = false
+   a.volley_role = str(slot.get("role",VolleyRoles.default_role(slot.character)))
+   a.lineup_index = s
+   a.rotation_slot = int(slot.get("rotation",s+1))
+   a.starting_rotation_slot = a.rotation_slot
+   a.designated_libero = false
+   a.benched = false
+   a.strict_positions = false
    if slot.kind == "human" and slot.human == local:
     selected = slot.character
    a.court_team = t
@@ -190,6 +282,27 @@ func apply_teams(value: Array, level: int, persist := true) -> bool:
     game.rig.pitch = 0.08
    elif game.lan.active and slot.kind == "human" and game.lan._peer_ready(slot.human):
     game.lan.orient_player.rpc_id(slot.human, a.camera_yaw)
+ for t in range(2):
+  var entry: Dictionary = settings.liberos[t]
+  if entry.kind=="empty":
+   continue
+  var a: ContextAthlete = game.game_bots.bots[-200-t] if entry.kind=="bot" else game.lan.players[entry.human].actor if game.lan.active else game.athlete
+  a.set_character(entry.character)
+  a.court_team = t
+  a.volley_role = "L"
+  a.designated_libero = true
+  a.lineup_index = -1
+  a.starting_rotation_slot = 0
+  a.rotation_slot = 0
+  a.instance_uid = "libero:%d:%d" % [t,game.lan.player_id(a)]
+  a.position = VolleyRoles.base(a,false)
+  register(a)
+  if entry.kind=="human":
+   if entry.human==local:
+    selected = entry.character
+   if game.lan.active:
+    game.lan.players[entry.human].team = t
+ game.formation.capture()
  if persist:
   save()
  game.lan.refresh_contacts()
@@ -302,12 +415,17 @@ func start_demo() -> void:
  demo_wait = 0.3
 
 func setter_contact_eta(setter: ContextAthlete) -> float:
+ if setter is VolleyGameBot and game.game_bots.receivers[setter.court_team]==setter.bot_id and game.game_bots.tactics.jump_set_useful(setter) and float(game.game_bots.contact_heights[setter.court_team])>setter.natural_reach()+0.35:
+  var planned: float = float(game.game_bots.arrival[setter.court_team])-game.game_bots.clock
+  if planned>=0 and planned<=1.5:
+   return planned
  var at: Vector3 = game.ball.position
  var v: Vector3 = game.ball.linear_velocity
  var spin: Vector3 = game.ball.angular_velocity
- var hand_height := setter.position.y+setter.natural_reach()+0.10
  for tick in range(85):
   var time := tick/60.0
+  var lift := setter.position.y+setter.velocity.y*time-4.905*time*time if setter.jump_in_progress else setter.position.y
+  var hand_height := maxf(0,lift)+setter.natural_reach()+0.10
   var expected := setter.position+Vector3(setter.velocity.x,0,setter.velocity.z)*minf(time,0.20)
   if v.y <= 0 and at.y <= hand_height+0.18 and at.y >= hand_height-0.55:
    if Vector2(at.x-expected.x,at.z-expected.z).length()<1.65:
@@ -339,6 +457,7 @@ func upgrade_ready_set(bot: VolleyGameBot, at: Vector3) -> bool:
 func ai_step(bot: VolleyGameBot, dt: float) -> bool:
  # The setter always keeps ordinary contact timing. Only the attacker's
  # optional approach runs before a normal set; it must never stall the setter.
+ if bot.benched or (bot.strict_positions and bot.rotation_slot not in [2,3,4]):return false
  if not demo and bot.character_id!="hinata":return false
  if not authority() or game.ball.held or game.ball.pending_feed or bot.action in [VolleyAthlete.Action.STRIKE, VolleyAthlete.Action.RECOVER] or bot.jump_serving or bot.is_server:
   return false
@@ -382,6 +501,10 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
   if setters.is_empty():
    return false
   var setter: ContextAthlete = setters[0]
+  if continuing and quick_setters.has(bot.instance_uid):
+   var saved: Variant = quick_setters[bot.instance_uid].get_ref()
+   if is_instance_valid(saved) and same_team(bot,saved):
+    setter = saved
   if not demo and not bot.airborne() and not bot.approach_armed and bot.jump_windup<=0:
    if setter is VolleyGameBot:
     var intended: Dictionary=game.game_bots.tactics.pass_plan(setter,VolleyAthlete.Technique.OVERHEAD)
@@ -422,6 +545,7 @@ func ai_step(bot: VolleyGameBot, dt: float) -> bool:
     takeoff.z = side*maxf(2.6,takeoff.z*side)
    bot.camera_yaw = 0 if side > 0 else PI
    if bot.arm_approach(VolleyAthlete.Technique.SPIKE):
+    quick_setters[bot.instance_uid] = weakref(setter)
     quick_runs[bot.instance_uid] = {"takeoff":takeoff,"setter":weakref(setter)}
     ai_wait[bot.instance_uid] = 1.5
     bot.cooldown = 1.2

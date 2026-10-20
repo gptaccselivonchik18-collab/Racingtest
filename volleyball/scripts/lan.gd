@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 44
+const PROTOCOL := 45
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -146,7 +146,7 @@ func leave() -> void:
   game.practice.configure({"enabled": false}, false)
  if is_instance_valid(game.game_bots):
   game.game_bots.end_solo()
-  game.game_bots.configure({"counts": [0, 0]}, false)
+  game.game_bots.configure({"counts": [0, 0],"libero_bots":["",""]}, false)
  active = false
  match_active = false
  round_live = false
@@ -182,6 +182,9 @@ func leave() -> void:
  game.athlete.network_age = -1
  game.athlete.network_motion.reset()
  game.athlete.court_team = -1
+ game.athlete.designated_libero = false
+ game.formation.set_benched(game.athlete,false)
+ game.formation.finish_match()
  game.athlete.set_physics_process(true)
  if game.athlete.has_node("TeamTag"):
   game.athlete.get_node("TeamTag").queue_free()
@@ -255,7 +258,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок", character
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.44." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.45." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -456,9 +459,11 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
   return false
  if role == "super":
   return phase == "press" and game.super_serve.begin(actor,id)
- if actor.court_team < 0 and role not in ["cancel", "next"]:
+ if (actor.court_team < 0 or actor.benched) and role not in ["cancel", "next", "context", "pickup"]:
   return false
  _apply_input(id, payload.get("axis", actor.move_axis), payload.get("tilt", actor.tilt), payload.get("yaw", actor.camera_yaw), payload.get("pitch", actor.camera_pitch))
+ if actor.benched and role in ["context","pickup"]:
+  return game.formation.libero.request_return(actor)
  if role == "next":
   if id == 1:
    if match_active:
@@ -514,7 +519,7 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
    "approach": accepted = game.begin_approach()
    "jump_set": accepted = game.begin_jump_set()
    "jump": actor.jump()
-   "dive": accepted = actor.dive()
+   "dive": accepted = actor.defensive_dive()
    "pickup", "context": game.pickup_or_drop()
  executing = false
  owners[id] = game.action_owner
@@ -564,6 +569,7 @@ func reset_round() -> void:
  game.ball.athlete = server
  game.ball.feed(server.position + Vector3(0, 0.25, -side * 0.55), Vector3.ZERO)
  game.previous_ball_valid = false
+ game.formation.broadcast()
  round_wait = -1
  if server is VolleyGameBot:
   server.prepare_serve()
@@ -722,9 +728,11 @@ func reject_join(reason: String) -> void:
   changed.emit()
 
 func pack_actor(a: ContextAthlete, id := 0) -> Array:
- return [id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active, a.approach_jump, a.character_id, a.special_set, a.special_yaw, a.locked_yaw, a.air_swing_used, a.serve_swing_used, a.service_attempt_active, a.court_team, a.jump_in_progress]
+ return [id, a.position, a.velocity, a.visual.rotation, a.action, a.technique, a.strike_technique, a.action_time, a.power, a.strike_power, a.strike_duration, a.energy, a.move_axis, a.tilt, a.attack_ready, a.approach_armed, a.approach_blend, a.dive_time, a.last_result, a.jump_windup, a.release_time, a.contact_flash, a.lower_serve_active, a.air_attack, a.camera_yaw, a.camera_pitch, a.lean, a.landing_load, a.charged_for, serve_flags.get(id, false), a.float_serve_active, a.approach_jump, a.character_id, a.special_set, a.special_yaw, a.locked_yaw, a.air_swing_used, a.serve_swing_used, a.service_attempt_active, a.court_team, a.jump_in_progress, a.rolling_active, a.volley_role, a.rotation_slot, a.benched, a.strict_positions, a.designated_libero, a.tactical_state, a.formation_revision]
 
 func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0, stamp := -1.0) -> void:
+ if pose.size()>=49 and int(pose[48])<a.formation_revision:
+  return
  if stamp >= 0 and a.network_motion.active and stamp <= a.network_motion.stamp:
   return
  if pose.size() >= 41:
@@ -738,6 +746,15 @@ func apply_actor_pose(a: ContextAthlete, pose: Array, held_by := 0, stamp := -1.
   a.serve_swing_used = bool(pose[37])
   a.service_attempt_active = bool(pose[38])
   a.court_team = int(pose[39])
+ if pose.size()>=49:
+  a.rolling_active = bool(pose[41])
+  a.volley_role = str(pose[42])
+  a.rotation_slot = int(pose[43])
+  game.formation.set_benched(a,bool(pose[44]))
+  a.strict_positions = bool(pose[45])
+  a.designated_libero = bool(pose[46])
+  a.tactical_state = int(pose[47])
+  a.formation_revision = int(pose[48])
  var first_pose := a.network_age < 0
  a.velocity = pose[2]
  a.accept_network_position(pose[1], stamp)
@@ -784,11 +801,11 @@ func refresh_contacts() -> void:
  if active and not hosting:
   game.ball.contact_athletes.clear()
   return
- game.ball.contact_athletes = players.values().filter(func(entry: Dictionary): return entry.actor.court_team >= 0).map(func(entry: Dictionary): return entry.actor) if active else ([game.athlete] if game.athlete.court_team >= 0 else [])
+ game.ball.contact_athletes = players.values().filter(func(entry: Dictionary): return entry.actor.court_team >= 0 and not entry.actor.benched).map(func(entry: Dictionary): return entry.actor) if active else ([game.athlete] if game.athlete.court_team >= 0 and not game.athlete.benched else [])
  if is_instance_valid(game.practice) and game.practice.enabled and is_instance_valid(game.practice.bot):
   game.ball.contact_athletes.append(game.practice.bot)
  if is_instance_valid(game.game_bots):
-  game.ball.contact_athletes.append_array(game.game_bots.bots.values())
+  game.ball.contact_athletes.append_array(game.game_bots.bots.values().filter(func(a):return not a.benched))
 
 func start_free_play() -> void:
  if not hosting:
@@ -807,6 +824,7 @@ func start_free_play() -> void:
  game.rules.reset()
  game.rules.strict = false
  game.serving = false
+ game.formation.finish_match()
  for id in players:
   var entry: Dictionary = players[id]
   serve_flags[id] = false
@@ -833,15 +851,28 @@ func readiness() -> Dictionary:
  var teams := [[], []]
  var selected := 0
  var signature := ""
+ var libero_counts := [0,0]
+ for bot in game.game_bots.bots.values():
+  if bot.designated_libero:
+   libero_counts[bot.court_team] += 1
  for id in players:
   var team := selection_team(players[id].actor)
   signature += "%d:%d;" % [id, team]
   if team >= 0:
    selected += 1
    teams[team].append(id)
- var totals := [teams[0].size() + game.game_bots.counts[0], teams[1].size() + game.game_bots.counts[1]]
+   if players[id].actor.designated_libero:
+    libero_counts[team] += 1
+ var totals := [game.game_bots.counts[0],game.game_bots.counts[1]]
+ for team in range(2):
+  for id in teams[team]:
+   if not players[id].actor.designated_libero:
+    totals[team] += 1
+  # In an incomplete training lineup the designated defender fills a spare place.
+  if totals[team]<6:
+   totals[team] += libero_counts[team]
  signature += str(game.game_bots.counts)
- return {"teams": teams, "totals": totals, "selected": selected, "signature": signature, "valid": players.size() >= 1 and selected == players.size() and totals[0] >= 1 and totals[1] >= 1 and totals[0] <= 6 and totals[1] <= 6}
+ return {"teams": teams, "totals": totals, "selected": selected, "signature": signature, "valid": players.size() >= 1 and selected == players.size() and totals[0] >= 1 and totals[1] >= 1 and totals[0] <= 6 and totals[1] <= 6 and libero_counts[0]<=1 and libero_counts[1]<=1}
 
 func _update_readiness(dt: float) -> void:
  if match_active:
@@ -863,7 +894,7 @@ func _update_readiness(dt: float) -> void:
 func begin_match() -> bool:
  # This is the only transition into a match, including host requests.
  # Re-check live authoritative positions at the moment of commitment.
- if not hosting or match_active:
+ if not hosting or match_active or not game.formation.validate_lineups():
   return false
  var ready := readiness()
  if not ready.valid or ready_seconds < 3.0:
@@ -873,7 +904,6 @@ func begin_match() -> bool:
  sets = [0, 0]
  match_winner = -1
  serve_team = 0
- game.game_bots.reset_service(serve_team)
  for team in range(2):
   var slot := 0
   for id in ready.teams[team]:
@@ -897,6 +927,7 @@ func begin_match() -> bool:
  if is_instance_valid(game.practice.bot):
   game.practice.bot.cancel_input()
   game.practice.bot.action = VolleyAthlete.Action.IDLE
+ game.game_bots.reset_service(serve_team)
  reset_round()
  selection_zone.hide()
  _broadcast_roster()
@@ -924,12 +955,12 @@ func _send_room_state(with_bot := true) -> void:
   return
  for peer_id in players:
   if peer_id != 1 and _peer_ready(peer_id):
-   room_state.rpc_id(peer_id, match_active, round_live, ready_message, game.practice.settings_state() if with_bot and is_instance_valid(game.practice) else {}, sets, match_winner)
+   room_state.rpc_id(peer_id, match_active, round_live, ready_message, game.practice.settings_state() if with_bot and is_instance_valid(game.practice) else {}, sets, match_winner, game.formation.state())
    if with_bot and is_instance_valid(game.game_bots):
     game_bots_state.rpc_id(peer_id, game.game_bots.settings_state())
 
 @rpc("authority", "call_remote", "reliable")
-func room_state(in_match: bool, live: bool, message: String, practice_state: Dictionary, set_scores: Array, winner: int) -> void:
+func room_state(in_match: bool, live: bool, message: String, practice_state: Dictionary, set_scores: Array, winner: int, formation_state: Dictionary = {}) -> void:
  if hosting:
   return
  match_active = in_match
@@ -937,6 +968,8 @@ func room_state(in_match: bool, live: bool, message: String, practice_state: Dic
  ready_message = message
  sets = set_scores
  match_winner = winner
+ if not formation_state.is_empty():
+  game.formation.accept_state(formation_state)
  if not practice_state.is_empty():
   game.practice.configure(practice_state, false)
  if not is_instance_valid(selection_zone):

@@ -56,7 +56,7 @@ func decision_profile() -> Dictionary:
  return thinking
 
 func settings_state() -> Dictionary:
- return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty, "characters": bots.keys().reduce(func(acc, id): acc[str(id)] = bots[id].character_id; return acc, {})}
+ return {"counts": counts.duplicate(), "level": level, "human_team": human_team, "difficulty": difficulty, "libero_bots":[bots[-200].character_id if bots.has(-200) else "",bots[-201].character_id if bots.has(-201) else ""],"formation":game.formation.state() if is_instance_valid(game.formation) else {},"lineup":game.characters.lineup_settings if is_instance_valid(game.characters) else {},"characters": bots.keys().reduce(func(acc, id): acc[str(id)] = bots[id].character_id; return acc, {})}
 
 func configure(values: Dictionary, broadcast := true) -> bool:
  if broadcast and not authority():
@@ -124,6 +124,49 @@ func configure(values: Dictionary, broadcast := true) -> bool:
     bot.set_character(hero)
    if is_instance_valid(game.characters):
     game.characters.register(bot)
+ var extras: Array = values.get("libero_bots",[bots[-200].character_id if bots.has(-200) else "",bots[-201].character_id if bots.has(-201) else ""])
+ for t in range(2):
+  var id := -200-t
+  var hero := str(extras[t]) if extras.size()==2 else ""
+  if not VolleyCharacterDatabase.valid(hero) or VolleyRoles.default_role(hero)!="L":
+   if bots.has(id):
+    var removed: ContextAthlete = bots[id]
+    if game.ball.athlete==removed:
+     game.ball.drop()
+     game.ball.athlete=game.athlete
+    bots.erase(id)
+    removed.queue_free()
+   continue
+  if not bots.has(id):
+   var actor := VolleyGameBot.new()
+   actor.name = "Libero_%d" % t
+   actor.manager = self
+   actor.bot_id = id
+   actor.slot = 6
+   actor.set_character(hero)
+   actor.court_team = t
+   actor.designated_libero = true
+   actor.process_mode = Node.PROCESS_MODE_PAUSABLE
+   actor.replica = not authority()
+   add_child(actor)
+   actor.position = Vector3(6.8,0.02,(1 if t==0 else -1)*6.0)
+   actor.serve_solver = game.ball.solve_launch
+   actor.power_serve_solver = game.ball.solve_power_serve
+   actor.lifted_attack_solver = game.ball.solve_lifted_hit
+   actor.set_physics_process(not actor.replica)
+   bots[id] = actor
+  var actor: VolleyGameBot = bots[id]
+  if actor.character_id!=hero:
+   actor.set_character(hero)
+  actor.designated_libero = true
+  actor.execution_level = difficulty
+  (actor.style_stats as VolleyCharacterStats).set_difficulty_multiplier(VolleyBotDifficulty.stat_multiplier(difficulty))
+  if is_instance_valid(game.characters):
+   game.characters.register(actor)
+ if not authority() and values.has("lineup") and not values.lineup.is_empty():
+  game.characters.lineup_settings = values.lineup.duplicate(true)
+ if not authority() and values.has("formation") and not values.formation.is_empty():
+  game.formation.accept_state(values.formation)
  game.lan.refresh_contacts()
  think_left = 0
  if broadcast and game.lan.active:
@@ -136,6 +179,10 @@ static func bot_id(team: int, slot: int) -> int:
  return -100 - team * MAX_PER_TEAM - slot
 
 func home(team: int, slot: int) -> Vector3:
+ if is_instance_valid(game.formation) and game.formation.enabled:
+  var id := bot_id(team,slot)
+  if bots.has(id):
+   return game.formation.slot_position(team,bots[id].rotation_slot) if not game.formation.rally_live() else VolleyRoles.base(bots[id],last_team==team)
  var n: int = counts[team]
  n += members(team).filter(func(a): return not a is VolleyGameBot).size()
  var side := 1.0 if team == 0 else -1.0
@@ -153,14 +200,14 @@ func home(team: int, slot: int) -> Vector3:
 func members(team: int) -> Array:
  var result: Array = []
  for bot in bots.values():
-  if bot.court_team == team:
+  if bot.court_team == team and not bot.benched:
    result.append(bot)
  if game.lan.active:
   for entry in game.lan.players.values():
    var side: int = entry.actor.court_team if entry.actor.court_team >= 0 else entry.team
-   if side == team:
+   if side == team and not entry.actor.benched:
     result.append(entry.actor)
- elif game.athlete.court_team == team:
+ elif game.athlete.court_team == team and not game.athlete.benched:
   result.append(game.athlete)
  return result
 
@@ -168,18 +215,23 @@ func is_match() -> bool:
  return solo_match or game.lan.match_active
 
 func reset_service(first_team: int) -> void:
+ game.formation.begin_match()
  rotation_turn = [0, 0]
  serving_turn = [-1, -1]
  serving_turn[first_team] = 0
  current_server = null
 
 func advance_service(winner: int, previous: int) -> void:
+ game.formation.complete_rally(winner,previous)
  # The winner keeps its current server; a side-out rotates the new team.
  if winner != previous:
   serving_turn[winner] += 1
   rotation_turn[winner] += 1
 
 func place_team(team: int) -> void:
+ if game.formation.enabled:
+  game.formation.prepare(team)
+  return
  var roster := members(team)
  for i in range(roster.size()):
   var actor: ContextAthlete = roster[i]
@@ -188,11 +240,7 @@ func place_team(team: int) -> void:
   actor.energy = 1.0
 
 func role_for(actor: ContextAthlete) -> String:
- if actor.character_id in ["kageyama", "oikawa"]:
-  return "setter"
- if actor.character_id == "hinata":
-  return "attacker"
- return legacy_role_for(actor)
+ return VolleyRoles.ALIASES.get(actor.volley_role,"outside")
 
 func legacy_role_for(actor: ContextAthlete) -> String:
  var team := actor.court_team if actor.court_team >= 0 else (0 if actor.position.z >= 0 else 1) if game.lan.active else human_team
@@ -202,7 +250,10 @@ func legacy_role_for(actor: ContextAthlete) -> String:
  return "setter" if rotated == 0 else "attacker" if rotated < 3 else "defender"
 
 func serving_actor(team: int) -> ContextAthlete:
- var candidates := members(team)
+ if game.formation.enabled:
+  current_server = game.formation.server(team)
+  return current_server
+ var candidates := members(team).filter(func(a):return VolleyRoles.can_serve(a))
  candidates.sort_custom(func(a: ContextAthlete, b: ContextAthlete):
   if (a is VolleyGameBot) != (b is VolleyGameBot):
    return not a is VolleyGameBot
@@ -228,10 +279,12 @@ func note_touch(actor: ContextAthlete, kind: int) -> void:
  think_left = 0
 
 func reset_rally() -> void:
+ game.formation.service_authorized = false
  game.ball.finish_toss()
  if is_instance_valid(game.characters):
   game.characters.ai_wait.clear()
   game.characters.quick_runs.clear()
+  game.characters.quick_setters.clear()
   game.characters.jump_events.clear()
  if is_instance_valid(game.super_serve):
   game.super_serve.clear_credit()
@@ -322,7 +375,7 @@ func target_for(actor: VolleyGameBot, kind: int) -> Vector3:
  return tactics.attack_target(actor, kind)
 
 func start_solo() -> bool:
- if game.lan.active or counts[1 - human_team] == 0:
+ if game.lan.active or counts[1 - human_team] == 0 or not game.formation.validate_lineups():
   return false
  game.lower_serve.cancel_sequence()
  game.float_serve.cancel_sequence()
@@ -352,6 +405,7 @@ func end_solo() -> void:
  game.rules.reset()
  game.rules.strict = false
  game.athlete.court_team = -1
+ game.formation.finish_match()
 
 func reset_round() -> void:
  if match_winner >= 0:
@@ -378,6 +432,7 @@ func reset_round() -> void:
   server.visual.rotation.y = server.camera_yaw
   game.rig.yaw = server.camera_yaw
   server.last_result = "Ваша подача • подберите мяч за задней линией"
+ game.formation.broadcast()
 
 func award(winner: int) -> void:
  if not solo_match or round_wait >= 0 or match_winner >= 0:

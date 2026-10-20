@@ -115,8 +115,8 @@ func choose_target(source: Vector3, success_chance := IN_CHANCE) -> Dictionary:
 func begin(player: ContextAthlete, id: int) -> bool:
  if not authority() or not eligible(player) or game.automatic_serve_busy():
   return false
- var chance:=1.0-float(VolleyBotDifficulty.execution(player.execution_level,true).fault) if player.bot_execution else IN_CHANCE
- var aim := choose_target(player.global_position,chance)
+ var aim := choose_target(player.global_position,IN_CHANCE)
+ game.formation.authorize_server(player)
  game.characters.demo = false
  if not game.rules.strict:
   game.rules.reset(true)

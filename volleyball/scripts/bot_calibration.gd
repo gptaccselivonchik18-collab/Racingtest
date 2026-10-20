@@ -29,10 +29,12 @@ func prepare(a: ContextAthlete,kind: int) -> void:
   motion.update(0)
   VolleyCharacterAbilities.pose(motion)
   var hands: Array[Vector3]=[]
+  var elbows: Array[Vector3]=[]
   for hand in range(2):
    var shoulder:=motion.shoulder(hand)
    hands.append(shoulder+(motion.wrists[hand]-shoulder).limit_length(0.855))
-  samples.append({"time":phase*a.strike_duration,"hands":hands})
+   elbows.append(VolleyLimbRig.joint(shoulder,hands[hand],motion.poles[hand],0.44,0.42))
+  samples.append({"time":phase*a.strike_duration,"hands":hands,"elbows":elbows})
  a.action=saved[0]
  a.strike_technique=saved[1]
  a.strike_duration=saved[2]
@@ -76,7 +78,7 @@ func contact_due(a: ContextAthlete,ball: VolleyBall,kind: int) -> bool:
   # Do not match a ball that passed the hands before this sampled pose.
   if first_sample:previous=point
   first_sample=false
-  if kind in [VolleyAthlete.Technique.UNDERHAND,ContextAthlete.DIVE]:
+  if kind in [VolleyAthlete.Technique.UNDERHAND,ContextAthlete.DIVE] and a.character_id!="yu_nishinoya":
    var spine:=a.position+drift+Vector3.UP*clampf(point.y-a.position.y-drift.y,0.20*a.physical_scale,1.65*a.physical_scale)
    if point.distance_to(spine)<radius+0.30:return true
   else:
@@ -89,4 +91,8 @@ func contact_due(a: ContextAthlete,ball: VolleyBall,kind: int) -> bool:
     var hand:=a.position+drift+basis*local
     if hand.distance_to(Geometry3D.get_closest_point_to_segment(hand,previous,point))<radius+VolleyAthlete.HAND_RADIUS*0.65-0.04:
      return true
+    if a.character_id=="yu_nishinoya" and kind in [VolleyAthlete.Technique.UNDERHAND,ContextAthlete.DIVE]:
+     var elbow: Vector3=a.position+drift+basis*Vector3(sample.elbows[index])
+     if point.distance_to(Geometry3D.get_closest_point_to_segment(point,elbow,hand))<radius+VolleyAthlete.FOREARM_RADIUS-0.04:
+      return true
  return false

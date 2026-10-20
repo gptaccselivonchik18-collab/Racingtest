@@ -9,6 +9,12 @@ static func apply(a: ContextAthlete) -> void:
  var ratio := a.height_cm / (MODEL_HEIGHT * 100.0)
  a.physical_scale = ratio
  a.visual.scale = Vector3.ONE * ratio
+ if a.volley_role=="L":
+  var shirt := a.visual.get_child(0) as MeshInstance3D
+  if shirt:
+   var material := StandardMaterial3D.new()
+   material.albedo_color = Color("f4e9c9")
+   shirt.material_override = material
  var shape := a.get_child(0) as CollisionShape3D
  if shape and shape.shape is CapsuleShape3D:
   shape.shape = shape.shape.duplicate()

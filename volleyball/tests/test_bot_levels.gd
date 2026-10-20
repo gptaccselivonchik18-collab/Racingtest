@@ -14,7 +14,7 @@ func run() -> void:
  game.hud.set_process(false)
  var cm: VolleyCharacters=game.characters
  var teams:=cm.default_teams()
- for i in range(3):teams[1][i]={"kind":"bot","character":VolleyCharacterDatabase.IDS[i],"human":0}
+ for i in range(VolleyCharacterDatabase.IDS.size()):teams[1][i]={"kind":"bot","character":VolleyCharacterDatabase.IDS[i],"human":0}
  var old_speeds:={}
  var old_jumps:={}
  for grade in range(3):

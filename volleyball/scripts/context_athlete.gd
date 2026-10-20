@@ -19,6 +19,17 @@ var air_swing_used := false
 var jump_in_progress := false
 var serve_swing_used := false
 var service_attempt_active := false
+var volley_role := "S"
+var rotation_slot := 0
+var starting_rotation_slot := 0
+var formation_revision := 0
+var lineup_index := -1
+var benched := false
+var strict_positions := false
+var designated_libero := false
+var rolling_active := false
+var tactical_state := VolleyRoles.State.COVER
+var last_ground_feet: Array[Vector3] = []
 
 func finish_service_attempt() -> void:
  service_attempt_active = false
@@ -28,10 +39,12 @@ func set_character(id: String) -> bool:
  if not VolleyCharacterDatabase.valid(id):
   return false
  character_id = id
+ volley_role = VolleyRoles.default_role(id)
  height_cm = float(VolleyCharacterDatabase.get_character(id).height_cm)
  (style_stats as VolleyCharacterStats).install(id)
  if is_instance_valid(visual):
   cancel_input()
+  reset_dive()
   action = Action.IDLE
   VolleyCharacterPhysicalProfile.apply(self)
   _update_pose(0)
@@ -80,7 +93,18 @@ func _init() -> void:
  stats = style_stats
 
 func mechanic(kind: int) -> Dictionary:
- return style_stats.profile(Technique.SERVE if lower_serve_active and kind == Technique.UNDERHAND and VolleyRules.in_service_zone(service_origin()) else kind)
+ var result: Dictionary = style_stats.profile(Technique.SERVE if lower_serve_active and kind == Technique.UNDERHAND and VolleyRules.in_service_zone(service_origin()) else kind)
+ if rolling_active and kind == DIVE:
+  result = result.duplicate()
+  result.recover_time = float(result.travel)+(float(result.recover_time)-float(result.travel))*0.65
+  result.accuracy *= 0.80
+ return result
+
+func defense_dive_profile() -> Dictionary:
+ var result := mechanic(DIVE).duplicate()
+ if character_id == "yu_nishinoya":
+  result.speed *= 1.30
+ return result
 
 @export var air_acceleration := 0.65
 var replica := false
@@ -288,6 +312,7 @@ func _process(dt: float) -> void:
  contact_flash = maxf(0, contact_flash - dt)
  if dive_time >= 0:
   dive_time += dt
+ update_rolling_visual()
  advance_gait(dt)
  _update_pose(dt)
 
@@ -297,9 +322,11 @@ func airborne() -> bool:
  return not is_on_floor() or velocity.y > 0.1 or position.y > 0.12
 
 func can_act() -> bool:
- return dive_time < 0 and action == Action.IDLE and not holding_ball and not approach_armed and jump_windup <= 0
+ return not benched and dive_time < 0 and action == Action.IDLE and not holding_ball and not approach_armed and jump_windup <= 0
 
 func begin_action(kind: int) -> bool:
+ if (kind == BLOCK and not VolleyRoles.can_block(self)) or (kind in [Technique.SERVE,Technique.JUMP_SERVE] and not VolleyRoles.can_serve(self)):
+  return false
  if not can_act():
   return false
  if kind in [Technique.SPIKE, TIP, Technique.SERVE, Technique.JUMP_SERVE] and ((airborne() and air_swing_used) or (service_attempt_active and serve_swing_used)):
@@ -404,6 +431,8 @@ func hit_approach() -> bool:
  return action == Action.STRIKE
 
 func jump(from_approach := false) -> void:
+ if benched:
+  return
  if is_on_floor() and velocity.y <= 0.1 and dive_time < 0 and landing_cooldown <= 0:
   air_swing_used = false
   jump_in_progress = true
@@ -423,14 +452,17 @@ func jump(from_approach := false) -> void:
   if fatigue_enabled:energy = maxf(0,energy-style_stats.movement().jump_cost)
   jump_started.emit(self)
 
-func dive() -> bool:
- if not is_on_floor() or dive_cooldown > 0 or dive_time >= 0 or holding_ball:
+func dive(rolling := false) -> bool:
+ if benched or not is_on_floor() or dive_cooldown > 0 or dive_time >= 0 or holding_ball or (rolling and character_id != "yu_nishinoya"):
   return false
+ rolling_active = rolling
  dive_direction = Vector3(move_axis.x, 0, move_axis.y).normalized()
  cancel_input()
  if dive_direction.length() < 0.1:
   dive_direction = -visual.global_basis.z
  dive_speed = mechanic(DIVE).speed + Vector2(velocity.x, velocity.z).length() * 0.3
+ if rolling_active:
+  dive_speed *= 1.30
  dive_time = 0
  dive_cooldown = mechanic(DIVE).cooldown
  technique = DIVE
@@ -443,8 +475,24 @@ func dive() -> bool:
  hit_used = false
  strike_count += 1
  if fatigue_enabled:energy = maxf(0,energy-0.12)
- last_result = "Подкат"
+ last_result = "Rolling Thunder" if rolling_active else "Подкат"
  return true
+
+func defensive_dive() -> bool:
+ return dive(character_id == "yu_nishinoya")
+
+func reset_dive() -> void:
+ dive_time = -1
+ rolling_active = false
+ dive_cooldown = 0
+ if not is_instance_valid(visual):
+  return
+ visual.rotation.x = 0
+ visual.position = Vector3.ZERO
+ var shape := get_child(0) as CollisionShape3D
+ if shape and shape.shape is CapsuleShape3D:
+  shape.shape.height = 1.75*physical_scale
+  shape.position.y = shape.shape.height*0.5
 
 func direction_for(kind: int, contact_height := -1.0) -> Vector3:
  var input := action_tilt(kind)
@@ -496,6 +544,11 @@ func phase_name() -> String:
  return "Восстановление" if action == Action.RECOVER else "Готов"
 
 func _physics_process(dt: float) -> void:
+ if benched:
+  velocity = Vector3.ZERO
+  move_axis = Vector2.ZERO
+  _update_pose(dt)
+  return
  if cinema_time >= 0:
   return
  block_contact_cooldown = maxf(0, block_contact_cooldown - dt)
@@ -537,6 +590,7 @@ func _physics_process(dt: float) -> void:
   shape_node.position.y = shape_node.shape.height * 0.5
   if dive_time >= mechanic(DIVE).recover_time:
    dive_time = -1
+   rolling_active = false
    visual.rotation.x = 0
    shape_node.shape.height = 1.75 * physical_scale
    shape_node.position.y = 0.875 * physical_scale
@@ -585,6 +639,7 @@ func _physics_process(dt: float) -> void:
  visual.position.y = -landing_load * 0.07
  approach_blend = lerpf(approach_blend, 1.0 if approach_armed or jump_windup > 0 else 0.0, 1.0 - exp(-18.0 * dt))
  visual.position.y -= approach_blend * 0.12
+ update_rolling_visual()
  if attack_ready and is_on_floor() and velocity.y <= 0 and jump_windup == 0:
   attack_ready = false
   action = Action.IDLE
@@ -611,6 +666,28 @@ func _physics_process(dt: float) -> void:
   special_recipient = null
  advance_gait(dt)
  _update_pose(dt)
+ if is_on_floor():
+  last_ground_feet.clear()
+  if is_instance_valid(limb_rig) and limb_rig.motion.feet.size() == 2:
+   for foot in limb_rig.motion.feet:
+    last_ground_feet.append(visual.to_global(foot))
+  else:
+   last_ground_feet = [position+Vector3(-0.16,0,0),position+Vector3(0.16,0,0)]
+
+func update_rolling_visual() -> void:
+ if rolling_active and dive_time>=float(mechanic(DIVE).contact_to):
+  var p := mechanic(DIVE)
+  var roll := smoothstep(float(p.contact_to),float(p.recover_time)-0.04,dive_time)
+  var angle := -TAU*roll
+  var fall := smoothstep(0,0.22,dive_time)*(1.0-smoothstep(float(p.travel),float(p.recover_time),dive_time))
+  visual.rotation.x = -fall*1.12+angle
+  var pivot := Vector3.UP*physical_scale
+  visual.position = Basis(Vector3.UP,visual.rotation.y)*(pivot-Basis(Vector3.RIGHT,angle)*pivot)
+  # Rotate the tucked body over the shoulder, keeping the head above the
+  # floor; the root/collider still follows the same physical dive path.
+  visual.position.y=maxf(visual.position.y,(-cos(visual.rotation.x)*2.04+0.10)*physical_scale)
+ else:
+  visual.position = Vector3(0,-landing_load*0.07-approach_blend*0.12,0)
 
 func _update_pose(dt: float) -> void:
  var mode: int = strike_technique if action in [Action.STRIKE, Action.RECOVER] else planned_technique() if action == Action.PREPARE else technique
@@ -700,7 +777,7 @@ func effective_contact_radius() -> float:
 func overlap_at(center: Vector3, fraction: float) -> bool:
  # Bump/dive use the whole moving body: feet, legs, chest and head. The
  # action window and world occlusion still apply; this is not an auto-hit.
- if strike_technique in [Technique.UNDERHAND, DIVE]:
+ if strike_technique in [Technique.UNDERHAND, DIVE] and character_id != "yu_nishinoya":
   var local := visual.to_local(center)
   var spine := Vector3(0, clampf(local.y, 0.20, 1.65), 0)
   var anchor := visual.to_global(spine)
@@ -738,6 +815,9 @@ func quality_at(kind: int, point: Vector3, incoming: Vector3, phase := 0.47) -> 
   if kind in [Technique.UNDERHAND, DIVE]:
    nearest = minf(nearest, VolleyGeometry.distance_to_segment(point, elbows[i], wrists[i]) / ((serve_contact_radius if kind in [Technique.SERVE, Technique.JUMP_SERVE] else contact_ball_radius) * float(p.radius) + FOREARM_RADIUS))
  result *= lerpf(1.0, float(p.edge), clampf(nearest, 0, 1))
+ if kind in [Technique.UNDERHAND,DIVE]:
+  var moving_loss := clampf(Vector2(velocity.x,velocity.z).length()/maxf(1,effective_speed()),0,1)*0.10
+  result *= 1.0-moving_loss*(0.80 if character_id == "yu_nishinoya" else 1.0)
  if kind in [Technique.OVERHEAD, JUMP_SET]:
   var motion_loss := clampf(Vector2(velocity.x, velocity.z).length() / maxf(1, effective_speed()), 0, 1) * 0.08
   var body_loss := body_tilt().length() * 0.06
@@ -748,6 +828,8 @@ func try_contact(center: Vector3, incoming: Vector3, attack: Dictionary = {}) ->
  return try_swept_contact(center, center, incoming, attack)
 
 func try_swept_contact(from: Vector3, center: Vector3, incoming: Vector3, attack: Dictionary = {}) -> Vector3:
+ if benched:
+  return Vector3.ZERO
  if block_held and hit_used:
   # The same overlapping ball cannot reroll a duel on successive frames.
   # A held block can meet a genuinely returning ball after it leaves the hands.

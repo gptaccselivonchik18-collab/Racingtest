@@ -19,6 +19,7 @@ var float_serve: VolleyFloatServe
 var practice: VolleyPractice
 var game_bots: VolleyGameBots
 var frame_rate: VolleyFrameRate
+var formation: VolleyFormation
 var characters: VolleyCharacters
 var super_serve: VolleySuperServe
 var feedback_text := ""
@@ -86,6 +87,10 @@ func _ready() -> void:
  game_bots.game = self
  add_child(game_bots)
  hud.add_bot_settings()
+ formation = VolleyFormation.new()
+ formation.game = self
+ add_child(formation)
+ ball.toss_started.connect(formation.authorize_server)
  characters = VolleyCharacters.new()
  characters.game = self
  add_child(characters)
@@ -120,6 +125,7 @@ func _physics_process(_dt: float) -> void:
  if not ball.held and not ball.pending_feed:
   if previous_ball_valid:
    rules.crossing(previous_ball, ball.global_position)
+   formation.crossing(previous_ball, ball.global_position)
   previous_ball = ball.global_position
   previous_ball_valid = true
  else:
@@ -127,6 +133,8 @@ func _physics_process(_dt: float) -> void:
  var actors: Array = lan.players.values().map(func(entry: Dictionary): return entry.actor) if lan.active else [athlete]
  actors.append_array(game_bots.bots.values())
  for actor in actors:
+  if actor.benched:
+   continue
   check_net_contact(actor, _dt)
 
 func player_touches_net(actor: ContextAthlete) -> bool:
@@ -211,6 +219,7 @@ func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3
   lan.round_live = true
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
   rules.serve_contact(actor.service_origin())
+ formation.note_contact(actor,kind,_point,_outgoing)
 
 func holding_ball() -> bool:
  return ball.held and ball.athlete == athlete
@@ -279,7 +288,7 @@ func start_drill() -> void:
  if lan.active:
   repeat_drill()
   return
- athlete.dive_time = -1
+ athlete.reset_dive()
  athlete.dive_cooldown = 0
  athlete.visual.rotation.x = 0
  var shape_node := athlete.get_child(0) as CollisionShape3D
@@ -304,7 +313,7 @@ func reset_player() -> void:
  athlete.velocity = Vector3.ZERO
  athlete.visual.rotation = Vector3.ZERO
  athlete.cancel_input()
- athlete.dive_time = -1
+ athlete.reset_dive()
  athlete.visual.rotation.x = 0
  var shape_node := athlete.get_child(0) as CollisionShape3D
  shape_node.shape.height = 1.75 * athlete.physical_scale
@@ -361,7 +370,7 @@ func begin_secondary() -> bool:
    return false
   ball.toggle_held_mode()
   return true
- elif athlete.begin_action(ContextAthlete.BLOCK if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD):
+ elif athlete.begin_action((ContextAthlete.BLOCK if VolleyRoles.can_block(athlete) else ContextAthlete.JUMP_SET) if athlete.airborne() else VolleyAthlete.Technique.OVERHEAD):
   action_owner = "secondary"
   return true
  return false
@@ -411,6 +420,9 @@ func cancel_action(role: String) -> void:
   action_owner = ""
 
 func pickup_or_drop() -> void:
+ if athlete.benched:
+  formation.libero.request_return(athlete)
+  return
  if ball.held and not holding_ball():
   return
  cancel_action("")
