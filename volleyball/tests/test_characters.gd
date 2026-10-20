@@ -198,6 +198,32 @@ func run() -> void:
  check(game.frontend.page == "characters", "Character cards open in the existing main menu")
  cm.ui.open_teams()
  check(game.frontend.page == "teams", "Two six-slot team editors open without requiring full teams")
+ game.athlete.court_team = 0
+ game.game_bots.configure({"counts":[3,2]}, false)
+ cm.ui.open_teams(true)
+ var picker: VolleyCharacterSelection = cm.ui
+ check(picker.occupied(0) == 4 and picker.occupied(1) == 2, "Bot editor counts live participants instead of stale saved teams")
+ check(picker.clubs().Karasuno == ["hinata","kageyama"] and picker.clubs()["Aoba Johsai"] == ["oikawa"], "Every catalog character appears under their anime team")
+ var h_count := picker.bot_count(0,"hinata")
+ check(picker.change_bot(0,"hinata",1) and picker.change_bot(0,"hinata",1) and picker.bot_count(0,"hinata") == h_count+2, "Plus adds independent duplicate character bots")
+ check(picker.occupied(0) == 6 and not picker.change_bot(0,"oikawa",1), "A human plus five bots fills the side and blocks a seventh participant")
+ check(picker.move_human(0,0) and picker.human_count(0) == 1, "Selecting the current side preserves the human")
+ check(picker.move_human(0,1) and picker.occupied(0) == 5 and picker.occupied(1) == 3, "Moving a human updates both side capacities")
+ check(picker.change_bot(0,"oikawa",1) and not picker.move_human(0,0) and picker.human_side(0) == 1, "A full team rejects moving a human without removing their old place")
+ var other_before := picker.bot_count(1,"hinata")
+ check(picker.change_bot(0,"hinata",-1) and picker.bot_count(0,"hinata") == h_count+1 and picker.bot_count(1,"hinata") == other_before, "Minus removes one selected copy on the selected side only")
+ for hero in VolleyCharacterDatabase.IDS:
+  while picker.change_bot(1,hero,-1):
+   pass
+ check(picker.occupied(1) == 1 and picker.human_count(1) == 1 and not picker.change_bot(1,game.athlete.character_id,-1), "Removing all bot copies never deletes the human with that character")
+ picker.selected_side = 0
+ picker.draw_clubs()
+ picker.selected_club = "Karasuno"
+ picker.draw_bot_characters()
+ check(game.frontend.page == "teams" and picker.occupied(0) == 5, "Navigating side, anime team and character pages preserves the draft")
+ check(cm.apply_teams(picker.draft,1,false) and game.game_bots.members(0).size() == 5 and game.game_bots.members(1).size() == 1, "Edited duplicate roster applies to real court actors")
+ picker.open_teams(true)
+ check(picker.occupied(0) == 5 and picker.occupied(1) == 1, "Reopening the editor retains actual applied rosters")
  if original.is_empty():
   DirAccess.remove_absolute(cm.SAVE)
  else:
