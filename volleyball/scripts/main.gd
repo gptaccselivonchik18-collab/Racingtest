@@ -57,6 +57,7 @@ func _ready() -> void:
  athlete.touched.connect(_on_touch)
  athlete.block_missed.connect(func(): _on_block_missed(athlete, lan.player_id(athlete)))
  ball.surface_contact.connect(_on_surface)
+ ball.toss_finished.connect(_on_toss_finished)
  ball_shadow = VolleyGeometry.sphere(self, Vector3.ZERO, 0.16, Color("143c42"))
  ball_shadow.scale.y = 0.02
  rig = VolleyCameraRig.new()
@@ -165,6 +166,14 @@ func record_fault(actor: ContextAthlete, text: String) -> void:
 func _on_touch(kind: int, point: Vector3, outgoing: Vector3) -> void:
  _on_player_touch(athlete, lan.player_id(athlete), kind, point, outgoing)
 
+func _on_toss_finished(actor: ContextAthlete) -> void:
+ if actor == athlete:
+  serving = false
+ if is_instance_valid(lan) and lan.active:
+  var id := lan.player_id(actor)
+  if lan.serve_flags.has(id):
+   lan.serve_flags[id] = false
+
 func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3, _outgoing: Vector3) -> void:
  super_serve.note_contact(actor, id, kind)
  var first_match_touch: bool = (lan.match_active and not lan.round_live) or (game_bots.solo_match and game_bots.last_team < 0)
@@ -185,7 +194,9 @@ func _on_player_touch(actor: ContextAthlete, id: int, kind: int, _point: Vector3
   if lan.active and lan.hosting and id != 1 and lan.players.has(id):
    lan.contact_feedback.rpc_id(id, "", pierced)
  if kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE, VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]:
-  serving = false
+  actor.finish_service_attempt()
+  if actor == athlete:
+   serving = false
   if lan.active and lan.serve_flags.has(id):
    lan.serve_flags[id] = false
  if lan.active and not lan.match_active:
@@ -254,6 +265,7 @@ func repeat_drill() -> void:
   return
  lower_serve.cancel_sequence()
  float_serve.cancel_sequence()
+ ball.finish_toss()
  action_owner = ""
  athlete.cancel_input()
  athlete.action = VolleyAthlete.Action.IDLE
@@ -286,6 +298,8 @@ func start_drill() -> void:
 func reset_player() -> void:
  if lan.active:
   return
+ ball.finish_toss()
+ athlete.finish_service_attempt()
  athlete.position = Vector3(0, 0.02, 4)
  athlete.velocity = Vector3.ZERO
  athlete.visual.rotation = Vector3.ZERO

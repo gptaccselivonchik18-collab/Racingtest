@@ -228,6 +228,7 @@ func note_touch(actor: ContextAthlete, kind: int) -> void:
  think_left = 0
 
 func reset_rally() -> void:
+ game.ball.finish_toss()
  if is_instance_valid(game.characters):
   game.characters.ai_wait.clear()
   game.characters.quick_runs.clear()
@@ -247,6 +248,7 @@ func reset_rally() -> void:
  think_left = 0
  for team in range(2):
   for actor: ContextAthlete in members(team):
+   actor.finish_service_attempt()
    actor.energy = 1.0
  for bot in bots.values():
   bot.reset_plan()

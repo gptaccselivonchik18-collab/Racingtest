@@ -4,7 +4,7 @@ extends Node
 signal changed
 const PORT := 24680
 const LIMIT := 12
-const PROTOCOL := 43
+const PROTOCOL := 44
 const CONNECT_TIMEOUT := 30.0
 var game: Node3D
 var active := false
@@ -255,7 +255,7 @@ func hello(version: int, skills: Dictionary, nickname := "Игрок", character
   _broadcast_roster()
   return
  if version != PROTOCOL or players.size() >= LIMIT:
-  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.43." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
+  reject_join.rpc_id(id, "Разные версии игры: всем нужна 0.44." if version != PROTOCOL else "Комната заполнена: уже 12 игроков.")
   get_tree().create_timer(0.3).timeout.connect(func():
    if hosting and id in multiplayer.get_peers():
     multiplayer.multiplayer_peer.disconnect_peer(id))
@@ -524,7 +524,7 @@ func execute(id: int, role: String, phase: String, payload: Dictionary = {}) -> 
   game.ball.athlete = holder
  game.athlete = local_actor
  game.action_owner = owners.get(1, "") if id == 1 else local_owner
- game.serving = serve_flags.get(1, false) if id == 1 else local_serving
+ game.serving = serve_flags.get(player_id(local_actor), local_serving)
  return accepted
 
 func reset_round() -> void:

@@ -380,8 +380,7 @@ func _physics_process(dt: float) -> void:
    if clock >= 0.35:
     tossed = true
     game.ball.feed(game.ball.position,timed_launch(game.ball.position,hit_point(),hit_clock-clock,Vector3.ZERO),Vector3.ZERO)
-    actor.service_attempt_active = true
-    actor.serve_swing_used = false
+    game.ball.begin_toss(actor)
   if not contact_done and clock >= hit_clock:
    if clock <= hit_clock+0.12 and game.ball.position.distance_to(actor.wrists[1]) <= actor.serve_contact_radius:
     _strike()

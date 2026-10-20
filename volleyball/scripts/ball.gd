@@ -4,6 +4,30 @@ extends RigidBody3D
 const RADIUS := 0.155
 
 signal surface_contact(surface: String)
+signal toss_finished(player: ContextAthlete)
+var toss_owner: WeakRef
+var held_owner: WeakRef
+
+func release_holder() -> void:
+ var player: Variant = held_owner.get_ref() if held_owner != null else null
+ held_owner = null
+ if is_instance_valid(player):
+  player.holding_ball = false
+
+func begin_toss(player: ContextAthlete) -> void:
+ finish_toss()
+ toss_owner = weakref(player)
+ player.service_attempt_active = true
+ player.serve_swing_used = false
+
+func finish_toss() -> void:
+ # ball.athlete is reassigned by bot serves and LAN input. It is not the
+ # identity of the person whose toss is still being resolved.
+ var player: Variant = toss_owner.get_ref() if toss_owner != null else null
+ toss_owner = null
+ if is_instance_valid(player):
+  player.finish_service_attempt()
+  toss_finished.emit(player)
 @export var air_density := 1.2
 @export var drag_coefficient := 0.20
 @export var magnus_coefficient := 0.0004
@@ -269,10 +293,12 @@ func pick_up() -> bool:
  super_curve=0
  clear_float()
  clear_attack()
+ finish_toss()
+ release_holder()
+ held_owner = weakref(athlete)
  held = true
  if athlete is ContextAthlete:
-  athlete.serve_swing_used = false
-  athlete.service_attempt_active = false
+  athlete.finish_service_attempt()
  held_mode = HeldMode.TOSS
  var forward := -athlete.visual.global_basis.z
  forward.y = 0
@@ -307,8 +333,7 @@ func toss() -> bool:
   athlete.animate_release()
  feed(athlete.hold_position(), toss_velocity())
  if athlete is ContextAthlete:
-  athlete.service_attempt_active = true
-  athlete.serve_swing_used = false
+  begin_toss(athlete)
  athlete.last_result = "Подброс • удержать и отпустить основную кнопку для удара"
  return true
 
@@ -358,6 +383,7 @@ func clear_float() -> void:
  float_age = 0
 
 func _on_body_entered(body: Node) -> void:
+ finish_toss()
  super_curve=0
  clear_quick()
  clear_float()
@@ -392,6 +418,7 @@ func attack_for(blocker: ContextAthlete) -> Dictionary:
 func remember_contact(actor: ContextAthlete) -> void:
  if replica:
   return
+ finish_toss()
  if actor.strike_technique in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]:
   clear_attack()
   attack_owner = weakref(actor)
@@ -423,11 +450,12 @@ func feed(at: Vector3, speed: Vector3, spin := FEED_SPIN) -> void:
  clear_quick()
  if replica:
   return
+ finish_toss()
+ release_holder()
  clear_float()
  clear_attack()
  if athlete is ContextAthlete:
-  athlete.service_attempt_active = false
-  athlete.serve_swing_used = false
+  athlete.finish_service_attempt()
  held = false
  athlete.holding_ball = false
  freeze = false

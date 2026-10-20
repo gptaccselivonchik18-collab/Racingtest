@@ -51,7 +51,7 @@ jobs:
           godot --headless --fixed-fps 120 --path . --script tests/test_bot_levels.gd 2>&1 | tee build/logs/bot-levels.log
           if grep -E 'SCRIPT ERROR|ERROR:' build/logs/bot-levels.log; then exit 1; fi
           grep -q 'BOT LEVELS PASSED' build/logs/bot-levels.log
-          for script in test_contact_release test_hinata_lead; do
+          for script in test_contact_release test_hinata_lead test_service_lifecycle; do
             godot --headless --fixed-fps 120 --path . --script "tests/${script}.gd" 2>&1 | tee "build/logs/${script}.log"
             if grep -E 'SCRIPT ERROR|ERROR:' "build/logs/${script}.log"; then exit 1; fi
             grep -q 'PASSED' "build/logs/${script}.log"
@@ -222,8 +222,8 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging build/VolleyballSimulator-Android.apk | tee build/logs/apk-manifest.log
           grep -q "org.volleylab.simulator" build/logs/apk-manifest.log
           grep -q "uses-permission: name='android.permission.INTERNET'" build/logs/apk-manifest.log
-          grep -q "versionCode='43'" build/logs/apk-manifest.log
-          grep -q "versionName='0.43.0'" build/logs/apk-manifest.log
+          grep -q "versionCode='44'" build/logs/apk-manifest.log
+          grep -q "versionName='0.44.0'" build/logs/apk-manifest.log
           # Current target uses INTERNET for LAN; raising it to 37 requires runtime permission support.
           grep -q "targetSdkVersion:'36'" build/logs/apk-manifest.log
           unzip -l build/VolleyballSimulator-Android.apk | grep 'lib/arm64-v8a/libgodot_android.so'
@@ -289,4 +289,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           printf '%s\n' 'Training prototype. Android: debug signed APK.' 'iOS: UNSIGNED arm64 IPA; requires legitimate signing before installation. Not tested on a physical phone.' > release-notes.txt
-          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.43' --notes-file release-notes.txt --prerelease
+          gh release create "volleyball-${GITHUB_SHA:0:8}" packages/* --title 'Volleyball Simulator 0.44' --notes-file release-notes.txt --prerelease

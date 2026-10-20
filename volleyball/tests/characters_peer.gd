@@ -94,7 +94,42 @@ func _process(dt: float) -> bool:
     push_error("Guest replication failed: teams=%s special=%s bots=%d hero=%s height=%f" % [saw_teams,saw_special,game.game_bots.bots.size(),game.athlete.character_id,game.athlete.height_cm])
     quit(1)
     return false
+  if host:
+   assert(check_service_handoff(), "Service attempt survives player swaps without locking host or guest")
   print("CHARACTER_PEER_PASSED role=", "host" if host else "guest")
   ended = true
   create_timer(2.8 if host else 0.35).timeout.connect(func(): game.lan.leave(); quit(0))
  return false
+
+func check_service_handoff() -> bool:
+ var id: int = game.lan.players.keys().filter(func(peer): return peer != 1)[0]
+ var remote: ContextAthlete = game.lan.players[id].actor
+ var local: ContextAthlete = game.athlete
+ game.ball.begin_toss(local)
+ local.serve_swing_used = true
+ game.serving = true
+ game.lan.serve_flags[1] = true
+ game.lan.serve_flags[id] = false
+ game.lan.owners[id] = ""
+ remote.cancel_input()
+ remote.action = VolleyAthlete.Action.IDLE
+ remote.air_swing_used = false
+ remote.position = Vector3(2,0.02,9.7)
+ remote.velocity = Vector3.ZERO
+ game.ball.athlete = remote
+ game.ball.held = true
+ remote.holding_ball = true
+ game.ball.held_mode = VolleyBall.HeldMode.TOSS
+ if not game.lan.execute(id,"primary","press"):
+  return false
+ if game.serving or game.lan.serve_flags[1] or local.service_attempt_active or local.serve_swing_used:
+  return false
+ if not remote.service_attempt_active or not game.lan.serve_flags[id]:
+  return false
+ var floor := Node.new()
+ floor.set_meta("surface","floor")
+ game.ball._on_body_entered(floor)
+ floor.free()
+ var closed: bool = not remote.service_attempt_active and not remote.serve_swing_used and not game.lan.serve_flags[id] and not game.serving
+ print("SERVICE_HANDOFF_PASSED=",closed)
+ return closed

@@ -20,6 +20,10 @@ var jump_in_progress := false
 var serve_swing_used := false
 var service_attempt_active := false
 
+func finish_service_attempt() -> void:
+ service_attempt_active = false
+ serve_swing_used = false
+
 func set_character(id: String) -> bool:
  if not VolleyCharacterDatabase.valid(id):
   return false
