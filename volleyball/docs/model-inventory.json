@@ -1,0 +1,33 @@
+{
+  "base_commit": "69445479be12f221593c3ee4d093c795a5b2adfc",
+  "preserved_files": [
+    {
+      "path": "volleyball/scripts/athlete.gd",
+      "sha256": "da74165338b7e29e56e083dba472c6e11b1a4919d41ad5ca1c6d211820aae6bc"
+    },
+    {
+      "path": "volleyball/scripts/geometry.gd",
+      "sha256": "cde387df14caab4177e197d9f15e0603004f61385451be37410c03b9b87b48e7"
+    },
+    {
+      "path": "volleyball/scripts/stats.gd",
+      "sha256": "d8529a0ba0bdbcb097eb1faa242e286b4d042cacbe1fd7ea8569eed0d629e25d"
+    },
+    {
+      "path": "volleyball/scenes/Main.tscn",
+      "sha256": "7df1f6c4ffaa05a5a036373dbcbd5bead6c39cbf037f00e9c743c6a4e8a12715"
+    }
+  ],
+  "nodes": [
+    "VolleyAthlete/visual: existing torso, shorts, head, hair, number 07",
+    "visual/arms[0..3]: original limb meshes/materials",
+    "visual/hands[0..1]: original sphere meshes/materials",
+    "visual/legs[0..1]: original limb meshes/materials"
+  ],
+  "resources": [
+    "Geometry and materials constructed by unchanged VolleyAthlete._ready and VolleyGeometry factories",
+    "Existing procedural animations in VolleyAthlete._update_pose retained unchanged",
+    "No imported models, Skeleton3D or AnimationPlayer resources exist in this checkout"
+  ],
+  "adaptation": "Subclass controller uses original nodes and animation function; new actions update transforms only."
+}

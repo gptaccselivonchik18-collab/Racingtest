@@ -1,0 +1,6 @@
+.godot/
+build/
+*.tmp
+*.keystore
+*.p12
+*.mobileprovision
