@@ -95,9 +95,6 @@ func draw_teams() -> void:
  level.item_selected.connect(func(index: int): chosen_level = index)
  level.custom_minimum_size.y = 48
  f.content.add_child(level)
- f._button("Я — Кагеяма + Хината-бот", func(): preset("kageyama"))
- f._button("Я — Хината + Кагеяма-бот", func(): preset("hinata"))
- f._button("Два бота Karasuno · я наблюдаю с другой стороны", func(): preset("bots"))
  var humans := [0]
  if manager.game.lan.active:
   humans = manager.game.lan.players.keys()
@@ -160,15 +157,3 @@ func draw_teams() -> void:
    manager.start_demo()
    f.enter_court())
  f._layout()
-
-func preset(mode: String) -> void:
- draft = manager.default_teams()
- var local: int = manager.game.lan.multiplayer.get_unique_id() if manager.game.lan.active else 0
- if mode == "bots":
-  draft[0][0] = {"kind": "bot", "character": "kageyama", "human": 0}
-  draft[0][1] = {"kind": "bot", "character": "hinata", "human": 0}
-  draft[1][0] = {"kind": "human", "character": manager.selected, "human": local}
- else:
-  draft[0][0] = {"kind": "human", "character": mode, "human": local}
-  draft[0][1] = {"kind": "bot", "character": "hinata" if mode == "kageyama" else "kageyama", "human": 0}
- draw_teams()
