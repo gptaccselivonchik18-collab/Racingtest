@@ -1,0 +1,31 @@
+name: Build Vesper Gambit for Pages
+on:
+  push:
+    branches: [gh-pages]
+    paths:
+      - '.vesper/**'
+      - '.github/workflows/vesper-pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: vesper-pages-build
+  cancel-in-progress: true
+jobs:
+  build:
+    if: github.ref == 'refs/heads/gh-pages'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: bash .vesper/prepare.sh "$RUNNER_TEMP/vesper-chess"
+      - name: Store static files on the Pages branch
+        run: |
+          mkdir -p chess
+          cp -a "$RUNNER_TEMP/vesper-chess/." chess/
+          touch .nojekyll
+          git add -A -- chess .nojekyll
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Build Vesper Gambit for GitHub Pages'
+          git push origin HEAD:gh-pages

@@ -1,9 +1,0 @@
-.import/
-.godot/
-export.cfg
-export_presets.cfg.bak
-build/
-*.apk
-*.aab
-*.keystore
-*.tmp

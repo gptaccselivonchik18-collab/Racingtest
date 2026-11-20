@@ -1,0 +1,13 @@
+[package]
+name = "vesper-rules"
+version = "1.0.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+chasolver = { path = "../../downloads/cha" }
+chess = "3.2"
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"

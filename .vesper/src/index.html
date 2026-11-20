@@ -1,0 +1,20 @@
+<!doctype html><html lang="ru"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f9f7f3"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Vesper Gambit">
+<title>Vesper Gambit · Шахматная студия</title>
+<!--PWA-->
+<style>/*THEME*/</style></head><body>
+<!--SYMBOLS-->
+<header><div class="frame mast"><a class="brand" href="#" aria-label="Vesper Gambit, доска"><span class="brandmark"><svg viewBox="0 0 45 45"><use href="#black-knight"/></svg></span>Vesper <i>Gambit</i></a><button id="settings" class="soft"><i data-icon="sliders"></i><span>Настройки</span></button></div></header>
+<main class="frame"><div class="titlebar"><div><div class="eyebrow"><span class="rule"></span><span id="modeName">ПАРТИЯ С ДВИЖКОМ</span></div><h1>За доской<span>.</span></h1></div><button class="primary" id="new"><i data-icon="plus"></i>Новая партия</button></div>
+<div class="workspace"><section class="game" aria-label="Шахматная доска">
+<div class="player" id="ptop"></div><div class="boardbox"><div id="board" role="group" aria-label="Шахматная доска"></div></div><div class="player" id="pbottom"></div>
+<div class="tools"><button id="undo"><i data-icon="undo"></i>Отмена</button><button id="flip"><i data-icon="flip"></i>Поворот</button><button id="hint"><i data-icon="spark"></i>Подсказка</button></div>
+<div class="message" id="message" role="status"></div><button id="claim" hidden>Заявить ничью</button></section>
+<aside><section class="analysis panel"><div class="sectitle"><span class="ico"><i data-icon="pulse"></i></span><h2>Анализ позиции</h2></div><div class="scoreline"><div><div class="meta">Оценка для белых</div><div id="score">—</div></div><div class="meter" aria-hidden="true"><span id="fill"></span></div></div><div id="lines" class="lines">Посмотрите лучшие продолжения в этой позиции.</div><div class="statrow"><span id="depth">Глубина —</span><span id="speed">— узлов/с</span></div><button id="analyze" class="analysisbtn"><i data-icon="pulse"></i><span>Разобрать позицию</span></button></section>
+<section class="panel notebook"><div class="sectitle"><span class="ico"><i data-icon="book"></i></span><h2>Запись партии</h2><span class="chip" id="count">0 ходов</span></div><div id="history"></div><div class="histnav"><button id="first" aria-label="Начало партии"><i data-icon="first"></i></button><button id="prev" aria-label="Предыдущий ход"><i data-icon="back"></i></button><span id="cursor">Начало</span><button id="next" aria-label="Следующий ход"><i data-icon="next"></i></button><button id="last" aria-label="Текущая позиция"><i data-icon="last"></i></button></div></section>
+<div class="engineline"><i data-icon="cpu"></i><div><b id="engineName"></b><small id="engineState" role="status"></small><small id="offlineStatus" role="status" hidden></small></div><button id="retry" hidden>Повторить</button></div></aside></div></main>
+<footer class="frame"><span>Vesper Gambit</span><button id="data">Позиция и PGN</button><button id="about">О приложении</button></footer>
+<dialog id="dialog"><div class="dlghead"><h2 id="dlgTitle"></h2><button id="close" aria-label="Закрыть"><i data-icon="x"></i></button></div><div id="dlg"></div></dialog>
+<noscript>Для игры откройте приложение в браузере с включённым JavaScript. Предпросмотр в «Файлах» может показывать только страницу.</noscript>
+<!--PAYLOAD-->
+<script>/*RULES*/</script><script>/*ENGINE*/</script><script>/*APP*/</script></body></html>
