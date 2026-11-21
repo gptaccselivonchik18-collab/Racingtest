@@ -1,0 +1,551 @@
+class_name VolleyBotTactics
+extends RefCounted
+
+var manager: VolleyGameBots
+const SPACE := 1.45
+var assignments := [0, 0]
+var assigned_at := [0.0, 0.0]
+var plans: Dictionary = {}
+var shots: Dictionary = {}
+var runs: Dictionary = {}
+var teammate_readings: Dictionary = {}
+
+func observe_teammates(dt: float) -> void:
+ var present := {}
+ var actors: Array=manager.game.characters.actors() if is_instance_valid(manager.game.characters) else []
+ for a: ContextAthlete in actors:
+  var id:=a.get_instance_id()
+  present[id]=true
+  if not teammate_readings.has(id) or teammate_readings[id].character!=a.character_id:
+   teammate_readings[id]={"character":a.character_id,"velocity":Vector3.ZERO,"jump":a.effective_jump_height(),"peak":0.0,"air":false,"reach":a.natural_reach(),"speed":a.effective_speed()}
+  var data: Dictionary=teammate_readings[id]
+  data.velocity=Vector3(data.velocity).lerp(Vector3(a.velocity.x,0,a.velocity.z),1.0-exp(-dt*8.0))
+  data.reach=a.natural_reach()
+  data.speed=a.effective_speed()
+  if a.jump_in_progress:
+   data.peak=maxf(float(data.peak),a.position.y-a.jump_origin.y)
+   data.air=true
+  elif data.air:
+   data.jump=lerpf(float(data.jump),clampf(float(data.peak),a.effective_jump_height()*0.75,a.effective_jump_height()),0.25)
+   data.peak=0.0
+   data.air=false
+ for id in teammate_readings.keys():
+  if not present.has(id):teammate_readings.erase(id)
+
+func teammate_profile(a: ContextAthlete) -> Dictionary:
+ var data: Dictionary=teammate_readings.get(a.get_instance_id(),{})
+ return {"velocity":data.get("velocity",Vector3(a.velocity.x,0,a.velocity.z)),"jump":clampf(float(data.get("jump",a.effective_jump_height())),a.effective_jump_height()*0.75,a.effective_jump_height()),"reach":a.natural_reach(),"speed":a.effective_speed()}
+
+func reset() -> void:
+ assignments = [0, 0]
+ assigned_at = [0.0, 0.0]
+ plans.clear()
+ shots.clear()
+ runs.clear()
+
+static func flat(a: Vector3, b: Vector3) -> float:
+ return Vector2(a.x - b.x, a.z - b.z).length()
+
+func humans() -> Array:
+ if manager.game.lan.active:
+  return manager.game.lan.players.values().map(func(p: Dictionary): return p.actor)
+ return [manager.game.athlete]
+
+func human_pickup_near() -> bool:
+ for human in humans():
+  if manager.game.ball.can_pick_up_for(human):
+   return true
+ return false
+
+func jump_set_useful(actor: VolleyGameBot) -> bool:
+ var ball: VolleyBall = manager.game.ball
+ # Take high balls early near the net or on a fast lateral pass. A calm,
+ # deep set is safer on the floor; jumping is not an automatic upgrade.
+ return manager.difficulty >= 2 and manager.last_team == actor.court_team and manager.touches == 1 and (absf(ball.position.z) < 2.0 or Vector2(ball.linear_velocity.x, ball.linear_velocity.z).length() > 2.5)
+
+func choose_receivers() -> void:
+ var difficulty := manager.decision_profile()
+ for team in range(2):
+  if manager.last_team == team and (manager.last_kind in [3, 4] or manager.touches >= 3):
+   # Yield an outgoing serve/third touch. Extra teammates near the flight
+   # path must not chase their own serve or add an illegal fourth touch.
+   continue
+  var side := 1.0 if team == 0 else -1.0
+  var teammates := manager.members(team)
+  var solo_attack: bool = teammates.size() == 1 and teammates[0].volley_role!="L" and manager.last_team != team and manager.last_kind not in [3, 4]
+  var candidates: Dictionary = {}
+  for actor: ContextAthlete in teammates:
+   if actor == manager.last_actor and manager.last_kind != ContextAthlete.BLOCK:
+    continue
+   if actor is VolleyGameBot and (actor.cooldown > 0 or actor.action == VolleyAthlete.Action.RECOVER or (actor.action == VolleyAthlete.Action.STRIKE and actor.hit_used)):
+    continue
+   var id: int = actor.bot_id if actor is VolleyGameBot else manager.game.lan.player_id(actor) if manager.game.lan.active else 1
+   var physical := actor.style_stats.movement()
+   for sample in manager.samples:
+    if float(sample.time) > float(difficulty.lookahead):
+     continue
+    var point: Vector3 = sample.at
+    if actor is VolleyGameBot:
+     # Stable error per touch/actor, fading as the ball gets close. Avoids
+     # jittering destinations while allowing beginners to read later.
+     var phase := float(absi(actor.bot_id)) * 1.713 + manager.last_touch_time * 2.31
+     var uncertainty := float(difficulty.uncertainty) * maxf(0, float(sample.time) - 0.35)
+     point += Vector3(sin(phase), 0, cos(phase)) * uncertainty
+    if point.z * side < 0.48 or point.y < 0.18 or point.y > actor.natural_reach()+actor.effective_jump_height()+0.35 or sample.v.y > 2:
+     continue
+    var target := point + Vector3(0, 0, side * 0.34)
+    target.y = 0.02
+    var distance := flat(target, actor.position)
+    var reaction := 0.12
+    if actor is VolleyGameBot:
+     reaction = maxf(0, actor.reaction_until - manager.clock) if actor.noticed_touch == manager.last_touch_time else float(difficulty.reaction)
+    var speed := actor.speed_toward(Vector2(target.x-actor.position.x,target.z-actor.position.z))
+    var jump_height := actor.effective_jump_height()
+    var movement := float(difficulty.anticipation) if actor is VolleyGameBot else 0.8 if actor.move_axis.length() > 0.15 else 0.0
+    var available := maxf(0, float(sample.time) - reaction)
+    var initial := maxf(0, Vector2(actor.velocity.x, actor.velocity.z).dot(Vector2(target.x - actor.position.x, target.z - actor.position.z).normalized()))
+    var acceleration: float = float(physical.acceleration)
+    var accelerating := minf(available, maxf(0, speed - initial) / acceleration)
+    var running := initial * accelerating + 0.5 * acceleration * accelerating * accelerating + speed * maxf(0, available - accelerating)
+    if actor.character_id == "hinata" and not actor.airborne():
+     running = speed * available
+    var reach := actor.contact_ball_radius * float(actor.mechanic(VolleyAthlete.Technique.UNDERHAND).radius) + 0.25
+    var reachable := running * movement + (reach if actor is VolleyGameBot else 1.45)
+    var diving := false
+    if distance > reachable:
+     if not actor is VolleyGameBot or actor.dive_cooldown > 0 or actor.position.y > 0.12 or actor.velocity.y > 0.2 or point.y > 1.45:
+      continue
+     var dive := actor.defense_dive_profile()
+     var time := minf(float(sample.time) - reaction, float(dive.contact_to))
+     if time < float(dive.contact_from) or time <= 0:
+      continue
+     var run_time := maxf(0, float(sample.time) - reaction - float(dive.contact_to))
+     var slide := float(dive.speed) * time * (1.0 - 0.5 * time / float(dive.travel))
+     if distance > run_time * speed * movement + slide + 0.75:
+      continue
+     diving = true
+    var high: bool = VolleyRoles.attack_capable(actor) and ((manager.last_team == team and manager.touches >= 2 and absf(point.z) < 6.0) or solo_attack)
+    if high and actor.strict_positions and actor.rotation_slot in [1,5,6] and point.z*side<3.35:
+     if point.y>2.40:
+      continue
+     high = false
+    var preferred := actor.natural_reach()+jump_height*0.80 if high else 2.05 * actor.physical_scale if manager.last_team == team else 1.35 * actor.physical_scale
+    if high and point.y > actor.natural_reach() + 0.15 + jump_height:
+     continue
+    if actor is VolleyGameBot and jump_set_useful(actor):
+     var lift := maxf(0, point.y - actor.natural_reach())
+     var time := minf(0.50, available)
+     var needed := (lift + 4.905 * time * time) / maxf(0.01, time)
+     if point.y > actor.natural_reach() + 0.35 and (time < 0.20 or needed > sqrt(19.62 * jump_height)):
+      continue
+     preferred = minf(actor.natural_reach() + 0.8, actor.natural_reach() + jump_height * 0.75)
+    var cost := absf(point.y - preferred) * 0.8 + distance * 0.22 + float(sample.time) * 0.12
+    if manager.last_team == team and manager.touches == 1 and manager.role_for(actor) == "setter":
+     cost -= 0.80
+    if actor.volley_role=="L" and manager.last_team!=team:
+     cost -= 0.35 + minf(manager.game.ball.linear_velocity.length()/40.0,0.25)
+    elif actor.volley_role=="S" and manager.last_team!=team and teammates.size()>2:
+     cost += 0.18
+    cost += 0.55 if diving else 0.0
+    if not actor is VolleyGameBot:
+     cost -= 0.85 # A human already in reach gets room to play.
+    if not candidates.has(id) or cost < float(candidates[id].cost):
+     candidates[id] = {"cost": cost, "target": target, "arrival": manager.clock + float(sample.time), "actor": actor, "dive": diving, "height": point.y}
+  var selected := 0
+  var cost := INF
+  for id in candidates:
+   if float(candidates[id].cost) < cost:
+    cost = float(candidates[id].cost)
+    selected = id
+  # Keep a reachable player on this ball. Small fluctuations cannot send
+  # the whole team alternately rushing into the same reception corridor.
+  var previous: int = assignments[team]
+  if candidates.has(previous) and (manager.clock - assigned_at[team] < 0.55 or float(candidates[previous].cost) < cost + 0.85):
+   selected = previous
+  if selected != previous:
+   assignments[team] = selected
+   assigned_at[team] = manager.clock
+  if selected != 0:
+   manager.receivers[team] = selected
+   manager.intercepts[team] = candidates[selected].target
+   manager.arrival[team] = candidates[selected].arrival
+   manager.receive_dives[team] = candidates[selected].dive
+   manager.contact_heights[team] = candidates[selected].height
+   var receiver: ContextAthlete = candidates[selected].actor
+   if receiver is VolleyGameBot:
+    var kind := VolleyAthlete.Technique.OVERHEAD if manager.last_team == team and manager.touches > 0 else VolleyAthlete.Technique.UNDERHAND
+    if manager.last_team != team or manager.touches < 2:
+     pass_plan(receiver, kind)
+
+func serve_target(actor: VolleyGameBot) -> Vector3:
+ if actor.serve_aim.is_finite():
+  return actor.serve_aim
+ actor.serve_aim = choose_shot(actor, true)
+ # Leave a margin for the real float wake instead of aiming at a boundary
+ # and expecting low Serve to behave like the full-strength character.
+ actor.serve_aim.x=clampf(actor.serve_aim.x,-2.7,2.7)
+ actor.serve_aim.z=signf(actor.serve_aim.z)*clampf(absf(actor.serve_aim.z),3.2,6.8)
+ actor.serve_history.append(actor.serve_aim)
+ if actor.serve_history.size() > 3:
+  actor.serve_history.pop_front()
+ return actor.serve_aim
+
+func coverage_at(point: Vector3, opponents: Array, reading: float) -> float:
+ var nearest := 6.0
+ var second := 6.0
+ for opponent: ContextAthlete in opponents:
+  # Only visible position and movement: no human identity or hidden input.
+  var observed := opponent.position + Vector3(opponent.velocity.x, 0, opponent.velocity.z).limit_length(3) * reading * 0.35
+  var distance := flat(point, observed)
+  if distance < nearest:
+   second = nearest
+   nearest = distance
+  elif distance < second:
+   second = distance
+ # A seam between receivers is useful, but never outweighs a truly open lane.
+ return nearest + maxf(0, 1.0 - absf(second - nearest)) * 0.25 * reading
+
+func block_obstruction(origin: Vector3, target: Vector3, opponents: Array) -> float:
+ var fraction := absf(origin.z) / maxf(0.1, absf(target.z - origin.z))
+ var crossing := lerpf(origin.x, target.x, fraction)
+ var obstruction := 0.0
+ for opponent: ContextAthlete in opponents:
+  if absf(opponent.position.z) < 1.6:
+   var ready := 1.0 if opponent.block_held or opponent.airborne() else 0.55
+   obstruction = maxf(obstruction, maxf(0, 1.5 - absf(crossing - opponent.position.x)) * ready)
+ return obstruction
+
+func choose_shot(actor: VolleyGameBot, serving: bool) -> Vector3:
+ var profile := manager.decision_profile()
+ var reading := float(profile.court_read)
+ var opponents := manager.members(1 - actor.court_team)
+ var side := -1.0 if actor.court_team == 0 else 1.0
+ var best := Vector3(0, VolleyBall.RADIUS, side * 6)
+ var best_score := -INF
+ var xs := [-3.3, 0.0, 3.3] if manager.difficulty < 3 else [-3.3, -1.65, 0.0, 1.65, 3.3]
+ var depths: Array=[3.2,5.5,7.7] if serving else [6.4,7.8]
+ for x in xs:
+  for depth in depths:
+   var target := Vector3(x, VolleyBall.RADIUS, side * depth)
+   if serving and manager.difficulty < 2:
+    # Low Serve should choose margin rather than risky corners/floaters.
+    target.x *= 0.65
+    target.z = side * clampf(depth, 3.5, 6.1)
+   # At reception height the ball is still short of its floor target.
+   var receive_at := target - Vector3(0, 0, side * (0.8 if serving else 0.3))
+   var score := coverage_at(receive_at, opponents, reading) * reading
+   score -= absf(x) * (1.0 - reading) * 0.08
+   if not serving:
+    score -= block_obstruction(actor.position, target, opponents) * reading * 1.8
+   else:
+    for previous in actor.serve_history:
+     score -= maxf(0, 2.8 - flat(target, previous)) * (0.18 + reading * 0.45)
+   # Sample once per decision, not every frame or during the ball toss.
+   score += actor.rng.randf_range(-float(profile.decision_noise), float(profile.decision_noise))
+   if score > best_score:
+    best_score = score
+    best = target
+ return best
+
+func attack_target(actor: VolleyGameBot, kind: int) -> Vector3:
+ var key := "%d:%d" % [actor.bot_id, kind]
+ var saved: Dictionary = shots.get(key, {})
+ if not saved.is_empty() and float(saved.epoch) == manager.last_touch_time:
+  return saved.target
+ var target := choose_shot(actor, false)
+ shots[key] = {"epoch": manager.last_touch_time, "target": target}
+ return target
+
+func block_plan(actor: VolleyGameBot) -> Dictionary:
+ if not VolleyRoles.can_block(actor):
+  return {}
+ var ball: VolleyBall = manager.game.ball
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ if ball.held or ball.position.z * side > 0.5 or absf(ball.position.x) > 5.2:
+  return {}
+ if manager.last_team == 1 - actor.court_team and manager.last_kind in [VolleyAthlete.Technique.SERVE, VolleyAthlete.Technique.JUMP_SERVE]:
+  return {}
+ var target := Vector3(ball.position.x, 0.02, side * 0.65)
+ var time := INF
+ var commit := false
+ var attack := manager.last_team == 1 - actor.court_team and manager.last_kind in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP]
+ if not attack and manager.difficulty < 2:
+  # Beginners react to the hit; experienced defenders read the preparation.
+  return {}
+ if attack and ball.linear_velocity.z * side > 0:
+  # A new strike may precede the next shared 10 Hz prediction. Read its
+  # current velocity immediately rather than the previous shot's samples.
+  time = (side * 0.15 - ball.position.z) / ball.linear_velocity.z
+  var point := ball.position + ball.linear_velocity * time + Vector3.DOWN * 4.905 * time * time
+  if time < 0 or time > 1.1 or point.y < 2.2 or point.y > 2.4 + actor.effective_jump_height():
+   return {}
+  target.x = point.x
+  commit = true
+ if not is_finite(time):
+  if ball.position.z * side >= 0 or absf(ball.position.z) > 4.8 or ball.position.y < 2.1:
+   return {}
+  for opponent: ContextAthlete in manager.members(1 - actor.court_team):
+   var kind := opponent.planned_technique() if opponent.action == VolleyAthlete.Action.PREPARE else opponent.strike_technique
+   if kind not in [VolleyAthlete.Technique.SPIKE, ContextAthlete.TIP] or opponent.action not in [VolleyAthlete.Action.PREPARE, VolleyAthlete.Action.STRIKE] or flat(opponent.position, ball.position) > 2.1:
+    continue
+   target.x = opponent.position.x + opponent.velocity.x * 0.15
+   time = clampf(0.18 + flat(opponent.position, ball.position) / maxf(3, ball.linear_velocity.length()), 0.18, 0.8)
+   commit = opponent.airborne() or opponent.action == VolleyAthlete.Action.STRIKE
+   break
+  if not is_finite(time):
+   if manager.last_team != 1 - actor.court_team or manager.touches < 1 or ball.linear_velocity.y > 4:
+    return {}
+   # Move a front defender into the lane while the opponent builds the attack.
+   time = 0.8
+ target.x = clampf(target.x, -4, 4)
+ # A lone defender cannot leave the entire back court to chase a speculative
+ # block. Commit only when already stationed close to the attack lane.
+ if manager.members(actor.court_team).size() == 1 and (absf(actor.position.z) > 3.0 or flat(actor.position, target) > 2.6):
+  return {}
+ var chosen: ContextAthlete
+ var best := INF
+ for teammate: ContextAthlete in manager.members(actor.court_team):
+  if not teammate is VolleyGameBot:
+   if teammate.block_held and flat(teammate.position, target) < 1.1:
+    if manager.game.formation.enabled and actor.volley_role=="MB":
+     chosen=teammate
+     best=-1.0
+    else:
+     return {}
+   continue
+  if not VolleyRoles.can_block(teammate) or teammate.cooldown > 0 or teammate.action != VolleyAthlete.Action.IDLE or teammate.dive_time >= 0:
+   continue
+  var distance := flat(teammate.position, target)
+  var arrival := distance / maxf(1, teammate.effective_speed())
+  if teammate.volley_role=="MB":
+   arrival -= 0.10
+  if arrival > time + 0.38:
+   continue
+  if arrival < best:
+   best = arrival
+   chosen = teammate
+ if chosen != actor:
+  if not manager.game.formation.enabled or actor.volley_role!="MB" or not is_instance_valid(chosen) or chosen.volley_role=="MB" or not commit or flat(actor.position,target)/maxf(1,actor.effective_speed())>time+0.38:
+   return {}
+  # Close beside the wing blocker, rather than occupying their body/hand lane.
+  target.x=clampf(chosen.position.x+(-0.65 if actor.position.x<chosen.position.x else 0.65),-4.0,4.0)
+ return {"target": target, "time": time, "commit": commit, "height": clampf(ball.position.y, 2.8, 4.2)}
+
+func prepare_runs(setter: VolleyGameBot) -> void:
+ if runs.has(setter.court_team):
+  return
+ var candidates := manager.members(setter.court_team).filter(func(a): return a != setter and VolleyRoles.attack_capable(a) and not a.holding_ball and a.dive_time < 0)
+ var chosen: Dictionary = {}
+ var side := 1.0 if setter.court_team == 0 else -1.0
+ var amount := mini(candidates.size(), setter.rng.randi_range(1, 3))
+ # Shuffle once per combination; several approach options hide the final set.
+ for i in range(candidates.size() - 1, 0, -1):
+  var j := setter.rng.randi_range(0, i)
+  var swap: ContextAthlete = candidates[i]
+  candidates[i] = candidates[j]
+  candidates[j] = swap
+ for i in range(candidates.size()):
+  var athlete: ContextAthlete = candidates[i]
+  if not athlete is VolleyGameBot or (i >= amount and absf(athlete.position.z) > 3.2):
+   continue
+  var base := manager.home(athlete.court_team, athlete.slot)
+  if absf(athlete.position.z) <= 3.2:
+   base.x = athlete.position.x
+  var traits:=teammate_profile(athlete)
+  var depth:=3.75 if athlete.strict_positions and athlete.rotation_slot in [1,5,6] else clampf(2.85-float(traits.speed)*0.035,2.50,2.85)
+  var target:=Vector3(clampf(base.x,-3.3,3.3),float(traits.reach)+float(traits.jump)*0.80,side*depth)
+  var start:=target+Vector3(0,0,side*clampf(float(traits.speed)*0.18,0.85,1.45))
+  start.y = 0.02
+  chosen[athlete.get_instance_id()] = {"start": start, "target": target}
+ runs[setter.court_team] = chosen
+
+func pass_point(recipient: ContextAthlete, setter: ContextAthlete, attacking: bool) -> Vector3:
+ var team: int = setter.court_team
+ var side := 1.0 if team == 0 else -1.0
+ var until_contact := clampf(manager.arrival[team] - manager.clock, 0, 1.3)
+ var reading := float(manager.decision_profile().court_read)
+ var traits:=teammate_profile(recipient)
+ var lead := Vector3(traits.velocity) * minf(0.75, until_contact + 0.35) * lerpf(0.15, 1.0, reading)
+ lead = lead.limit_length(2.0)
+ var point := recipient.position + lead
+ if recipient is VolleyGameBot:
+  # A fixed receiving lane avoids chasing a target that is recomputed from
+  # the recipient's own support movement on every frame.
+  point = manager.home(team, recipient.slot)
+  point.z = side * (2.15 if attacking else 3.0)
+  point.x = clampf(point.x, -3.2, 3.2)
+ # Offer a forward approach that the recipient can actually reach; a deep
+ # human is still a teammate, not an invisible spectator outside a bot grid.
+ if attacking and recipient is VolleyGameBot:
+  var options: Dictionary = runs.get(team, {})
+  if options.has(recipient.get_instance_id()):
+   return options[recipient.get_instance_id()].target
+  # The final recipient need not have been one of the random decoy runners.
+  # Give that player the same safe attack lane, not the old 1.35 m net lane.
+  point.z=side*(3.75 if recipient.strict_positions and recipient.rotation_slot in [1,5,6] else 2.60)
+  point.y=float(traits.reach)+float(traits.jump)*0.80
+  return point
+ var forward := clampf(float(recipient.style_stats.movement().speed) * 0.45, 1.3, 2.6) if attacking else 0.40
+ point.z -= side * forward
+ point.x = clampf(point.x, -3.8, 3.8)
+ point.z = side * clampf(point.z * side, 1.35, 8.5)
+ point.y = float(traits.reach)+float(traits.jump)*0.80 if attacking else 2.05 * recipient.physical_scale
+ return point
+
+func pass_plan(actor: VolleyGameBot, kind: int) -> Dictionary:
+ var own_touches := manager.touches if manager.last_team == actor.court_team else 0
+ var attacking := kind in [VolleyAthlete.Technique.OVERHEAD, ContextAthlete.JUMP_SET]
+ if attacking:
+  prepare_runs(actor)
+ var key := "%d:%d:%s" % [actor.bot_id, own_touches, attacking]
+ var previous: Dictionary = plans.get(key, {})
+ if not previous.is_empty() and float(previous.epoch) == manager.last_touch_time and is_instance_valid(previous.recipient) and previous.recipient in manager.members(actor.court_team):
+  if not previous.recipient is VolleyGameBot:
+   previous.target = pass_point(previous.recipient, actor, attacking)
+  return previous
+ var friend: ContextAthlete
+ var best := -INF
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ for teammate: ContextAthlete in manager.members(actor.court_team):
+  if teammate == actor or teammate.holding_ball or teammate.dive_time >= 0 or (attacking and not VolleyRoles.attack_capable(teammate)):
+   continue
+  var point := pass_point(teammate, actor, attacking)
+  var depth := point.z * side
+  var score := -absf(depth - (2.6 if attacking else 3.1)) * 0.70
+  score -= absf(point.x) * (0.06 if attacking else 0.16)
+  score -= flat(actor.position, point) * 0.045
+  score -= flat(teammate.position, point) * 0.22
+  score += teammate.style_stats.n("spike" if attacking else "set") * 0.45
+  if not attacking and manager.role_for(teammate) == "setter":
+   score += 0.95
+  if not teammate is VolleyGameBot:
+   score += 0.55
+  if attacking:
+   var open := 4.5
+   for opponent: ContextAthlete in manager.members(1 - actor.court_team):
+    if absf(opponent.position.z) < 3.3:
+     open = minf(open, absf(point.x - opponent.position.x))
+   score += minf(open, 3) * 0.45 * float(manager.decision_profile().court_read)
+   score += clampf(-teammate.velocity.z * side, -2, 2) * 0.12
+  if manager.difficulty == 0:
+   # A beginner can perform the same techniques, but usually chooses the
+   # closest available partner instead of planning the next attack lane.
+   score = -flat(actor.position, teammate.position)
+  elif manager.difficulty == 1:
+   score = score * 0.35 - flat(actor.position, teammate.position) * 0.25
+  if attacking:
+   # Roles still matter for beginners: they choose a simple available hitter,
+   # rather than feeding another setter because several copies share a home.
+   score += 0.45 if teammate.volley_role in ["MB","OH","OP"] else -0.55
+   if actor.character_id=="kageyama" and teammate.character_id=="hinata" and (not teammate.strict_positions or teammate.rotation_slot in [2,3,4]):
+    score += 0.65
+  if score > best:
+   best = score
+   friend = teammate
+ if not is_instance_valid(friend):
+  return {}
+ if attacking and friend is VolleyGameBot:
+  var options: Dictionary=runs.get(actor.court_team,{})
+  if not options.has(friend.get_instance_id()):
+   var contact:=pass_point(friend,actor,true)
+   var start:=contact+Vector3(0,0,side*clampf(friend.effective_speed()*0.18,0.85,1.45))
+   start.y=0.02
+   options[friend.get_instance_id()]={"start":start,"target":contact}
+   runs[actor.court_team]=options
+ var plan := {"epoch": manager.last_touch_time, "recipient": friend, "target": pass_point(friend, actor, attacking), "attacking": attacking}
+ plans[key] = plan
+ return plan
+
+func support(actor: VolleyGameBot) -> Vector3:
+ if manager.game.formation.enabled and not manager.game.formation.rally_live():
+  return manager.game.formation.slot_position(actor.court_team,actor.rotation_slot)
+ var ball: VolleyBall=manager.game.ball
+ var server: ContextAthlete=ball.athlete if ball.held else manager.game.super_serve.actor if manager.game.super_serve.preparing() else null
+ if is_instance_valid(server) and server.court_team!=actor.court_team and VolleyRules.in_service_zone(server.position):
+  # Read the visible server, never the hidden destination. Prepare a genuine
+  # receiving formation before contact, rather than waiting at attacking homes.
+  var ready:=manager.home(actor.court_team,actor.slot)
+  var own_side:=1.0 if actor.court_team==0 else -1.0
+  ready.z=own_side*(6.6 if manager.members(actor.court_team).size()<=2 else 5.2 if absf(ready.z)<4 else 6.8)
+  return ready
+ var options: Dictionary = runs.get(actor.court_team, {})
+ if manager.last_team == actor.court_team and options.has(actor.get_instance_id()):
+  var run: Dictionary = options[actor.get_instance_id()]
+  var point: Vector3 = run.start if manager.touches < 2 else run.target
+  point.y = 0.02
+  return point
+ for plan: Dictionary in plans.values():
+  if float(plan.epoch) == manager.last_touch_time and is_instance_valid(plan.recipient) and plan.recipient == actor:
+   var point: Vector3 = plan.target
+   point.y = 0.02
+   return point
+ var target := manager.home(actor.court_team, actor.slot)
+ if actor.volley_role=="L" or manager.game.formation.enabled or manager.members(actor.court_team).size()>=3:
+  target = VolleyRoles.base(actor,manager.last_team==actor.court_team)
+  # Multiple copies of a role share responsibilities without stacking.
+  var peers: Array=manager.members(actor.court_team).filter(func(a):return a.volley_role==actor.volley_role)
+  if peers.size()>1:
+   var order:=peers.find(actor)
+   target.x=clampf(target.x+(order-(peers.size()-1)*0.5)*1.35,-3.7,3.7)
+ var reading := float(manager.decision_profile().coverage)
+ target.x = clampf(target.x + manager.game.ball.position.x * lerpf(0.02, 0.18, reading), -3.9, 3.9)
+ var side := 1.0 if actor.court_team == 0 else -1.0
+ if reading > 0.2 and manager.last_team == 1 - actor.court_team:
+  for teammate: ContextAthlete in manager.members(actor.court_team):
+   if teammate != actor and teammate.block_held:
+    # Rear defenders cover beside the block; front teammates protect tips.
+    if target.z * side > 4:
+     var direction := signf(target.x - teammate.position.x)
+     target.x = clampf(target.x + direction * reading * 0.55, -3.9, 3.9)
+     target.z += side * reading * 0.35
+    else:
+     target.z = side * lerpf(absf(target.z), 2.1, reading)
+    break
+ return target
+
+func spaced_axis(actor: VolleyGameBot, desired: Vector2) -> Vector2:
+ var avoidance := Vector2.ZERO
+ var receiving: bool = manager.receivers[actor.court_team] == actor.bot_id
+ for other: ContextAthlete in manager.members(actor.court_team):
+  if other == actor:
+   continue
+  var offset := Vector2(actor.position.x - other.position.x, actor.position.z - other.position.z)
+  var distance := offset.length()
+  var radius := SPACE if not receiving else 0.85
+  if actor.state=="block" and (other.block_held or (other is VolleyGameBot and other.state=="block")):
+   radius=0.60
+  if distance >= radius:
+   continue
+  if distance < 0.02:
+   offset = Vector2.RIGHT if actor.get_instance_id() < other.get_instance_id() else Vector2.LEFT
+  var priority := 0.75 if receiving else 1.35
+  avoidance += offset.normalized() * (1.0 - distance / radius) * priority
+ var axis := desired + avoidance
+ # Yield sideways as well as slowing down, so opposite paths don't deadlock.
+ if desired.length() > 0.1 and avoidance.dot(desired) < -0.1:
+  axis += Vector2(-desired.y, desired.x) * (0.20 if actor.slot % 2 == 0 else -0.20)
+ return axis.limit_length()
+
+func state_for(a: VolleyGameBot) -> int:
+ if a.benched:
+  return VolleyRoles.State.BENCH
+ if a.is_server or a.jump_serving or (manager.game.ball.held and manager.game.ball.athlete==a):
+  return VolleyRoles.State.SERVE
+ if manager.is_match() and not manager.game.formation.rally_live():
+  return VolleyRoles.State.ROTATION if manager.game.formation.rallies_completed>0 and ((manager.solo_match and manager.round_wait>=0) or (manager.game.lan.match_active and manager.game.lan.round_wait>=0)) else VolleyRoles.State.PRE_SERVE
+ if a.block_held or a.state=="block":
+  return VolleyRoles.State.BLOCK
+ if a.dive_time>=0:
+  return VolleyRoles.State.DEFENSE
+ if manager.receivers[a.court_team]==a.bot_id:
+  if manager.last_team!=a.court_team:
+   return VolleyRoles.State.RECEIVE if manager.last_kind in [3,4] else VolleyRoles.State.DEFENSE
+  return VolleyRoles.State.SETUP if manager.touches==1 else VolleyRoles.State.ATTACK
+ if manager.last_team==a.court_team:
+  if a.volley_role=="S" and manager.touches==1 and manager.last_actor!=a:
+   return VolleyRoles.State.SETUP
+  var options: Dictionary=runs.get(a.court_team,{})
+  if options.has(a.get_instance_id()):
+   return VolleyRoles.State.TRANSITION if manager.touches<2 else VolleyRoles.State.ATTACK
+  return VolleyRoles.State.COVER
+ return VolleyRoles.State.DEFENSE
