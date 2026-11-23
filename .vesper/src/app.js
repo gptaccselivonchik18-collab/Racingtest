@@ -232,6 +232,7 @@ function prepareStandalone(){
  if(!offlineFile&&standaloneApp)prepareOffline(kind());
 }
 $('board').onclick=e=>{const b=e.target.closest('[data-sq]');if(b)squareClick(b.dataset.sq);};
+setupBoardPreview();
 $('new').onclick=newGame;$('settings').onclick=settings;$('data').onclick=dataTools;$('close').onclick=closeDlg;
 $('flip').onclick=()=>{flipped=!flipped;save();render();};
 $('undo').onclick=()=>{invalidate();if(conclusion){conclusion='';}else{let n=cursor<moves.length?cursor:Math.max(0,moves.length-1);if(cfg.mode==='play'&&n>0&&fens[n].split(' ')[1]!==cfg.human)n--;moves=moves.slice(0,n);cursor=n;}reindex();save();render();scheduleMove();};
@@ -244,3 +245,110 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){if(busy){i
 if(!offlineFile&&'serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 restore();reindex();render();prepareStandalone();
 try{const bytes=decode64(document.getElementById('deadwasm').textContent);fullDead=new WebAssembly.Instance(new WebAssembly.Module(bytes)).exports;render();scheduleMove();}catch(e){notice='Модуль проверки позиции не запустился. Откройте приложение в современном Safari.';render();}
+
+function setupBoardPreview(){
+ const button=$('board-preview');
+ if(!HTMLCanvasElement.prototype.captureStream||typeof MediaRecorder==='undefined')return;
+ const mimeType=['video/mp4','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
+ if(!mimeType)return;
+ const mode='picture-in-picture';
+ const dialog=$('dialog');
+ let generation=0,videoUrl;
+ dialog.addEventListener('close',()=>{
+  generation++;
+  if(videoUrl){URL.revokeObjectURL(videoUrl);videoUrl=null;}
+ });
+ button.hidden=false;
+ button.onclick=async()=>{
+  const request=++generation;
+  openDlg('Плавающий просмотр',
+   '<video id="preview-video" aria-label="Видео текущей позиции" playsinline muted loop controls hidden style="width:100%;aspect-ratio:1;background:#331c2a;border-radius:9px"></video>'+
+   '<p class="help" id="preview-status" role="status">Готовлю снимок позиции…</p>'+
+   '<button class="primary wide" id="preview-float" hidden>Открыть поверх других приложений</button>');
+  const video=$('preview-video'),status=$('preview-status'),float=$('preview-float');
+  try{
+   const image=new Image();
+   image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(boardPreviewSvg());
+   await image.decode();
+   if(request!==generation)return;
+   const clip=await recordBoardPreview(image,mimeType);
+   if(request!==generation)return;
+   videoUrl=URL.createObjectURL(clip);
+   video.addEventListener('error',()=>{status.textContent='Браузер не смог воспроизвести снимок.';});
+   video.addEventListener('loadeddata',()=>{
+    video.hidden=false;
+    const supported=typeof video.webkitSupportsPresentationMode==='function'
+     ?video.webkitSupportsPresentationMode(mode)
+     :document.pictureInPictureEnabled&&typeof video.requestPictureInPicture==='function';
+    float.hidden=!supported;
+    status.textContent=supported
+     ?'В окне будет снимок этой позиции. Для нового снимка откройте просмотр снова.'
+     :'Если вы открыли игру с иконки, попробуйте открыть её в Safari.';
+   },{once:true});
+   video.src=videoUrl;
+   float.onclick=()=>{
+    video.play().catch(()=>{});
+    try{
+     if(typeof video.webkitSetPresentationMode==='function'){
+      video.webkitSetPresentationMode(mode);
+     }else{
+      video.requestPictureInPicture().catch(()=>{status.textContent='Запустите видео и нажмите кнопку снова.';});
+     }
+    }catch{status.textContent='Запустите видео и нажмите кнопку снова.';}
+   };
+  }catch{
+   if(request===generation)status.textContent='Не удалось подготовить видео позиции в этом браузере.';
+  }
+ };
+}
+
+function boardPreviewSvg(){
+ const cells=Array.from($('board').children,(cell,index)=>{
+  const x=index%8,y=Math.floor(index/8);
+  const fill=getComputedStyle(cell).backgroundColor;
+  const id=cell.querySelector('svg.piece use')?.getAttribute('href')?.slice(1);
+  const figure=id?document.getElementById(id)?.cloneNode(true):null;
+  figure?.removeAttribute('id');
+  const square=cell.dataset.sq;
+  return '<g transform="translate('+x*60+' '+y*60+')">'+
+   '<rect width="60" height="60" fill="'+fill+'"/>'+
+   (cell.classList.contains('past')?'<rect width="60" height="60" fill="#e9c850" opacity=".47"/>':'')+
+   (figure?'<g transform="translate(4 4) scale(1.15)">'+figure.outerHTML+'</g>':'')+
+   '<g fill="#331c2a" font-family="sans-serif" font-size="11" font-weight="bold">'+
+   (x===0?'<text x="3" y="12">'+square[1]+'</text>':'')+
+   (y===7?'<text x="50" y="57">'+square[0]+'</text>':'')+'</g></g>';
+ });
+ return '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">'+cells.join('')+'</svg>';
+}
+
+function recordBoardPreview(image,mimeType){
+ const canvas=document.createElement('canvas');
+ canvas.width=canvas.height=480;
+ const context=canvas.getContext('2d');
+ if(!context)throw Error('Canvas unavailable');
+ const draw=()=>context.drawImage(image,0,0,480,480);
+ draw();
+ const stream=canvas.captureStream(15);
+ return new Promise((resolve,reject)=>{
+  let paintTimer,stopTimer,deadline;
+  const cleanup=()=>{
+   clearInterval(paintTimer);clearTimeout(stopTimer);clearTimeout(deadline);
+   for(const track of stream.getTracks())track.stop();
+  };
+  try{
+   const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:400000});
+   const chunks=[];
+   recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+   recorder.onerror=event=>{cleanup();reject(event.error);};
+   recorder.onstop=()=>{
+    cleanup();
+    if(chunks.length)resolve(new Blob(chunks,{type:recorder.mimeType||mimeType}));
+    else reject(Error('Empty video'));
+   };
+   recorder.start();
+   paintTimer=setInterval(draw,65);
+   stopTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},1050);
+   deadline=setTimeout(()=>{cleanup();reject(Error('Video encoding timed out'));},6000);
+  }catch(error){cleanup();reject(error);}
+ });
+}
