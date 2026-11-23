@@ -1,5 +1,4 @@
 const chessComVision = (() => {
-    const start = 'rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR';
     const matching = (a, b) => a.every((piece, i) => piece === b[i]);
     const flatten = game => game.board().flatMap(rank => rank.map(piece =>
         piece ? (piece.color === 'w' ? piece.type.toUpperCase() : piece.type) : '.'));
@@ -109,30 +108,26 @@ const chessComVision = (() => {
             return matches.length === 1 ? matches[0] : null;
         }
         function update(labels) {
-            const visual = labels.includes('?') ? null : labels;
-            if (!visual) return null;
-            if (flipped === null) {
-                for (const reverse of [false,true]) {
-                    const squares = reverse ? visual.slice().reverse() : visual;
-                    if (matching([...start], squares)) {
-                        flipped = reverse;
-                        return {changed: true};
-                    }
-                    const first = findMove(squares);
-                    if (first) {
-                        game.move(first);
-                        flipped = reverse;
-                        return {changed: true};
-                    }
+            if (labels.includes('?')) return null;
+            const current = flatten(game);
+            const orientations = flipped === null ? [false, true] : [flipped, !flipped];
+            for (const reverse of orientations) {
+                const squares = reverse ? labels.slice().reverse() : labels;
+                if (matching(current, squares)) {
+                    const changed = flipped !== reverse;
+                    flipped = reverse;
+                    return {changed};
                 }
-                return null;
             }
-            const squares = flipped ? visual.slice().reverse() : visual;
-            if (matching(flatten(game), squares)) return {changed: false};
-            const move = findMove(squares);
-            if (!move) return null;
-            game.move(move);
-            return {changed: true, san: move.san};
+            for (const reverse of orientations) {
+                const squares = reverse ? labels.slice().reverse() : labels;
+                const move = findMove(squares);
+                if (!move) continue;
+                game.move(move);
+                flipped = reverse;
+                return {changed: true, san: move.san};
+            }
+            return null;
         }
         return {game, update, get flipped(){return flipped;}};
     }
