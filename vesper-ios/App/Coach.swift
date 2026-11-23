@@ -16,6 +16,11 @@ final class Coach: ObservableObject {
     @Published private(set) var lastHint: String?
     @Published var whiteAtBottom = true
     @Published var player = "w"
+    @Published var useChessComProfile = true
+    @Published var pace = 1
+    @Published private(set) var clockText: String?
+    private var profile: ChessComTracker?
+    private var clock = ExternalClock(minutes: 3)
 
     private let output = CaptureOutput()
     private let frames = DispatchQueue(label: "vesper.capture", qos: .userInitiated)
@@ -69,8 +74,15 @@ final class Coach: ObservableObject {
             try await source.startCapture()
             guard stream === source else { return }
             capturing = true
+            clock = ExternalClock(minutes: [1, 3, 10][pace])
+            clockText = nil
+            if useChessComProfile {
+                profile = try ChessComTracker(player: player)
+            }
             snapshot = nil
-            message = "Переключитесь на игру с начальной позицией, подождите пару секунд и вернитесь."
+            message = profile == nil
+                ? "Переключитесь на игру с начальной позицией, подождите пару секунд и вернитесь."
+                : "Откройте Chess.com до первого хода. Доска будет найдена автоматически."
             let allowed = (try? await notices.requestAuthorization(options: [.alert])) == true
             guard stream === source, !allowed else { return }
             message += " Без разрешения подсказки будут видны только здесь."
@@ -78,6 +90,7 @@ final class Coach: ObservableObject {
             guard stream === source else { return }
             endSession()
             stream = nil
+            try? await source.stopCapture()
             message = error.localizedDescription
         }
     }
@@ -100,6 +113,7 @@ final class Coach: ObservableObject {
     func retake() {
         guard capturing else { return }
         tracker = nil
+        profile = nil
         tracking = false
         snapshot = nil
         snapshotSize = nil
@@ -132,6 +146,21 @@ final class Coach: ObservableObject {
         guard UIApplication.shared.applicationState == .background else { return }
         let now = Date()
         if leftAppAt == nil { leftAppAt = now }
+        if let profile {
+            guard let leftAppAt, now.timeIntervalSince(leftAppAt) >= 0.3 else { return }
+            latestFrame += 1
+            let revision = latestFrame
+            confirmation?.cancel()
+            if handle(profile.observe(frame)) {
+                confirmation = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard !Task.isCancelled, let self, self.latestFrame == revision,
+                          UIApplication.shared.applicationState == .background else { return }
+                    _ = self.handle(profile.observe(frame))
+                }
+            }
+            return
+        }
         guard tracker != nil else {
             considerCalibrationFrame(frame)
             return
@@ -184,15 +213,23 @@ final class Coach: ObservableObject {
     }
 
     private func confirm(_ marks: [[Int]]) -> Bool {
-        guard let result = tracker?.observe(marks) else { clearHint(); return false }
+        return handle(tracker?.observe(marks))
+    }
+
+    private func handle(_ observation: ChessTracker.Result?) -> Bool {
+        guard let result = observation else { clearHint(); return false }
         switch result.status {
         case "checking":
             clearHint()
             return true
         case "tracking":
+            tracking = true
+            if let side = result.turn { clock.resume(side) }
+            clockText = clock.label
             message = "Распознано полуходов — \(result.ply)."
             if let line = result.moveLine { queueHint(line) } else { clearHint() }
         case "ended":
+            clock.pause()
             clearHint()
             message = "Партия завершена."
         default:
@@ -204,10 +241,13 @@ final class Coach: ObservableObject {
 
     private func queueHint(_ line: String) {
         guard line != queuedLine, line != displayedLine else { return }
+        let remaining = clock.seconds(for: player)
+        guard remaining > 0.35 else { return }
+        let search = Int32(min([850, 2400, 6500][pace], max(40, Int(remaining * 70))))
         queuedLine = line
         calculation?.cancel()
         calculation = Task { [weak self] in
-            let move = await NativeEngine.suggest(history: line, milliseconds: 500)
+            let move = await NativeEngine.suggest(history: line, milliseconds: search)
             guard !Task.isCancelled, let self, self.queuedLine == line else { return }
             self.queuedLine = nil
             guard let move else { self.message = "Stockfish не вернул ход."; return }
@@ -241,6 +281,8 @@ final class Coach: ObservableObject {
         capturing = false
         tracking = false
         tracker = nil
+        profile = nil
+        clock.pause()
         snapshot = nil
         snapshotSize = nil
         board = nil

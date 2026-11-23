@@ -87,7 +87,7 @@ function makeBoardTracker(Chess, initial, whiteAtBottom, userColor) {
         if (stable < 2) return {status: 'checking'};
         if (game.isGameOver()) return {status: 'ended', ply: moves.length};
         return {
-            status: 'tracking', ply: moves.length,
+            status: 'tracking', ply: moves.length, turn: game.turn(),
             moveLine: game.turn() === userColor ? moves.join(' ') : null
         };
     }

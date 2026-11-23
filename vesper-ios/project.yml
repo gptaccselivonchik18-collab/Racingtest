@@ -18,6 +18,9 @@ targets:
         buildPhase: resources
       - path: Vendor/resources
         buildPhase: resources
+      - path: Vendor/Web/chess
+        type: folder
+        buildPhase: resources
       - path: Vendor/stockfish/src
         excludes:
           - Makefile
@@ -32,6 +35,8 @@ targets:
       properties:
         CFBundleDisplayName: Vesper Gambit
         UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSScreenCaptureUsageDescription: "Vesper Gambit распознаёт шахматную доску в выбранной области экрана."
@@ -40,8 +45,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vespergambit.coach
-        MARKETING_VERSION: "0.1"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.2"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1"
         HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/stockfish/src"
         SWIFT_OBJC_BRIDGING_HEADER: Engine/StockfishBridge.h

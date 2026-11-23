@@ -21,3 +21,11 @@ tar -xOzf "$cache/chess.tgz" package/LICENSE > Vendor/resources/ChessJS-LICENSE.
 cp "$cache/nn-1a298aa575a0.nnue" Vendor/resources/
 cp Vendor/stockfish/Copying.txt Vendor/resources/Stockfish-GPL.txt
 cp Vendor/stockfish/AUTHORS Vendor/resources/Stockfish-AUTHORS.txt
+
+# The same prebuilt board shipped by the pinned Pages revision.
+web_revision=a6e1dea135e60794c3b60019dddbc3040b4b9661
+mkdir -p Vendor/Web
+repo="$(git rev-parse --show-toplevel)"
+git -C "$repo" fetch --no-tags --depth=1 https://github.com/gptaccselivonchik18-collab/Racingtest.git "$web_revision"
+git -C "$repo" archive "$web_revision" chess | tar -x -C Vendor/Web
+test -f Vendor/Web/chess/index.html

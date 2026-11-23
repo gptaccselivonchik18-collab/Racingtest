@@ -7,6 +7,7 @@ final class ChessTracker {
         let status: String
         let ply: Int
         let moveLine: String?
+        var turn: String? = nil
     }
 
     private let context: JSContext
@@ -35,8 +36,10 @@ final class ChessTracker {
         guard let value = tracker.invokeMethod("observe", withArguments: [signatures]),
               !value.isUndefined, let status = value.forProperty("status")?.toString() else { return nil }
         let line = value.forProperty("moveLine")
+        let side = value.forProperty("turn")
         return Result(status: status, ply: Int(value.forProperty("ply")?.toInt32() ?? 0),
-                      moveLine: line.flatMap { $0.isNull || $0.isUndefined ? nil : $0.toString() })
+                      moveLine: line.flatMap { $0.isNull || $0.isUndefined ? nil : $0.toString() },
+                      turn: side.flatMap { $0.isNull || $0.isUndefined ? nil : $0.toString() })
     }
 }
 

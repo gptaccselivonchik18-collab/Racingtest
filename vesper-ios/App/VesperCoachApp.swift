@@ -8,7 +8,10 @@ struct VesperCoachApp: App {
 
     var body: some Scene {
         WindowGroup {
-            CoachView(coach: coach)
+            TabView {
+                BoardWebView().tabItem { Label("Шахматы", systemImage: "checkerboard.rectangle") }
+                CoachView(coach: coach).tabItem { Label("Захват", systemImage: "rectangle.inset.filled.and.person.filled") }
+            }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { coach.becameActive() }
                 }
@@ -29,14 +32,26 @@ struct CoachView: View {
                     if let hint = coach.lastHint {
                         Text(hint).font(.title2.monospacedDigit()).bold()
                     }
+                    if let clock = coach.clockText { Text(clock).font(.footnote.monospacedDigit()) }
+                    if !coach.capturing {
+                        Picker("Моя сторона", selection: $coach.player) {
+                            Text("Играю белыми").tag("w")
+                            Text("Играю чёрными").tag("b")
+                        }.pickerStyle(.segmented)
+                        VStack(alignment: .leading, spacing: 8) {
+                            let modes = ["Instant · 1 мин", "Medium · 3 мин", "Hard · 10 мин"]
+                            Text(modes[coach.pace]).font(.headline)
+                            Slider(value: Binding(get: { Double(coach.pace) },
+                                                  set: { coach.pace = Int($0) }), in: 0...2, step: 1)
+                                .accessibilityLabel("Темп партии")
+                                .accessibilityValue(modes[coach.pace])
+                        }
+                        Toggle("Автопоиск доски Chess.com", isOn: $coach.useChessComProfile)
+                    }
                     if let snapshot = coach.snapshot, let image = snapshot.image {
                         Picker("Цвет снизу", selection: $coach.whiteAtBottom) {
                             Text("Белые").tag(true)
                             Text("Чёрные").tag(false)
-                        }.pickerStyle(.segmented)
-                        Picker("Моя сторона", selection: $coach.player) {
-                            Text("Играю белыми").tag("w")
-                            Text("Играю чёрными").tag("b")
                         }.pickerStyle(.segmented)
                         snapshotView(snapshot, image: image)
                         Button("Отслеживать") {
