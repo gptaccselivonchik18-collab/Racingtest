@@ -33,10 +33,16 @@ function makeBoardTracker(Chess, initial, whiteAtBottom, userColor) {
         if (!samples.some(value => distance(value, initial[i]) < 0.016)) samples.push(initial[i]);
     }
 
-    let pending, agreement = 0, stable = 0;
+    let pending, stable = 0;
     const moves = [];
+    const key = () => game.fen().split(' ').slice(0,4).join(' ');
+    const positions = new Map([[key(),1]]);
+    const finished = () => game.isCheckmate() || game.isStalemate() ||
+        game.isInsufficientMaterial() || Number(game.fen().split(' ')[4]) >= 150 ||
+        positions.get(key()) >= 5;
     function observe(frame) {
-        if (!frame || frame.length !== 64 || game.isGameOver()) return {status: 'paused'};
+        if (!frame || frame.length !== 64) return {status: 'uncertain'};
+        if (finished()) return {status: 'ended', ply: moves.length};
         const costs = frame.map(cell => {
             const result = Object.create(null);
             for (const [name, samples] of templates) {
@@ -46,48 +52,75 @@ function makeBoardTracker(Chess, initial, whiteAtBottom, userColor) {
         });
         const score = labels => {
             const distances = labels.map((name, i) => costs[i][name]);
+            const changed = distances.filter((_,i)=>labels[i]!==position[i]);
             return {
                 total: distances.reduce((sum, cost) => sum + cost, 0),
-                worst: Math.max(...distances)
+                worst: Math.max(...distances),
+                changed: changed.length ? Math.max(...changed) : 0
             };
         };
-        const ranked = [{move: null, ...score(position)}];
+        const ranked = [{line: [], ...score(position)}];
+        const two = [];
         for (const move of game.moves({verbose: true})) {
             game.move(move);
-            ranked.push({move, ...score(boardLabels())});
+            const labels=boardLabels();
+            ranked.push({line:[move.lan], ...score(labels)});
+            // Of the squares already changed by this side, all surviving
+            // pieces must still be in place after the opponent's reply.
+            const viable=labels.every((label,i)=>label===position[i] || label==='.' ||
+                costs[i][label]<=.22 || Object.keys(costs[i]).some(name=>
+                    name[0]===game.turn() && costs[i][name]<=.22));
+            if (viable) two.push(move);
             game.undo();
         }
         ranked.sort((a, b) => a.total - b.total);
-        const [best, second] = ranked;
-        if (best.worst > 0.24 || (second && second.total - best.total < 0.06)) {
+        let [best, second] = ranked;
+        if (best.worst > .24 || best.changed > .19 || (second && second.total - best.total < .06)) {
+            const recovered=[];
+            for(const first of two){
+                game.move(first);
+                for(const reply of game.moves({verbose:true})){
+                    game.move(reply);
+                    const grade=score(boardLabels());
+                    if(grade.worst<=.24 && grade.changed<=.16)
+                        recovered.push({line:[first.lan,reply.lan],...grade});
+                    game.undo();
+                }
+                game.undo();
+            }
+            recovered.sort((a,b)=>a.total-b.total);
+            [best,second]=recovered;
+        }
+        if (!best || (second && second.total - best.total < .06)) {
             pending = undefined;
-            agreement = stable = 0;
+            stable = 0;
             return {status: 'uncertain'};
         }
 
-        if (best.move) {
+        if (best.line.length) {
             stable = 0;
-            if (pending !== best.move.lan) {
-                pending = best.move.lan;
-                agreement = 1;
+            const sequence=best.line.join(' ');
+            if (pending !== sequence) {
+                pending = sequence;
                 return {status: 'checking'};
             }
-            if (++agreement < 2) return {status: 'checking'};
-            const move = game.move(best.move);
-            moves.push(move.lan);
+            for(const lan of best.line){
+                game.move(lan);
+                moves.push(lan);
+                positions.set(key(),(positions.get(key())||0)+1);
+            }
             position = boardLabels();
             pending = undefined;
-            agreement = 0;
             stable = 2;
         } else {
             pending = undefined;
-            agreement = 0;
             stable++;
         }
         if (stable < 2) return {status: 'checking'};
-        if (game.isGameOver()) return {status: 'ended', ply: moves.length};
+        if (finished()) return {status: 'ended', ply: moves.length};
         return {
             status: 'tracking', ply: moves.length, turn: game.turn(),
+            pieces: position.filter(name=>name!=='.').length,
             moveLine: game.turn() === userColor ? moves.join(' ') : null
         };
     }

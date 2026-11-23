@@ -32,19 +32,17 @@ struct CoachView: View {
                     if let hint = coach.lastHint {
                         Text(hint).font(.title2.monospacedDigit()).bold()
                     }
-                    if let clock = coach.clockText { Text(clock).font(.footnote.monospacedDigit()) }
                     if !coach.capturing {
                         Picker("Моя сторона", selection: $coach.player) {
                             Text("Играю белыми").tag("w")
                             Text("Играю чёрными").tag("b")
                         }.pickerStyle(.segmented)
                         VStack(alignment: .leading, spacing: 8) {
-                            let modes = ["Instant · 1 мин", "Medium · 3 мин", "Hard · 10 мин"]
-                            Text(modes[coach.pace]).font(.headline)
-                            Slider(value: Binding(get: { Double(coach.pace) },
-                                                  set: { coach.pace = Int($0) }), in: 0...2, step: 1)
+                            Text(coach.pace.title).font(.headline)
+                            Slider(value: Binding(get: { Double(coach.pace.rawValue) },
+                                                  set: { coach.pace = HintPace(rawValue: Int($0)) ?? .medium }), in: 0...2, step: 1)
                                 .accessibilityLabel("Темп партии")
-                                .accessibilityValue(modes[coach.pace])
+                                .accessibilityValue(coach.pace.title)
                         }
                         Toggle("Автопоиск доски Chess.com", isOn: $coach.useChessComProfile)
                     }

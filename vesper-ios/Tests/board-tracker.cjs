@@ -35,4 +35,11 @@ function play(sequence, orientation, ownColor) {
 play(['e4','e5','Nf3','Nc6','Bc4','Nf6','O-O'], true, 'b');
 play(['e4','h5','e5','d5','exd6','Nf6'], false, 'w');
 play(['a4','h5','a5','h4','a6','h3','axb7','hxg2','bxa8=Q'], true, 'w');
+const fast = new Chess();
+const tracking = makeBoardTracker(Chess, frame(fast,true), true, 'w');
+fast.move('e4');
+fast.move('e5');
+assert.equal(tracking.observe(frame(fast,true)).status,'checking');
+assert.equal(tracking.observe(frame(fast,true)).moveLine,'e2e4 e7e5');
 console.log('Both orientations, initial white hint, turn changes, castling, en passant, promotion and occlusion passed.');
+require('./chesscom-vision.cjs');

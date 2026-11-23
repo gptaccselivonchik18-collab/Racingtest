@@ -8,6 +8,7 @@
 #include "uci.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -15,14 +16,28 @@
 #include <string>
 #include <vector>
 
-int vesper_best_move(const char *networkPath, const char *moves, int milliseconds,
-                     char *output, size_t capacity) {
+namespace {
+std::atomic<uint64_t> latest{0};
+std::mutex handoff;
+Stockfish::Engine *active = nullptr;
+}
+
+uint64_t vesper_replace_search() {
+    std::lock_guard<std::mutex> guard(handoff);
+    const auto revision = ++latest;
+    if (active) active->stop();
+    return revision;
+}
+
+int vesper_best_move_for(uint64_t revision, const char *networkPath, const char *moves,
+                         int milliseconds, char *output, size_t capacity) {
     if (!networkPath || !moves || !output || capacity < 6 || milliseconds <= 0)
         return -1;
     output[0] = '\0';
 
     static std::mutex lock;
     std::lock_guard<std::mutex> guard(lock);
+    if (revision != latest) return 0;
     static std::unique_ptr<Stockfish::Engine> engine;
     if (!engine) {
         const std::filesystem::path path(networkPath);
@@ -51,12 +66,29 @@ int vesper_best_move(const char *networkPath, const char *moves, int millisecond
     Stockfish::Search::LimitsType limits;
     limits.movetime = milliseconds;
     limits.startTime = Stockfish::now();
-    engine->go(limits);
+    {
+        std::lock_guard<std::mutex> guard(handoff);
+        if (revision != latest) {
+            engine->set_on_bestmove({});
+            return 0;
+        }
+        engine->go(limits);
+        active = engine.get();
+    }
     engine->wait_for_search_finished();
+    {
+        std::lock_guard<std::mutex> guard(handoff);
+        active = nullptr;
+    }
     engine->set_on_bestmove({});
-    if (best.size() < 4 || best.size() > 5)
+    if (revision != latest || best.size() < 4 || best.size() > 5)
         return 0;
     std::copy(best.begin(), best.end(), output);
     output[best.size()] = '\0';
     return 1;
+}
+
+int vesper_best_move(const char *networkPath, const char *moves, int milliseconds,
+                     char *output, size_t capacity) {
+    return vesper_best_move_for(vesper_replace_search(), networkPath, moves, milliseconds, output, capacity);
 }

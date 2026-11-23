@@ -53,7 +53,7 @@ struct Frame: Sendable {
             let background = cornersByColor.map { $0.sorted()[16] }
             guard abs(background[0] - background[1]) >= 14,
                   cornersByColor.enumerated().allSatisfy({ color, values in
-                      values.filter { abs($0 - background[color]) > 25 }.count <= 4
+                      values.filter { abs($0 - background[color]) > 25 }.count <= 8
                   }) else { return nil }
             return result
         }
@@ -65,7 +65,7 @@ final class FrameConverter {
 
     func convert(_ buffer: CVPixelBuffer) -> Frame? {
         let input = CIImage(cvPixelBuffer: buffer)
-        let scale = min(1, 800 / max(input.extent.width, input.extent.height))
+        let scale = min(1, 1280 / max(input.extent.width, input.extent.height))
         let scaled = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let image = context.createCGImage(scaled, from: scaled.extent.integral) else { return nil }
         let width = image.width, height = image.height

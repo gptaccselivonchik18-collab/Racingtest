@@ -17,10 +17,13 @@ final class Coach: ObservableObject {
     @Published var whiteAtBottom = true
     @Published var player = "w"
     @Published var useChessComProfile = true
-    @Published var pace = 1
-    @Published private(set) var clockText: String?
+    @Published var pace: HintPace = .medium
     private var profile: ChessComTracker?
-    private var clock = ExternalClock(minutes: 3)
+    private var budget = HintBudget()
+    private var turnObservedAt = ProcessInfo.processInfo.systemUptime
+    private var observedPly = -1
+    private var uncertainSince: TimeInterval?
+    private let notificationID = "vesper.move"
 
     private let output = CaptureOutput()
     private let frames = DispatchQueue(label: "vesper.capture", qos: .userInitiated)
@@ -34,7 +37,6 @@ final class Coach: ObservableObject {
     private var queuedLine: String?
     private var displayedLine: String?
     private var calculation: Task<Void, Never>?
-    private var leftAppAt: Date?
     private var calibrationFrame: Frame?
     private var snapshotTask: Task<Void, Never>?
 
@@ -43,6 +45,7 @@ final class Coach: ObservableObject {
     func chooseScreen() {
         guard !choosing, stream == nil else { return }
         choosing = true
+        NativeEngine.prepare()
         let picker = SCContentSharingPicker.shared
         if !pickerInstalled {
             picker.add(output)
@@ -67,22 +70,23 @@ final class Coach: ObservableObject {
         choosing = false
         let configuration = SCStreamConfiguration()
         configuration.capturesAudio = false
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 16)
         let source = SCStream(filter: filter, configuration: configuration, delegate: output)
         stream = source
         do {
             try source.addStreamOutput(output, type: .screen, sampleHandlerQueue: frames)
             try await source.startCapture()
             guard stream === source else { return }
-            capturing = true
-            clock = ExternalClock(minutes: [1, 3, 10][pace])
-            clockText = nil
+            budget = HintBudget()
+            observedPly = -1
             if useChessComProfile {
                 profile = try ChessComTracker(player: player)
             }
+            capturing = true
             snapshot = nil
             message = profile == nil
                 ? "Переключитесь на игру с начальной позицией, подождите пару секунд и вернитесь."
-                : "Откройте Chess.com до первого хода. Доска будет найдена автоматически."
+                : "Откройте текущую позицию в Chess.com. Доска будет найдена автоматически."
             let allowed = (try? await notices.requestAuthorization(options: [.alert])) == true
             guard stream === source, !allowed else { return }
             message += " Без разрешения подсказки будут видны только здесь."
@@ -118,7 +122,10 @@ final class Coach: ObservableObject {
         snapshot = nil
         snapshotSize = nil
         board = nil
-        displayedLine = nil
+        observedPly = -1
+        uncertainSince = nil
+        budget = HintBudget()
+        confirmation?.cancel()
         clearHint()
         message = "Переключитесь на игру с начальной позицией, подождите пару секунд и вернитесь."
     }
@@ -144,16 +151,13 @@ final class Coach: ObservableObject {
     func receive(_ frame: Frame, source: ObjectIdentifier) {
         guard let stream, source == ObjectIdentifier(stream), capturing else { return }
         guard UIApplication.shared.applicationState == .background else { return }
-        let now = Date()
-        if leftAppAt == nil { leftAppAt = now }
         if let profile {
-            guard let leftAppAt, now.timeIntervalSince(leftAppAt) >= 0.3 else { return }
             latestFrame += 1
             let revision = latestFrame
             confirmation?.cancel()
             if handle(profile.observe(frame)) {
                 confirmation = Task { [weak self] in
-                    try? await Task.sleep(for: .milliseconds(180))
+                    try? await Task.sleep(for: .milliseconds(85))
                     guard !Task.isCancelled, let self, self.latestFrame == revision,
                           UIApplication.shared.applicationState == .background else { return }
                     _ = self.handle(profile.observe(frame))
@@ -165,19 +169,17 @@ final class Coach: ObservableObject {
             considerCalibrationFrame(frame)
             return
         }
-        guard let leftAppAt, now.timeIntervalSince(leftAppAt) >= 0.45 else { return }
         latestFrame += 1
         let revision = latestFrame
         confirmation?.cancel()
         guard let snapshotSize, frame.width == snapshotSize.width, frame.height == snapshotSize.height,
               let board, let marks = frame.signatures(in: board) else {
-            clearHint()
-            message = "Доска перекрыта или сдвинулась. Ожидаю исходную область."
+            _ = handle(nil)
             return
         }
         if confirm(marks) {
             confirmation = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(180))
+                try? await Task.sleep(for: .milliseconds(85))
                 guard !Task.isCancelled, let self, self.latestFrame == revision,
                       UIApplication.shared.applicationState == .background else { return }
                 _ = self.confirm(marks)
@@ -205,7 +207,6 @@ final class Coach: ObservableObject {
         snapshotTask?.cancel()
         snapshotTask = nil
         calibrationFrame = nil
-        leftAppAt = nil
         confirmation?.cancel()
         if !tracking, snapshot != nil {
             message = "Обведите границы доски, укажите ориентацию и цвет, затем нажмите «Отслеживать»."
@@ -217,50 +218,68 @@ final class Coach: ObservableObject {
     }
 
     private func handle(_ observation: ChessTracker.Result?) -> Bool {
-        guard let result = observation else { clearHint(); return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let result = observation else { positionUncertain(at: now); return false }
         switch result.status {
         case "checking":
-            clearHint()
             return true
         case "tracking":
+            uncertainSince = nil
             tracking = true
-            if let side = result.turn { clock.resume(side) }
-            clockText = clock.label
-            message = "Распознано полуходов — \(result.ply)."
-            if let line = result.moveLine { queueHint(line) } else { clearHint() }
+            if observedPly != result.ply {
+                observedPly = result.ply
+                turnObservedAt = now
+            }
+            let progress = "Распознано полуходов — \(result.ply)."
+            if message != progress { message = progress }
+            if let line = result.moveLine { queueHint(line, position: result) }
+            else { clearHint(removeNotification: false) }
         case "ended":
-            clock.pause()
             clearHint()
             message = "Партия завершена."
-        default:
+        case "reviewing":
             clearHint()
-            message = "Позиция не подтверждена. Подсказка приостановлена."
+            message = "Вы просматриваете историю. Вернитесь к последнему ходу."
+        default:
+            positionUncertain(at: now)
         }
         return false
     }
 
-    private func queueHint(_ line: String) {
+    private func positionUncertain(at now: TimeInterval) {
+        if uncertainSince == nil { uncertainSince = now }
+        if let uncertainSince, now - uncertainSince >= 0.32 {
+            clearHint()
+            message = "Жду, когда доска снова станет видна."
+        }
+    }
+
+    private func queueHint(_ line: String, position: ChessTracker.Result) {
         guard line != queuedLine, line != displayedLine else { return }
-        let remaining = clock.seconds(for: player)
-        guard remaining > 0.35 else { return }
-        let search = Int32(min([850, 2400, 6500][pace], max(40, Int(remaining * 70))))
+        let search = pace.searchTime(ply: position.ply, pieces: position.pieces,
+                                     spent: budget.spent, overhead: budget.overhead)
         queuedLine = line
         calculation?.cancel()
+        let revision = NativeEngine.replaceSearch()
+        let started = ProcessInfo.processInfo.systemUptime
         calculation = Task { [weak self] in
-            let move = await NativeEngine.suggest(history: line, milliseconds: search)
+            let move = await NativeEngine.suggest(history: line, milliseconds: search, revision: revision)
             guard !Task.isCancelled, let self, self.queuedLine == line else { return }
             self.queuedLine = nil
             guard let move else { self.message = "Stockfish не вернул ход."; return }
             self.displayedLine = line
+            let now = ProcessInfo.processInfo.systemUptime
+            self.budget.record(turn: now - self.turnObservedAt, search: now - started)
             let body = "\(move.prefix(2)) → \(move.dropFirst(2).prefix(2))"
             let promotion = ["q": "ферзь", "r": "ладья", "b": "слон", "n": "конь"]
             let hint = body + (move.count == 5 ? " · " + (promotion[String(move.suffix(1))] ?? "") : "")
             self.lastHint = hint
             let content = UNMutableNotificationContent()
-            content.title = "Vesper Gambit · твой ход"
+            content.title = "Ход"
             content.body = hint
+            content.threadIdentifier = self.notificationID
             do {
-                try await self.notices.add(UNNotificationRequest(identifier: "vesper.move", content: content,
+                try await self.notices.add(UNNotificationRequest(identifier: self.notificationID, content: content,
                                                                   trigger: nil))
             } catch {
                 if self.displayedLine == line { self.message = "Ход рассчитан. Баннер недоступен." }
@@ -268,12 +287,17 @@ final class Coach: ObservableObject {
         }
     }
 
-    private func clearHint() {
-        calculation?.cancel()
+    private func clearHint(removeNotification: Bool = true) {
+        if queuedLine != nil {
+            calculation?.cancel()
+            _ = NativeEngine.replaceSearch()
+        }
         queuedLine = nil
-        if lastHint != nil {
-            lastHint = nil
-            notices.removeDeliveredNotifications(withIdentifiers: ["vesper.move"])
+        lastHint = nil
+        displayedLine = nil
+        if removeNotification {
+            notices.removePendingNotificationRequests(withIdentifiers: [notificationID])
+            notices.removeDeliveredNotifications(withIdentifiers: [notificationID])
         }
     }
 
@@ -282,11 +306,10 @@ final class Coach: ObservableObject {
         tracking = false
         tracker = nil
         profile = nil
-        clock.pause()
+        uncertainSince = nil
         snapshot = nil
         snapshotSize = nil
         board = nil
-        leftAppAt = nil
         snapshotTask?.cancel()
         snapshotTask = nil
         calibrationFrame = nil
