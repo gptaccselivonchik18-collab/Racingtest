@@ -43,11 +43,6 @@ final class Coach: ObservableObject {
             picker.add(output)
             pickerInstalled = true
         }
-        var configuration = SCContentSharingPickerConfiguration()
-        configuration.allowedPickerModes = [.singleDisplay]
-        configuration.allowsChangingSelectedContent = false
-        picker.defaultConfiguration = configuration
-        picker.maximumStreamCount = 1
         picker.isActive = true
         picker.present()
     }
@@ -66,8 +61,6 @@ final class Coach: ObservableObject {
         guard choosing, stream == nil else { return }
         choosing = false
         let configuration = SCStreamConfiguration()
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 8)
-        configuration.queueDepth = 3
         configuration.capturesAudio = false
         let source = SCStream(filter: filter, configuration: configuration, delegate: output)
         stream = source
