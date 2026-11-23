@@ -2,3 +2,20 @@
 @media(min-width:1100px){.frame{max-width:1080px}.workspace{grid-template-columns:minmax(0,1.45fr) minmax(330px,1fr)}}
 @media(max-width:760px){.frame{width:calc(100% - 32px);max-width:580px}.mast{min-height:58px}.brand{font-size:1.4rem}.brandmark{height:32px;width:32px}.desk{display:none}.titlebar{padding:1.05rem 0 .55rem}.eyebrow{font-size:.65rem}h1{font-size:2.67rem}.workspace{display:block}.player{min-height:46px}.avatar{width:31px;height:31px}.boardbox{padding:4px}.primary{padding:.65rem .8rem;font-size:.88rem}.panel{padding:1rem 1.1rem}aside{padding-top:.15rem}.scoreline{margin-top:.68rem}.sectitle h2{font-size:1.48rem}#score{font-size:2.6rem}.tools button{font-size:.82rem}.message{min-height:1.2rem;margin-bottom:.4rem}footer{gap:.1rem;flex-wrap:wrap}footer button{padding:.5rem}.tag{font-size:.72rem}}
 @media(max-width:370px){.mast .soft span{display:none}.frame{width:calc(100% - 20px)}.person{gap:.3rem}}
+
+#pace-preference{max-width:520px;margin-bottom:1.2rem}
+.pace{min-width:0;margin:.8rem 0 1rem;padding:.65rem .85rem .8rem;border:1px solid #d9ccd3;border-radius:14px;background:#f6eff3}
+.pace legend{padding:0 .38rem;color:var(--wine);font-size:.76rem;font-weight:700;letter-spacing:.07em}
+.pace-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem}
+.pace-options button{display:grid;gap:.07rem;min-width:0;padding:.5rem .25rem .45rem;color:var(--plum);font-size:.92rem;line-height:1.2}
+.pace-options button small{font-size:.72rem;font-weight:500;color:var(--mute)}
+.pace-options button[aria-pressed="true"]{background:var(--plum);color:white}
+.pace-options button[aria-pressed="true"] small{color:#f0dae5}
+.pace input[type="range"]{-webkit-appearance:none;appearance:none;display:block;width:70%;height:8px;margin:.8rem auto .1rem;padding:0;border:0;border-radius:20px;background:linear-gradient(to right,#713750 var(--pace-fill),#ddced7 var(--pace-fill));touch-action:pan-y;cursor:ew-resize}
+.pace input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border:3px solid #fff;border-radius:50%;background:var(--plum);box-shadow:0 1px 5px #3d223973}
+.pace input[type="range"]::-moz-range-thumb{width:15px;height:15px;border:3px solid #fff;border-radius:50%;background:var(--plum);box-shadow:0 1px 5px #3d223973}
+.match-clock{margin-left:auto;min-width:4.3rem;text-align:center;padding:.27rem .53rem;border:1px solid var(--line);border-radius:8px;background:#eee8e5;color:var(--deep);font:700 1rem/1.35 ui-monospace,monospace;white-space:nowrap}
+.match-clock.is-running{background:var(--deep);border-color:var(--deep);color:#fff}
+.match-clock.is-low{background:#923740;border-color:#923740;color:#fff}
+.player .match-clock+.tag{margin-left:0}
+@media(max-width:460px){.player:has(.match-clock) .tag{display:none}.pace-options button{font-size:.86rem}}

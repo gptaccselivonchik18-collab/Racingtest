@@ -95,7 +95,7 @@ class LocalEngine {
     this.onFail=fail;
     const launch=()=>{
       const w=this.worker;this.phase='config';
-      const options=[['Hash', job.hash],['Skill Level',20],['UCI_LimitStrength',false],['MultiPV',job.pv]];
+      const options=[['Hash', job.hash],['Skill Level',20],['UCI_LimitStrength',false],['Move Overhead',job.timeControl?90:10],['MultiPV',job.pv]];
       if(job.kind==='multi') options.unshift(['Threads',job.threads]);
       for(const [name,value] of options)if(this.options.get(name)!==value){
         w.postMessage('setoption name '+name+' value '+value);this.options.set(name,value);
@@ -139,12 +139,37 @@ self.addEventListener('unhandledrejection',e=>self.postMessage('vesper error '+S
     if(line.startsWith('vesper error ')){this.onFail(new Error(line.slice(13)));return;}
     if(line==='uciok' && this.phase==='boot'){this.ready=true;this.launch();return;}
     if(line==='readyok' && this.phase==='config'){
-      this.phase='search';this.worker.postMessage(job.position);
-      this.worker.postMessage('go movetime '+job.ms);job.status('Расчёт…');
-      this.alarm(job.ms+15000,()=>this.onFail(new Error('Расчёт прерван. Можно повторить позицию.')));return;
+      if(job.warmup){
+        clearTimeout(this.timer);this.pending=null;this.phase='idle';job.done();return;
+      }
+      const budget=job.timeControl?.();
+      if(job.timeControl&&!budget){this.onFail(Error('Время вышло.'));return;}
+      this.phase='search';this.timedFallback=null;this.worker.postMessage(job.position);
+      this.worker.postMessage(budget
+        ?'go wtime '+budget.w+' btime '+budget.b+' movetime '+budget.cap
+        :'go movetime '+job.ms);
+      job.status('Расчёт…');
+      if(budget){
+        this.alarm(budget.cap,()=>{
+          this.worker.postMessage('stop');
+          this.alarm(45,()=>{
+            const move=this.timedFallback;
+            if(!move){this.onFail(Error('Движок не успел вернуть ход.'));return;}
+            this.cancel();
+            job.done(move);
+          });
+        });
+      }else this.alarm(job.ms+15000,()=>this.onFail(new Error('Расчёт прерван. Можно повторить позицию.')));
+      return;
     }
     if(this.phase!=='search')return;
-    if(line.startsWith('info depth ')){job.info(line);return;}
+    if(line.startsWith('info depth ')){
+      if(job.timeControl){
+        const move=line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)(?: |$)/)?.[1];
+        if(move)this.timedFallback=move;
+      }
+      job.info(line);return;
+    }
     if(line.startsWith('bestmove ')){
       clearTimeout(this.timer);this.pending=null;this.phase='idle';
       job.done(line.split(/\s+/)[1]);

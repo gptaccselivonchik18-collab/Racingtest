@@ -1,7 +1,10 @@
 function openScreenCoach(){
     if (busy) { invalidate(); render(); }
+    matchClock?.pause();
     runner.cancel();
+    let preset=cfg.preset;
     openDlg('Доска с экрана',
+        paceSlider('screen-pace',preset)+
         field('screen-side','Мой цвет',[['w','Белые'],['b','Чёрные']],'w')+
         '<p class="help">Начните со стартовой позиции в теме Chess The Musical. Можно включить захват или загрузить скриншоты по порядку.</p>'+
         '<div class="actions"><button type="button" class="primary" id="screen-start">Захват экрана</button>'+
@@ -10,17 +13,39 @@ function openScreenCoach(){
         '<button type="button" class="soft" id="screen-notify" hidden>Разрешить уведомления</button>'+
         '<video id="screen-video" muted playsinline aria-label="Предпросмотр захвата" hidden style="width:72px;height:auto;margin-top:.8rem"></video>'+
         '<p id="screen-status" class="help" role="status">Ожидаю доску.</p>'+
+        '<p id="screen-time" class="help" hidden></p>'+
         '<p id="screen-result" role="status"></p><p id="screen-history" class="help"></p>');
     const dialog=$('dialog'), side=$('screen-side'), status=$('screen-status');
     const startButton=$('screen-start'), stopButton=$('screen-stop'), files=$('screen-files');
     const notify=$('screen-notify'), video=$('screen-video');
-    const resultText=$('screen-result'), history=$('screen-history');
+    const resultText=$('screen-result'), history=$('screen-history'), time=$('screen-time');
     const canvas=document.createElement('canvas');
     const context=canvas.getContext('2d',{willReadFrequently:true});
     const engine=new LocalEngine();
     let tracker=chessComVision.track(Chess), stream=null, timer, generation=0, imageMode=false;
     let previousTop, candidate='', position='', pendingFen='', lastAskedFen='';
-    let valid=false, notificationRegistration;
+    let valid=false, notificationRegistration, estimatedClock;
+    connectPaceSlider('screen-pace',index=>{
+        preset=index;
+        lastAskedFen=pendingFen='';
+        engine.cancel();
+        analyzeCurrent();
+    });
+
+    function paintEstimate(){
+        time.hidden=!estimatedClock;
+        if(!estimatedClock)return;
+        const values=estimatedClock.read();
+        time.textContent='Оценка без добавления · белые '+clockText(values.w)+' · чёрные '+clockText(values.b);
+    }
+    function currentBudget(){
+        const duration=paceMilliseconds(preset), color=side.value;
+        const values=estimatedClock?.read()??{w:duration,b:duration};
+        // The external clock is estimated. Leave time to read the hint and play the move.
+        values[color]=Math.max(0,values[color]-300);
+        const cap=Math.min(paceModes[preset].screenCap,Math.max(40,Math.floor(values[color]*0.07)));
+        return engineTime(values,color,cap);
+    }
 
     function recognize(input,width,height){
         const scale=Math.min(1,630/width);
@@ -51,10 +76,14 @@ function openScreenCoach(){
         if(!valid||tracker.game.turn()!==side.value||tracker.game.isGameOver())return;
         const fen=tracker.game.fen();
         if(fen===pendingFen||fen===lastAskedFen) return;
+        if(!currentBudget()){
+            status.textContent='По оценке, времени на подсказку уже нет.';
+            return;
+        }
         pendingFen=fen;
         const line=tracker.game.history({verbose:true}).map(move=>move.lan).join(' ');
         engine.run({kind:kind(),hash:Math.min(cfg.hash,64),threads:cfg.threads,pv:1,
-            ms:Math.min(3000,Math.max(500,cfg.seconds*1000)),
+            timeControl:currentBudget,
             position:'position startpos'+(line?' moves '+line:''),
             progress:(d,t)=>{if(pendingFen===fen)status.textContent='Движок · '+Math.floor(100*d/t)+'%';},
             status:message=>{if(pendingFen===fen)status.textContent=message;},
@@ -111,6 +140,12 @@ function openScreenCoach(){
             clearNotifications();
         }
         valid=true;
+        if(stream){
+            if(!estimatedClock)estimatedClock=new MatchClock(preset);
+            if(tracker.game.isGameOver())estimatedClock.pause();
+            else estimatedClock.resume(tracker.game.turn());
+            paintEstimate();
+        }
         status.textContent=tracker.game.isGameOver()?'Партия завершена.'
             :tracker.game.turn()===side.value?'Доска распознана · твой ход.':'Доска распознана · ход соперника.';
         if(runAnalysis) analyzeCurrent();
@@ -119,6 +154,8 @@ function openScreenCoach(){
     function stop(reset){
         generation++;
         clearInterval(timer);
+        estimatedClock?.pause();
+        $('screen-pace').disabled=false;
         if(stream) for(const track of stream.getTracks()) track.stop();
         stream=null;
         video.srcObject=null;
@@ -131,12 +168,14 @@ function openScreenCoach(){
         engine.cancel();
         invalidateFrame();
         if(reset){
+            estimatedClock=null;
             tracker=chessComVision.track(Chess);
             previousTop=undefined;
             position='';
             lastAskedFen='';
             history.textContent=resultText.textContent='';
         }
+        paintEstimate();
     }
 
     startButton.hidden=typeof navigator.mediaDevices?.getDisplayMedia!=='function';
@@ -144,6 +183,7 @@ function openScreenCoach(){
         stop(true);
         startButton.disabled=true;
         files.disabled=true;
+        $('screen-pace').disabled=true;
         const id=generation;
         try{
             const chosen=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
@@ -161,6 +201,7 @@ function openScreenCoach(){
             status.textContent='Откройте шахматы. Захват остановится, если браузер завершит трансляцию.';
             let lastTime=-1;
             timer=setInterval(()=>{
+                paintEstimate();
                 if(video.readyState<2||!video.videoWidth||video.currentTime===lastTime)return;
                 lastTime=video.currentTime;
                 try{process(recognize(video,video.videoWidth,video.videoHeight),false,true);}
@@ -224,6 +265,6 @@ function openScreenCoach(){
         }).catch(()=>{});
     }
     if(startButton.hidden) status.textContent='Для захвата откройте страницу в Safari на iOS 27. Скриншоты можно загрузить здесь.';
-    dialog.addEventListener('close',()=>{clearNotifications();stop(false);},{once:true});
+    dialog.addEventListener('close',()=>{clearNotifications();stop(false);scheduleMove();},{once:true});
 }
 $('screen-coach').onclick=openScreenCoach;

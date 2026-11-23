@@ -27,6 +27,7 @@ replacements = {
     '<!--SYMBOLS-->': (src / 'pieces.svg').read_text(),
     '/*RULES*/': 'const {Chess}=(()=>{const exports={};\n'+chess_script+'\nreturn exports;})();',
     '/*ENGINE*/': (src / 'engine.js').read_text().replace('/*MANIFEST*/', json.dumps(manifest)),
+    '/*MATCH_CLOCK*/': (src / 'match-clock.js').read_text(),
     '/*APP*/': (src / 'app.js').read_text(),
     '/*CHESSCOM_PROFILE*/': (src / 'chesscom-profile.js').read_text(),
     '/*CHESSCOM_VISION*/': (src / 'chesscom-vision.js').read_text(),
