@@ -10,10 +10,14 @@ final class BoardAssetServer {
     static let url = URL(string: "http://127.0.0.1:49321/")!
     private let queue = DispatchQueue(label: "vesper.board-assets")
     private var listener: NWListener?
+    private var ready = false
+    private var pending: [(Result<URL, Error>) -> Void] = []
 
     func open(_ completion: @escaping (Result<URL, Error>) -> Void) {
         queue.async {
-            if self.listener?.state == .ready { completion(.success(Self.url)); return }
+            if self.ready { completion(.success(Self.url)); return }
+            self.pending.append(completion)
+            guard self.listener == nil else { return }
             do {
                 let parameters = NWParameters.tcp
                 parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: 49321)
@@ -27,18 +31,25 @@ final class BoardAssetServer {
                 listener.stateUpdateHandler = { [weak self, weak listener] state in
                     switch state {
                     case .ready:
-                        listener?.stateUpdateHandler = nil
-                        completion(.success(Self.url))
+                        self?.ready = true
+                        self?.complete(.success(Self.url))
                     case .failed(let error):
                         listener?.cancel()
                         self?.listener = nil
-                        completion(.failure(error))
+                        self?.ready = false
+                        self?.complete(.failure(error))
                     default: break
                     }
                 }
                 listener.start(queue: self.queue)
-            } catch { completion(.failure(error)) }
+            } catch { self.complete(.failure(error)) }
         }
+    }
+
+    private func complete(_ result: Result<URL, Error>) {
+        let callbacks = pending
+        pending.removeAll()
+        callbacks.forEach { $0(result) }
     }
 
     private func receive(_ connection: NWConnection, request: Data) {
@@ -83,6 +94,7 @@ struct BoardWebView: UIViewRepresentable {
         configuration.allowsInlineMediaPlayback = true
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
+        context.coordinator.view = view
         BoardAssetServer.shared.open { [weak view] result in
             DispatchQueue.main.async {
                 switch result {
@@ -98,12 +110,52 @@ struct BoardWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKDownloadDelegate {
+        weak var view: WKWebView?
+        private var destinations: [ObjectIdentifier: URL] = [:]
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                     decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            decisionHandler(response.canShowMIMEType ? .allow : .download)
+        }
+
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                      suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let filename = (suggestedFilename as NSString).lastPathComponent
+                let url = directory.appendingPathComponent(filename.isEmpty ? "vesper-export" : filename)
+                destinations[ObjectIdentifier(download)] = url
+                completionHandler(url)
+            } catch { completionHandler(nil) }
+        }
+
+        func downloadDidFinish(_ download: WKDownload) {
+            guard let destination = destinations.removeValue(forKey: ObjectIdentifier(download)),
+                  var presenter = view?.window?.rootViewController else { return }
+            while let next = presenter.presentedViewController { presenter = next }
+            let share = UIActivityViewController(activityItems: [destination], applicationActivities: nil)
+            presenter.present(share, animated: true)
+        }
+
+        func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+            destinations.removeValue(forKey: ObjectIdentifier(download))
+        }
+
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
             if url.host == BoardAssetServer.url.host || url.scheme == "about" || url.scheme == "blob" {
-                decisionHandler(.allow)
+                decisionHandler(action.shouldPerformDownload ? .download : .allow)
             } else {
                 if action.navigationType == .linkActivated && url.scheme == "https" { UIApplication.shared.open(url) }
                 decisionHandler(.cancel)
