@@ -70,7 +70,6 @@ final class Coach: ObservableObject {
         choosing = false
         let configuration = SCStreamConfiguration()
         configuration.capturesAudio = false
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 16)
         let source = SCStream(filter: filter, configuration: configuration, delegate: output)
         stream = source
         do {
