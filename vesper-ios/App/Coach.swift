@@ -30,6 +30,8 @@ final class Coach: ObservableObject {
     private var displayedLine: String?
     private var calculation: Task<Void, Never>?
     private var leftAppAt: Date?
+    private var calibrationFrame: Frame?
+    private var snapshotTask: Task<Void, Never>?
 
     init() { output.model = self }
 
@@ -107,6 +109,7 @@ final class Coach: ObservableObject {
         tracker = nil
         tracking = false
         snapshot = nil
+        snapshotSize = nil
         board = nil
         displayedLine = nil
         clearHint()
@@ -136,11 +139,11 @@ final class Coach: ObservableObject {
         guard UIApplication.shared.applicationState == .background else { return }
         let now = Date()
         if leftAppAt == nil { leftAppAt = now }
-        guard let leftAppAt, now.timeIntervalSince(leftAppAt) >= 0.75 else { return }
         guard tracker != nil else {
-            if snapshot == nil { snapshot = frame }
+            considerCalibrationFrame(frame)
             return
         }
+        guard let leftAppAt, now.timeIntervalSince(leftAppAt) >= 0.45 else { return }
         latestFrame += 1
         let revision = latestFrame
         confirmation?.cancel()
@@ -162,7 +165,24 @@ final class Coach: ObservableObject {
 
     private var snapshotSize: (width: Int, height: Int)?
 
+    private func considerCalibrationFrame(_ frame: Frame) {
+        guard snapshot == nil else { return }
+        calibrationFrame = frame
+        guard snapshotTask == nil else { return }
+        snapshotTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard !Task.isCancelled, let self else { return }
+            self.snapshotTask = nil
+            guard self.capturing, UIApplication.shared.applicationState == .background else { return }
+            self.snapshot = self.calibrationFrame
+            self.calibrationFrame = nil
+        }
+    }
+
     func becameActive() {
+        snapshotTask?.cancel()
+        snapshotTask = nil
+        calibrationFrame = nil
         leftAppAt = nil
         confirmation?.cancel()
         if !tracking, snapshot != nil {
@@ -232,6 +252,9 @@ final class Coach: ObservableObject {
         snapshotSize = nil
         board = nil
         leftAppAt = nil
+        snapshotTask?.cancel()
+        snapshotTask = nil
+        calibrationFrame = nil
         displayedLine = nil
         confirmation?.cancel()
         clearHint()
