@@ -1,0 +1,4 @@
+.build/
+Vendor/
+Generated/
+*.xcodeproj/

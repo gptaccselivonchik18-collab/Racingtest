@@ -1,0 +1,46 @@
+name: Vesper Gambit iOS
+
+on:
+  push:
+    branches: [codex/vesper-ios]
+    paths:
+      - 'vesper-ios/**'
+      - '.github/workflows/vesper-ios.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: vesper-ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned engine and chess rules
+        run: bash prepare.sh
+      - name: Test board tracking
+        run: node Tests/board-tracker.cjs
+      - name: Generate Xcode project
+        run: |
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+      - name: Compile for an iPhone
+        run: |
+          xcodebuild -project VesperCoach.xcodeproj -scheme VesperCoach \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath .build/xcode CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned device build
+        run: |
+          mkdir -p .build/ipa/Payload
+          cp -R .build/xcode/Build/Products/Release-iphoneos/VesperCoach.app .build/ipa/Payload/
+          cd .build/ipa
+          zip -qr VesperCoach-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VesperCoach-unsigned
+          path: vesper-ios/.build/ipa/VesperCoach-unsigned.ipa
+          if-no-files-found: error

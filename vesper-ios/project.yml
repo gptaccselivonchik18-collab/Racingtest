@@ -1,0 +1,50 @@
+name: VesperCoach
+options:
+  deploymentTarget:
+    iOS: "27.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CLANG_CXX_LANGUAGE_STANDARD: c++17
+    CLANG_CXX_LIBRARY: libc++
+targets:
+  VesperCoach:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Engine
+      - path: Resources
+        buildPhase: resources
+      - path: Vendor/resources
+        buildPhase: resources
+      - path: Vendor/stockfish/src
+        excludes:
+          - Makefile
+          - main.cpp
+          - glue.cpp
+          - glue.hpp
+          - emscripten/**
+          - universal/**
+          - nnue/features/p_hm.cpp
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Vesper Gambit
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSScreenCaptureUsageDescription: "Vesper Gambit распознаёт шахматную доску в выбранной области экрана."
+        UIBackgroundModes:
+          - screen-capture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vespergambit.coach
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/stockfish/src"
+        SWIFT_OBJC_BRIDGING_HEADER: Engine/StockfishBridge.h
+        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) IS_64BIT NNUE_EMBEDDING_OFF"
+    scheme:
+      gatherCoverageData: false
