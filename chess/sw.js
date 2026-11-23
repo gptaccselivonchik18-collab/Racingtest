@@ -1,4 +1,4 @@
-const SHELL='vesper-chess-shell-97e5f1b02b79f3';
+const SHELL='vesper-chess-shell-94b305ff92e23d';
 const ROOT=new URL('./',self.location.href);
 const shell=['index.html','engine/full.js','engine/lite.js','engine/multi.js','icon-192.png','icon-512.png','manifest.webmanifest'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
