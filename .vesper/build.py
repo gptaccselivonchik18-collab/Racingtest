@@ -28,6 +28,9 @@ replacements = {
     '/*RULES*/': 'const {Chess}=(()=>{const exports={};\n'+chess_script+'\nreturn exports;})();',
     '/*ENGINE*/': (src / 'engine.js').read_text().replace('/*MANIFEST*/', json.dumps(manifest)),
     '/*APP*/': (src / 'app.js').read_text(),
+    '/*CHESSCOM_PROFILE*/': (src / 'chesscom-profile.js').read_text(),
+    '/*CHESSCOM_VISION*/': (src / 'chesscom-vision.js').read_text(),
+    '/*SCREEN_COACH*/': (src / 'screen-coach.js').read_text(),
     '<!--PAYLOAD-->': '<script type="application/octet-stream" id="deadwasm">'+rules_wasm+'</script>',
     '<!--PWA-->': '<link rel="manifest" href="./manifest.webmanifest">'
                  '<link rel="apple-touch-icon" href="./icon-192.png">'
