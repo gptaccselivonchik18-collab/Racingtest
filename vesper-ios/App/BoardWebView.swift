@@ -65,7 +65,8 @@ final class BoardAssetServer {
     }
 
     private func respond(_ connection: NWConnection, request: Data) {
-        let firstLine = String(decoding: request, as: UTF8.self).prefix { $0 != "\r" && $0 != "\n" }
+        guard let lineEnd = request.firstIndex(of: 13) else { connection.cancel(); return }
+        let firstLine = String(decoding: request[..<lineEnd], as: UTF8.self)
         let parts = firstLine.split(separator: " ")
         guard parts.count == 3, parts[0] == "GET" || parts[0] == "HEAD",
               let path = parts[1].split(separator: "?", maxSplits: 1).first,
