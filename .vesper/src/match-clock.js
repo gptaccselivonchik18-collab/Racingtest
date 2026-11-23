@@ -1,7 +1,7 @@
 const paceModes = [
-    {name:'Instant', minutes:1, screenCap:850},
-    {name:'Medium', minutes:3, screenCap:2400},
-    {name:'Hard', minutes:10, screenCap:6500}
+    {name:'Instant', minutes:1, analysisMs:850},
+    {name:'Medium', minutes:3, analysisMs:2400},
+    {name:'Hard', minutes:10, analysisMs:6500}
 ];
 const paceIndex = value => Number.isInteger(value) && paceModes[value] ? value : 1;
 const paceMilliseconds = index => paceModes[paceIndex(index)].minutes * 60000;
@@ -72,13 +72,13 @@ function engineTime(values,side,limit=Infinity){
             cap:Math.max(1,Math.min(limit,remaining-reserve))};
 }
 
-function paceSlider(id,index){
+function paceSlider(id,index,legend='Темп партии'){
     const labels=paceModes.map((mode,i)=>'<button type="button" data-pace="'+i+'" aria-pressed="'+
         (i===index)+'"><strong>'+mode.name+'</strong><small>'+mode.minutes+' мин</small></button>').join('');
-    return '<fieldset id="'+id+'" class="pace"><legend>Темп партии</legend>'+
+    return '<fieldset id="'+id+'" class="pace"><legend>'+legend+'</legend>'+
         '<div class="pace-options">'+labels+'</div>'+
         '<input type="range" min="0" max="2" value="'+index+
-        '" aria-label="Темп партии" aria-valuetext="'+paceModes[index].name+' '+paceModes[index].minutes+
+        '" aria-label="'+legend+'" aria-valuetext="'+paceModes[index].name+' '+paceModes[index].minutes+
         ' мин" style="--pace-fill:'+index*50+'%"></fieldset>';
 }
 

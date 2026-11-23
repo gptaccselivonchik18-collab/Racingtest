@@ -43,7 +43,7 @@ function openScreenCoach(){
         const values=estimatedClock?.read()??{w:duration,b:duration};
         // The external clock is estimated. Leave time to read the hint and play the move.
         values[color]=Math.max(0,values[color]-300);
-        const cap=Math.min(paceModes[preset].screenCap,Math.max(40,Math.floor(values[color]*0.07)));
+        const cap=Math.min(paceModes[preset].analysisMs,Math.max(40,Math.floor(values[color]*0.07)));
         return engineTime(values,color,cap);
     }
 

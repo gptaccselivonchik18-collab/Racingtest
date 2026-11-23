@@ -6,7 +6,7 @@ const names={p:'пешка',n:'конь',b:'слон',r:'ладья',q:'ферз
 const enNames={p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
 const pieceSvg=(color,type)=>'<svg class="piece" viewBox="0 0 45 45" aria-hidden="true"><use href="#'+(color==='w'?'white':'black')+'-'+enNames[type]+'"/></svg>';
 const START=new Chess().fen(), storageKey='vesper-game-1';
-const defaultCfg={human:'w',mode:'play',net:'full',threads:1,hash:32,seconds:3,variations:3,preset:1};
+const defaultCfg={human:'w',mode:'play',net:'full',threads:1,hash:32,variations:3,preset:1};
 let cfg={...defaultCfg}, start=START, moves=[], cursor=0, flipped=false, conclusion='', game=new Chess(), keys=[], sans=[], fens=[];
 let selected=null,hintSquares=[],busy=null,retryKind=null,notice='',manualPause=false,claimIntent=false,fullDead=null;
 let offlinePreparation, matchClock=null;
@@ -19,6 +19,7 @@ function restore(){
   const s=JSON.parse(localStorage.getItem(storageKey)||'null');if(!s)return;
   const replay=new Chess(s.start);for(const m of s.moves) replay.move(m);
   start=s.start;moves=s.moves;cfg={...defaultCfg,...s.cfg};flipped=!!s.flipped;conclusion=s.conclusion||'';
+  delete cfg.seconds;
   cfg.preset=paceIndex(cfg.preset);
   matchClock=cfg.mode==='play'?MatchClock.restore(s.clock,moves.length):null;
   cursor=Math.max(0,Math.min(moves.length,Number.isInteger(s.cursor)?s.cursor:moves.length));
@@ -99,6 +100,7 @@ function drawHistory(){
 }
 function kind(){return cfg.net==='lite'?'lite':sharedThreads&&cfg.threads>1?'multi':'full';}
 function kindLabel(){return 'Stockfish 19 '+(cfg.net==='lite'?'Lite':'Full');}
+function activePace(){return paceModes[matchClock?.preset??cfg.preset];}
 function paintClock(){
  if(!matchClock)return;
  const times=matchClock.read();
@@ -135,8 +137,9 @@ function prepareMatchClock(){
  });
 }
 function mountPace(){
- $('pace-preference').innerHTML=paceSlider('page-pace',cfg.preset).replace('Темп партии</legend>','Темп новой партии</legend>');
- connectPaceSlider('page-pace',index=>{cfg.preset=index;save();});
+ const legend=matchClock?'Темп новой партии':cfg.mode==='study'?'Темп разбора':'Темп партии';
+ $('pace-preference').innerHTML=paceSlider('page-pace',cfg.preset,legend);
+ connectPaceSlider('page-pace',index=>{cfg.preset=index;save();if(!matchClock&&!busy)render();});
 }
 function render(){
  const outcome=result(),live=cursor===moves.length;
@@ -146,7 +149,10 @@ function render(){
  paintClock();
  drawBoard();drawHistory();
  $('engineName').textContent=kindLabel()+' · '+(kind()==='multi'?cfg.threads:1)+' '+plural(kind()==='multi'?cfg.threads:1,'поток','потока','потоков');
- if(!busy&&!retryKind)$('engineState').textContent='Хеш '+cfg.hash+' МБ · '+(matchClock?paceModes[matchClock.preset].name+' · '+paceModes[matchClock.preset].minutes+' мин':cfg.seconds+' с на разбор');
+ if(!busy&&!retryKind){
+  const pace=activePace();
+  $('engineState').textContent='Хеш '+cfg.hash+' МБ · '+pace.name+(matchClock?' · '+pace.minutes+' мин':'');
+ }
  $('retry').hidden=!retryKind;
  $('message').textContent=notice||outcome||(!live?'Просмотр истории. Вернитесь к последнему ходу, чтобы играть.':game.isCheck()?'Шах. Защитите короля.':storageWarn?'Хранилище недоступно. Сохраните PGN перед закрытием.':'');
  $('undo').disabled=!moves.length&&!conclusion;
@@ -193,7 +199,7 @@ function analyze(type){
  if(busy||result()||clockExpired())return;
  const fen=fens[cursor],side=game.turn();busy=type;retryKind=null;notice='';resetAnalysis();render();
  const line='position '+(start===START?'startpos':'fen '+start)+(cursor?' moves '+moves.slice(0,cursor).join(' '):'');
- runner.run({kind:kind(),hash:cfg.hash,threads:cfg.threads,pv:type==='analysis'?cfg.variations:1,ms:cfg.seconds*1000,position:line,
+ runner.run({kind:kind(),hash:cfg.hash,threads:cfg.threads,pv:type==='analysis'?cfg.variations:1,ms:activePace().analysisMs,position:line,
  timeControl:type==='move'&&matchClock?()=>engineTime(matchClock.read(),side):null,
  progress:(d,t)=>{const msg='Подготовка '+kindLabel()+' · '+Math.floor(100*d/t)+'%';$('message').textContent=msg;$('engineState').textContent=prettySize(d)+' / '+prettySize(t);},
  status:s=>{$('engineState').textContent=s;$('message').textContent=s;},
@@ -226,15 +232,15 @@ function newGame(){
  $('begin').onclick=()=>{const s=$('side').value;invalidate();cfg.mode=$('mode').value;cfg.human=s==='random'?(Math.random()<.5?'w':'b'):s;start=START;moves=[];cursor=0;flipped=cfg.human==='b';conclusion='';cfg.preset=preset;matchClock=cfg.mode==='play'?new MatchClock(preset):null;reindex();save();closeDlg();mountPace();render();scheduleMove();};
 }
 function settings(){
- const choices=[1,2,3,5,10,20,30,60,120,300,600].map(x=>[x,x+' с']);const maxThreads=sharedThreads?Math.min(8,navigator.hardwareConcurrency||2):1;
- openDlg('Настройки',field('net','Нейросеть',[['full','Full · полная сеть'],['lite','Lite · быстрый запуск']],cfg.net)+field('seconds','Время на разбор',choices,cfg.seconds)+field('hash','Память для хеш-таблицы',[16,32,64,128,256].map(n=>[n,n+' МБ']),cfg.hash)+field('threads','Потоки Full',Array.from({length:maxThreads},(_,i)=>[i+1,String(i+1)]),Math.min(maxThreads,cfg.threads))+(!sharedThreads?'<p class="help">Сейчас доступен один поток. Несколько потоков требуют изолированной вкладки.</p>':'')+field('vars','Варианты в разборе',[1,2,3,4,5].map(n=>[n,String(n)]),cfg.variations)+'<button class="primary wide" id="apply">Применить</button><hr><p class="help">'+(offlineFile?'Обе сети включены в этот файл.':'Откройте игру с экрана «Домой». Выбранная сеть сохранится автоматически, пока есть интернет.')+'</p>'+(!offlineFile?'<button class="soft wide" id="offline">Сохранить для офлайна</button><p id="offstate" class="help" role="status"></p>':''));
- const applyConfig=()=>{invalidate();cfg.net=$('net').value;cfg.seconds=+$('seconds').value;cfg.hash=+$('hash').value;cfg.threads=+$('threads').value;cfg.variations=+$('vars').value;save();render();scheduleMove();};
+ const maxThreads=sharedThreads?Math.min(8,navigator.hardwareConcurrency||2):1;
+ openDlg('Настройки',field('net','Нейросеть',[['full','Full · полная сеть'],['lite','Lite · быстрый запуск']],cfg.net)+field('hash','Память для хеш-таблицы',[16,32,64,128,256].map(n=>[n,n+' МБ']),cfg.hash)+field('threads','Потоки Full',Array.from({length:maxThreads},(_,i)=>[i+1,String(i+1)]),Math.min(maxThreads,cfg.threads))+(!sharedThreads?'<p class="help">Сейчас доступен один поток. Несколько потоков требуют изолированной вкладки.</p>':'')+field('vars','Варианты в разборе',[1,2,3,4,5].map(n=>[n,String(n)]),cfg.variations)+'<button class="primary wide" id="apply">Применить</button><hr><p class="help">'+(offlineFile?'Обе сети включены в этот файл.':'Откройте игру с экрана «Домой». Выбранная сеть сохранится автоматически, пока есть интернет.')+'</p>'+(!offlineFile?'<button class="soft wide" id="offline">Сохранить для офлайна</button><p id="offstate" class="help" role="status"></p>':''));
+ const applyConfig=()=>{invalidate();cfg.net=$('net').value;cfg.hash=+$('hash').value;cfg.threads=+$('threads').value;cfg.variations=+$('vars').value;save();render();scheduleMove();};
  $('apply').onclick=()=>{applyConfig();closeDlg();prepareStandalone();};
  if($('offline')){$('offline').onclick=()=>prepareOffline($('net').value==='lite'?'lite':sharedThreads&&+$('threads').value>1?'multi':'full');}
 }
 function dataTools(){
  openDlg('Позиция и PGN','<label class="field">Позиция FEN<textarea id="fen" spellcheck="false"></textarea></label><div class="actions"><button id="import" class="soft">Открыть для разбора</button></div><p class="help">Открытие FEN начнёт новую партию с заданной позиции.</p><button id="pgn" class="primary wide">Сохранить партию PGN</button><p id="io" class="help"></p>');$('fen').value=game.fen();
- $('import').onclick=()=>{try{const b=new Chess($('fen').value.trim());const enemy=b.turn()==='w'?'b':'w';const enemyKing=b.findPiece({color:enemy,type:'k'})[0];if(enemyKing&&b.isAttacked(enemyKing,b.turn()))throw Error();invalidate();cfg.mode='study';matchClock=null;start=b.fen();moves=[];cursor=0;conclusion='';reindex();save();closeDlg();render();}catch{$('io').textContent='Некорректная позиция FEN.';}};
+ $('import').onclick=()=>{try{const b=new Chess($('fen').value.trim());const enemy=b.turn()==='w'?'b':'w';const enemyKing=b.findPiece({color:enemy,type:'k'})[0];if(enemyKing&&b.isAttacked(enemyKing,b.turn()))throw Error();invalidate();cfg.mode='study';matchClock=null;start=b.fen();moves=[];cursor=0;conclusion='';reindex();save();closeDlg();mountPace();render();}catch{$('io').textContent='Некорректная позиция FEN.';}};
  $('pgn').onclick=()=>{const b=new Chess(start);for(const m of moves)b.move(m);const saved=cursor;cursor=moves.length;const old=game;game=b;const out=result();const score=b.isCheckmate()?(b.turn()==='w'?'0-1':'1-0'):matchClock?.flagged&&out&&!out.startsWith('Ничья')?(matchClock.flagged==='w'?'0-1':'1-0'):out?'1/2-1/2':'*';cursor=saved;game=old;
  b.setHeader('Event','Vesper Gambit');b.setHeader('White',cfg.mode==='study'?'White':cfg.human==='w'?'Player':'Stockfish 19');b.setHeader('Black',cfg.mode==='study'?'Black':cfg.human==='b'?'Player':'Stockfish 19');b.setHeader('Result',score);
  const url=URL.createObjectURL(new Blob([b.pgn()],{type:'application/x-chess-pgn'}));const a=document.createElement('a');a.href=url;a.download='vesper-gambit.pgn';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);};
